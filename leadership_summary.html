@@ -48,6 +48,11 @@
   .rank{color:var(--muted);}
   .delta-up{color:var(--pine); font-weight:600;} .delta-down{color:var(--cardinal); font-weight:600;}
   .chart-box{background:var(--card); border:1px solid var(--line); padding:18px 22px;}
+  .sankey-wrap{background:var(--card); border:1px solid var(--line); padding:22px;}
+  .sankey-caption{font-size:12.5px; color:var(--muted); margin-top:12px;}
+  .move-strip{display:flex; gap:24px; margin:0 0 18px; font-family:'IBM Plex Mono',monospace; font-size:13px;}
+  .move-strip .m{display:flex; align-items:baseline; gap:6px;}
+  .move-strip .m .n{font-family:'Oswald',sans-serif; font-size:22px; font-weight:600;}
   .binding-row{display:flex; align-items:center; gap:10px; margin-bottom:9px;}
   .binding-row .lbl{width:60px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--muted); flex-shrink:0;}
   .binding-track{flex:1; height:20px; display:flex; background:var(--paper); overflow:hidden; border:1px solid var(--line);}
@@ -80,15 +85,14 @@
 <div class="wrap">
 
 <section>
-  <h2>Company-Wide Snapshot — May 2026</h2>
-  <div class="kpi-row" id="kpiRow"></div>
-</section>
-
-<section>
-  <h2>How Each Tier Is Doing, Nationally</h2>
-  <p class="h2-sub">Same read as each zone report, rolled up across all 15 zones.</p>
-  <div class="tier-cards" id="tierCards"></div>
-  <div class="callout-bad" id="t3Callout"></div>
+  <h2>Tier Movement — Jan → May 2026</h2>
+  <p class="h2-sub">While we push stores up, some are also falling back — both directions matter.</p>
+  <div class="move-strip" id="moveStrip"></div>
+  <div class="sankey-wrap">
+    <svg id="sankey" width="100%" height="230" viewBox="0 0 760 230" preserveAspectRatio="xMidYMid meet"></svg>
+    <p class="sankey-caption">Left = starting tier (Jan '26), right = ending tier (May '26). Band thickness = store count.</p>
+  </div>
+  <div class="tier-cards" id="tierCards" style="margin-top:16px;"></div>
 </section>
 
 <section>
@@ -136,18 +140,41 @@ document.getElementById('natAvg').textContent = latestMonthly.avg.toFixed(2);
 const deltaAvg = (latestMonthly.avg - baseMonthly.avg).toFixed(2);
 document.getElementById('natAvgLbl').textContent = `Avg 5-Star, May 2026 (${deltaAvg>=0?'+':''}${deltaAvg} vs Jan '26)`;
 
-// KPI row
+// Movement strip — the gross up/down/net story
 const t1s=NAT.startCounts['1'], t1e=NAT.endCounts['1'];
 const t3s=NAT.startCounts['3'], t3e=NAT.endCounts['3'];
-const t1chg = ((t1e-t1s)/t1s*100).toFixed(1);
-const t3chg = ((t3e-t3s)/t3s*100).toFixed(1);
-const kpis = [
-  {tag:'Tier 1 (Bootcamp)', big:t1e, sub:`${t1chg>=0?'+':''}${t1chg}% vs Jan (${t1s})`, color: t1chg<=0?'#276b4d':'#a3122a'},
-  {tag:'Tier 2 (Rising Star)', big:NAT.endCounts['2'], sub:`${NAT.startCounts['2']} in Jan`, color:'#c07f1f'},
-  {tag:'Tier 3 (Top Tier)', big:t3e, sub:`${t3chg>=0?'+':''}${t3chg}% vs Jan (${t3s})`, color: t3chg>=0?'#276b4d':'#a3122a'},
-  {tag:'Net Moved Up', big:NAT.moved_up, sub:`${NAT.moved_down} moved down`, color:'#1c1a1f'},
-];
-document.getElementById('kpiRow').innerHTML = kpis.map(k=>`<div class="kpi"><div class="tag">${k.tag}</div><div class="big" style="color:${k.color}">${k.big}</div><div class="sub2">${k.sub}</div></div>`).join('');
+const net = NAT.moved_up - NAT.moved_down;
+document.getElementById('moveStrip').innerHTML = `
+  <div class="m"><span class="n" style="color:#276b4d">${NAT.moved_up}</span><span>moved up</span></div>
+  <div class="m"><span class="n" style="color:#a3122a">${NAT.moved_down}</span><span>moved down</span></div>
+  <div class="m"><span class="n">${net>=0?'+':''}${net}</span><span>net</span></div>
+`;
+
+function drawSankey(){
+  const svg = document.getElementById('sankey');
+  const H=230, leftX=90, rightX=670, nodeW=20, gap=6;
+  const startCounts = {1:NAT.startCounts['1'],2:NAT.startCounts['2'],3:NAT.startCounts['3']};
+  const endCounts = {1:NAT.endCounts['1'],2:NAT.endCounts['2'],3:NAT.endCounts['3']};
+  const total = startCounts[1]+startCounts[2]+startCounts[3];
+  const usableH = H-40; const scale = usableH/total;
+  function nodeY(counts, t){ let y=20; for(const k of [1,2,3]){ if(k===t) return {y,h:counts[k]*scale}; y+=counts[k]*scale+gap; } }
+  let out='';
+  [1,2,3].forEach(t=>{ const {y,h}=nodeY(startCounts,t); out+=`<rect x="${leftX}" y="${y}" width="${nodeW}" height="${h}" fill="${tierColors[t]}"/><text x="${leftX-8}" y="${y+h/2+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="#1c1a1f">T${t} \u00b7 ${startCounts[t]}</text>`; });
+  [1,2,3].forEach(t=>{ const {y,h}=nodeY(endCounts,t); out+=`<rect x="${rightX}" y="${y}" width="${nodeW}" height="${h}" fill="${tierColors[t]}"/><text x="${rightX+nodeW+8}" y="${y+h/2+4}" text-anchor="start" font-family="IBM Plex Mono" font-size="11" fill="#1c1a1f">T${t} \u00b7 ${endCounts[t]}</text>`; });
+  const lc={1:0,2:0,3:0}, rc={1:0,2:0,3:0};
+  NAT.flows.forEach(f=>{
+    if(f.v===0) return;
+    const ls=nodeY(startCounts,f.from), rs=nodeY(endCounts,f.to);
+    const y0=ls.y+lc[f.from], h0=f.v*scale; lc[f.from]+=h0;
+    const y1=rs.y+rc[f.to], h1=f.v*scale; rc[f.to]+=h1;
+    const x0=leftX+nodeW, x1=rightX, midX=(x0+x1)/2;
+    const path=`M${x0},${y0} C${midX},${y0} ${midX},${y1} ${x1},${y1} L${x1},${y1+h1} C${midX},${y1+h1} ${midX},${y0+h0} ${x0},${y0+h0} Z`;
+    out += `<path d="${path}" fill="${tierColors[f.from]}" opacity="${f.from===f.to?0.28:0.16}"/>`;
+  });
+  out += `<text x="${leftX}" y="14" font-family="IBM Plex Mono" font-size="10" fill="#6b6560">JAN '26</text><text x="${rightX}" y="14" font-family="IBM Plex Mono" font-size="10" fill="#6b6560">MAY '26</text>`;
+  svg.innerHTML = out;
+}
+drawSankey();
 
 // Tier cards
 const tierNames = {1:'Tier 1 \u00b7 Bootcamp', 2:'Tier 2 \u00b7 Rising Star', 3:'Tier 3 \u00b7 Top Tier'};
@@ -155,25 +182,34 @@ let tierHTML='';
 NAT.tier_story.forEach(ts=>{
   const col = tierColors[ts.t];
   const stayedPct=(ts.stayed/ts.n*100).toFixed(0), upPct=(ts.up/ts.n*100).toFixed(0), downPct=(ts.down/ts.n*100).toFixed(0);
-  let verdict;
-  if(ts.t===1) verdict = `${upPct}% graduated out of Bootcamp between Jan and May; avg score for this group moved ${ts.avgStart} \u2192 ${ts.avgEnd}.`;
-  else if(ts.t===2) verdict = `${stayedPct}% held steady, ${upPct}% promoted vs ${downPct}% slipped back \u2014 nationally, this is roughly a wash.`;
-  else verdict = `${downPct}% of the original Top Tier group fell out by May, with 0% moving anywhere higher \u2014 avg dropped ${ts.avgStart} \u2192 ${ts.avgEnd}. Top Tier count is only growing because Tier 2 promotions outpace this churn.`;
+  let verdict, rows;
+  if(ts.t===1){
+    verdict = `${upPct}% graduated out of Bootcamp by May; avg score moved ${ts.avgStart} \u2192 ${ts.avgEnd}.`;
+    rows = `
+      <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
+      <div class="tier-stat"><span>Stayed in Bootcamp</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
+      <div class="tier-stat"><span>Moved up</span><span class="v" style="color:#276b4d">${ts.up} (${upPct}%)</span></div>`;
+  } else if(ts.t===2){
+    verdict = `${stayedPct}% held steady, ${upPct}% promoted vs ${downPct}% slipped back \u2014 nationally, roughly a wash.`;
+    rows = `
+      <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
+      <div class="tier-stat"><span>Stayed in Rising Star</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
+      <div class="tier-stat"><span>Promoted to Top Tier</span><span class="v" style="color:#276b4d">${ts.up} (${upPct}%)</span></div>
+      <div class="tier-stat"><span>Fell to Bootcamp</span><span class="v" style="color:#a3122a">${ts.down} (${downPct}%)</span></div>`;
+  } else {
+    verdict = `${downPct}% of the original Top Tier group fell out by May \u2014 avg dropped ${ts.avgStart} \u2192 ${ts.avgEnd}. Growth in this tier is coming entirely from Tier 2 promotions, not retention.`;
+    rows = `
+      <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
+      <div class="tier-stat"><span>Retained Top Tier</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
+      <div class="tier-stat"><span>Fell back</span><span class="v" style="color:#a3122a">${ts.down} (${downPct}%)</span></div>`;
+  }
   tierHTML += `<div class="tier-card">
     <div class="head" style="background:${col}"><div class="tname">${tierNames[ts.t]}</div><div class="tsub">${ts.n} stores in January</div></div>
-    <div class="body">
-      <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
-      <div class="tier-stat"><span>Stayed in tier</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
-      <div class="tier-stat"><span>Moved up</span><span class="v" style="color:#276b4d">${ts.up} (${upPct}%)</span></div>
-      <div class="tier-stat"><span>Moved down</span><span class="v" style="color:#a3122a">${ts.down} (${downPct}%)</span></div>
-    </div>
+    <div class="body">${rows}</div>
     <div class="verdict">${verdict}</div>
   </div>`;
 });
 document.getElementById('tierCards').innerHTML = tierHTML;
-
-const t3 = NAT.tier_story.find(t=>t.t===3);
-document.getElementById('t3Callout').innerHTML = `<strong>Watch this nationally:</strong> Top Tier isn't a finished job. ${t3.down} of the ${t3.n} stores that were Tier 3 in January have already fallen out by May, and none moved anywhere higher (there's nowhere higher to go). The net Tier 3 growth story (${t3s}\u2192${t3e}) is entirely a function of Tier 2 promotions outrunning this churn \u2014 if promotions slow down, Tier 3 count will fall even though nothing about "Top Tier retention" has been fixed.`;
 
 // Zone ranking table
 let zoneRows='';

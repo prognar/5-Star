@@ -7,18 +7,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-  :root{ --ink:#1c1a1f; --paper:#f6f4f0; --card:#ffffff; --line:#e4dfd6; --cardinal:#a3122a; --gold:#c07f1f; --pine:#276b4d; --muted:#6b6560; }
+  :root{ --ink:#1c1a1f; --paper:#f6f4f0; --card:#ffffff; --line:#e4dfd6; --ph-red:#C31417; --cardinal:#a3122a; --gold:#c07f1f; --pine:#276b4d; --muted:#6b6560; }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--paper); color:var(--ink); font-family:'Inter',sans-serif; line-height:1.45; padding-bottom:60px;}
   .wrap{max-width:1120px;margin:0 auto;padding:0 28px;}
-  header.top{background:var(--ink); color:var(--paper); padding:34px 0 26px; border-bottom:6px solid var(--gold);}
-  header.top .wrap{display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px;}
-  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#e3c99a; margin:0 0 6px;}
-  h1{font-family:'Oswald',sans-serif; font-weight:600; font-size:32px; margin:0;}
-  .sub{color:#b8b3ad; font-size:14px; margin-top:6px;}
+  header.top{background:var(--ph-red); color:#fff; padding:22px 0 22px; border-bottom:none;}
+  header.top .wrap{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;}
+  .brand{display:flex; align-items:center; gap:18px;}
+  .brand .logo{height:50px; width:auto; display:block;}
+  .report-title{font-family:'Segoe UI',sans-serif; font-weight:700; font-size:32px; color:#fff; margin:0; line-height:1.15; letter-spacing:-.02em;}
+  .report-period{font-family:'Segoe UI',sans-serif; font-size:13px; color:rgba(255,255,255,.7); margin:2px 0 0; letter-spacing:.03em;}
+  .sub{color:rgba(255,255,255,.7); font-size:12.5px; margin-top:4px; font-family:'Segoe UI',sans-serif;}
   .headline-score{text-align:right;}
   .headline-score .num{font-family:'Oswald',sans-serif; font-size:44px; font-weight:600; color:#fff; line-height:1;}
-  .headline-score .lbl{font-family:'IBM Plex Mono',monospace; font-size:11px; color:#b8b3ad; letter-spacing:.08em; text-transform:uppercase; margin-top:4px;}
+  .headline-score .lbl{font-family:'Segoe UI',sans-serif; font-size:11px; color:rgba(255,255,255,.65); letter-spacing:.06em; text-transform:uppercase; margin-top:4px;}
   section{padding:32px 0; border-bottom:1px solid var(--line);}
   section:last-of-type{border-bottom:none;}
   h2{font-family:'Oswald',sans-serif; font-weight:500; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); margin:0 0 4px;}
@@ -45,10 +47,12 @@
 <body>
 <header class="top">
   <div class="wrap">
-    <div>
-      <p class="eyebrow">Rising Star Targeting — National, OA-Agnostic</p>
-      <h1>Where To Run Rising Star Sessions</h1>
-      <p class="sub">All Tier 2 stores · May 2026 · grouped by DMA &times; Franchisee (not by zone)</p>
+    <div class="brand">
+      <img src="PHLogo.png" alt="Pizza Hut" class="logo" onerror="this.style.display='none'">
+      <div>
+        <h1 class="report-title">Rising Star Targeting</h1>
+        <p class="report-period">National, OA-Agnostic · All Tier 2 stores · May 2026 · grouped by DMA &times; Franchisee</p>
+      </div>
     </div>
     <div class="headline-score">
       <div class="num">2844</div>

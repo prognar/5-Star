@@ -6,18 +6,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-  :root{ --ink:#1c1a1f; --paper:#f6f4f0; --card:#ffffff; --line:#e4dfd6; --cardinal:#a3122a; --gold:#c07f1f; --pine:#276b4d; --muted:#6b6560; }
+  :root{ --ink:#1c1a1f; --paper:#f6f4f0; --card:#ffffff; --line:#e4dfd6; --ph-red:#C31417; --cardinal:#a3122a; --gold:#c07f1f; --pine:#276b4d; --muted:#6b6560; }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--paper); color:var(--ink); font-family:'Inter',sans-serif; line-height:1.45; padding-bottom:60px;}
   .wrap{max-width:1120px;margin:0 auto;padding:0 28px;}
-  header.top{background:var(--ink); color:var(--paper); padding:34px 0 26px; border-bottom:6px solid var(--pine);}
-  header.top .wrap{display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px;}
-  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#a9c2b3; margin:0 0 6px;}
-  h1{font-family:'Oswald',sans-serif; font-weight:600; font-size:32px; margin:0;}
-  .sub{color:#b8b3ad; font-size:14px; margin-top:6px;}
+  header.top{background:var(--ph-red); color:#fff; padding:22px 0 22px; border-bottom:none;}
+  header.top .wrap{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;}
+  .brand{display:flex; align-items:center; gap:18px;}
+  .brand .logo{height:50px; width:auto; display:block;}
+  .report-title{font-family:'Segoe UI',sans-serif; font-weight:700; font-size:32px; color:#fff; margin:0; line-height:1.15; letter-spacing:-.02em;}
+  .report-period{font-family:'Segoe UI',sans-serif; font-size:13px; color:rgba(255,255,255,.7); margin:2px 0 0; letter-spacing:.03em;}
+  .sub{color:rgba(255,255,255,.7); font-size:12.5px; margin-top:4px; font-family:'Segoe UI',sans-serif;}
   .headline-score{text-align:right;}
   .headline-score .num{font-family:'Oswald',sans-serif; font-size:44px; font-weight:600; color:#fff; line-height:1;}
-  .headline-score .lbl{font-family:'IBM Plex Mono',monospace; font-size:11px; color:#b8b3ad; letter-spacing:.08em; text-transform:uppercase; margin-top:4px;}
+  .headline-score .lbl{font-family:'Segoe UI',sans-serif; font-size:11px; color:rgba(255,255,255,.65); letter-spacing:.06em; text-transform:uppercase; margin-top:4px;}
   section{padding:32px 0; border-bottom:1px solid var(--line);}
   section:last-of-type{border-bottom:none;}
   h2{font-family:'Oswald',sans-serif; font-weight:500; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--pine); margin:0 0 4px;}
@@ -70,16 +72,19 @@
 
 <header class="top">
   <div class="wrap">
-    <div>
-      <p class="eyebrow">5-Star Leadership Summary</p>
-      <h1>State of the Portfolio — All 15 Zones</h1>
-      <p class="sub">Jan – May 2026 · <span id="nStores"></span> active restaurants</p>
+    <div class="brand">
+      <img src="PHLogo.png" alt="Pizza Hut" class="logo" onerror="this.style.display='none'">
+      <div>
+        <h1 class="report-title">5-Star Leadership Summary</h1>
+        <p class="report-period">State of the Portfolio — All 15 Zones · Jan – May 2026 · <span id="nStores"></span> active restaurants</p>
+      </div>
     </div>
     <div class="headline-score">
       <div class="num" id="natAvg"></div>
       <div class="lbl" id="natAvgLbl"></div>
     </div>
   </div>
+  <div class="wrap" style="margin-top:10px;" id="healthStrip"></div>
 </header>
 
 <div class="wrap">
@@ -128,10 +133,24 @@
 </div>
 
 <script>
-const NAT = {"n_stores_latest":4758,"monthly":[{"period":202601,"avg":3.182,"n":4727,"t1":1044,"t2":2828,"t3":855,"win":2.798,"speed":2.929,"fscc":4.87,"brand":3.329,"hb":3.523},{"period":202602,"avg":3.169,"n":4738,"t1":1104,"t2":2769,"t3":865,"win":2.736,"speed":2.825,"fscc":4.854,"brand":3.324,"hb":3.729},{"period":202603,"avg":3.237,"n":4752,"t1":967,"t2":2812,"t3":973,"win":2.926,"speed":2.794,"fscc":4.863,"brand":3.315,"hb":3.784},{"period":202604,"avg":3.244,"n":4756,"t1":940,"t2":2871,"t3":945,"win":2.914,"speed":2.804,"fscc":4.821,"brand":3.292,"hb":3.852},{"period":202605,"avg":3.275,"n":4758,"t1":915,"t2":2844,"t3":999,"win":3.027,"speed":2.778,"fscc":4.855,"brand":3.298,"hb":3.831}],"startCounts":{"1":1042,"2":2827,"3":855},"endCounts":{"1":895,"2":2832,"3":997},"flows":[{"from":1,"to":1,"v":533},{"from":1,"to":2,"v":487},{"from":1,"to":3,"v":22},{"from":2,"to":1,"v":350},{"from":2,"to":2,"v":1980},{"from":2,"to":3,"v":497},{"from":3,"to":1,"v":12},{"from":3,"to":2,"v":365},{"from":3,"to":3,"v":478}],"moved_up":1006,"moved_down":727,"tier_story":[{"t":1,"n":1042,"avgStart":2.01,"avgEnd":2.54,"stayed":533,"up":509,"down":0},{"t":2,"n":2827,"avgStart":3.25,"avgEnd":3.33,"stayed":1980,"up":497,"down":350},{"t":3,"n":855,"avgStart":4.37,"avgEnd":4.02,"stayed":478,"up":0,"down":377}],"zone_rank":[{"oa":"Dustin Patton","n":296,"avg_latest":3.66,"avg_base":3.56,"t1_latest":27,"t1_base":26,"t3_latest":100,"t3_base":83,"delta":0.1,"t1_pct_chg":3.8,"t3_pct_chg":20.5},{"oa":"Michael Grant","n":248,"avg_latest":3.54,"avg_base":3.41,"t1_latest":26,"t1_base":29,"t3_latest":69,"t3_base":50,"delta":0.12,"t1_pct_chg":-10.3,"t3_pct_chg":38.0},{"oa":"Jiselle Medina","n":360,"avg_latest":3.49,"avg_base":3.52,"t1_latest":36,"t1_base":33,"t3_latest":91,"t3_base":101,"delta":-0.03,"t1_pct_chg":9.1,"t3_pct_chg":-9.9},{"oa":"Paul Inacio","n":260,"avg_latest":3.43,"avg_base":3.47,"t1_latest":31,"t1_base":34,"t3_latest":68,"t3_base":81,"delta":-0.04,"t1_pct_chg":-8.8,"t3_pct_chg":-16.0},{"oa":"Derron Spencer","n":404,"avg_latest":3.39,"avg_base":3.28,"t1_latest":41,"t1_base":71,"t3_latest":79,"t3_base":74,"delta":0.11,"t1_pct_chg":-42.3,"t3_pct_chg":6.8},{"oa":"AKM Shaju","n":394,"avg_latest":3.38,"avg_base":3.33,"t1_latest":77,"t1_base":82,"t3_latest":124,"t3_base":96,"delta":0.06,"t1_pct_chg":-6.1,"t3_pct_chg":29.2},{"oa":"Danielle Hudson","n":432,"avg_latest":3.26,"avg_base":3.07,"t1_latest":82,"t1_base":100,"t3_latest":88,"t3_base":54,"delta":0.19,"t1_pct_chg":-18.0,"t3_pct_chg":63.0},{"oa":"Cellesha Steel","n":175,"avg_latest":3.23,"avg_base":3.1,"t1_latest":35,"t1_base":31,"t3_latest":32,"t3_base":17,"delta":0.13,"t1_pct_chg":12.9,"t3_pct_chg":88.2},{"oa":"Tim King","n":209,"avg_latest":3.19,"avg_base":3.07,"t1_latest":44,"t1_base":54,"t3_latest":39,"t3_base":29,"delta":0.12,"t1_pct_chg":-18.5,"t3_pct_chg":34.5},{"oa":"Jesse White","n":373,"avg_latest":3.16,"avg_base":3.12,"t1_latest":82,"t1_base":88,"t3_latest":58,"t3_base":59,"delta":0.04,"t1_pct_chg":-6.8,"t3_pct_chg":-1.7},{"oa":"Finley Klement","n":358,"avg_latest":3.15,"avg_base":3.0,"t1_latest":94,"t1_base":104,"t3_latest":77,"t3_base":55,"delta":0.16,"t1_pct_chg":-9.6,"t3_pct_chg":40.0},{"oa":"Sergio Villasenor","n":271,"avg_latest":3.15,"avg_base":2.88,"t1_latest":63,"t1_base":93,"t3_latest":42,"t3_base":34,"delta":0.27,"t1_pct_chg":-32.3,"t3_pct_chg":23.5},{"oa":"Hellen Lobaccaro","n":300,"avg_latest":3.11,"avg_base":3.15,"t1_latest":90,"t1_base":73,"t3_latest":62,"t3_base":63,"delta":-0.04,"t1_pct_chg":23.3,"t3_pct_chg":-1.6},{"oa":"Sarah Heitz","n":411,"avg_latest":3.07,"avg_base":2.92,"t1_latest":105,"t1_base":131,"t3_latest":50,"t3_base":41,"delta":0.15,"t1_pct_chg":-19.8,"t3_pct_chg":22.0},{"oa":"Kathleen Basbagill","n":267,"avg_latest":2.9,"avg_base":2.81,"t1_latest":82,"t1_base":95,"t3_latest":20,"t3_base":18,"delta":0.09,"t1_pct_chg":-13.7,"t3_pct_chg":11.1}],"binding_tbl":{"1":{"WIN_SCORE_STAR":57.4,"SPEED_STAR":33.9,"BRAND_STAR":0.4,"HB_ONTIME_STAR":7.9,"FSCC_STAR":0.4},"2":{"WIN_SCORE_STAR":40.5,"SPEED_STAR":34.5,"BRAND_STAR":15.7,"HB_ONTIME_STAR":7.3,"FSCC_STAR":2.0},"3":{"WIN_SCORE_STAR":33.0,"SPEED_STAR":32.9,"BRAND_STAR":30.1,"HB_ONTIME_STAR":3.0,"FSCC_STAR":0.9}},"corr_fivestar_sssg":0.08,"corr_fivestar_sstg":0.1};
+const NAT = {"n_stores_latest":4758,"monthly":[{"period":202601,"avg":3.182,"n":4727,"t1":1044,"t2":2828,"t3":855,"win":2.798,"speed":2.929,"fscc":4.87,"brand":3.329,"hb":3.523},{"period":202602,"avg":3.169,"n":4738,"t1":1104,"t2":2769,"t3":865,"win":2.736,"speed":2.825,"fscc":4.854,"brand":3.324,"hb":3.729},{"period":202603,"avg":3.237,"n":4752,"t1":967,"t2":2812,"t3":973,"win":2.926,"speed":2.794,"fscc":4.863,"brand":3.315,"hb":3.784},{"period":202604,"avg":3.244,"n":4756,"t1":940,"t2":2871,"t3":945,"win":2.914,"speed":2.804,"fscc":4.821,"brand":3.292,"hb":3.852},{"period":202605,"avg":3.275,"n":4758,"t1":915,"t2":2844,"t3":999,"win":3.027,"speed":2.778,"fscc":4.855,"brand":3.298,"hb":3.831}],"startCounts":{"1":1042,"2":2827,"3":855},"endCounts":{"1":895,"2":2832,"3":997},"flows":[{"from":1,"to":1,"v":533},{"from":1,"to":2,"v":487},{"from":1,"to":3,"v":22},{"from":2,"to":1,"v":350},{"from":2,"to":2,"v":1980},{"from":2,"to":3,"v":497},{"from":3,"to":1,"v":12},{"from":3,"to":2,"v":365},{"from":3,"to":3,"v":478}],"moved_up":1006,"moved_down":727,"tier_story":[{"t":1,"n":1042,"avgStart":2.01,"avgEnd":2.54,"stayed":533,"up":509,"down":0},{"t":2,"n":2827,"avgStart":3.25,"avgEnd":3.33,"stayed":1980,"up":497,"down":350},{"t":3,"n":855,"avgStart":4.37,"avgEnd":4.02,"stayed":478,"up":0,"down":377}],"zone_rank":[{"oa":"Dustin Patton","n":296,"avg_latest":3.66,"avg_base":3.56,"t1_latest":27,"t1_base":26,"t3_latest":100,"t3_base":83,"delta":0.1,"t1_pct_chg":3.8,"t3_pct_chg":20.5},{"oa":"Michael Grant","n":248,"avg_latest":3.54,"avg_base":3.41,"t1_latest":26,"t1_base":29,"t3_latest":69,"t3_base":50,"delta":0.12,"t1_pct_chg":-10.3,"t3_pct_chg":38.0},{"oa":"Jiselle Medina","n":360,"avg_latest":3.49,"avg_base":3.52,"t1_latest":36,"t1_base":33,"t3_latest":91,"t3_base":101,"delta":-0.03,"t1_pct_chg":9.1,"t3_pct_chg":-9.9},{"oa":"Paul Inacio","n":260,"avg_latest":3.43,"avg_base":3.47,"t1_latest":31,"t1_base":34,"t3_latest":68,"t3_base":81,"delta":-0.04,"t1_pct_chg":-8.8,"t3_pct_chg":-16.0},{"oa":"Derron Spencer","n":404,"avg_latest":3.39,"avg_base":3.28,"t1_latest":41,"t1_base":71,"t3_latest":79,"t3_base":74,"delta":0.11,"t1_pct_chg":-42.3,"t3_pct_chg":6.8},{"oa":"AKM Shaju","n":394,"avg_latest":3.38,"avg_base":3.33,"t1_latest":77,"t1_base":82,"t3_latest":124,"t3_base":96,"delta":0.06,"t1_pct_chg":-6.1,"t3_pct_chg":29.2},{"oa":"Danielle Hudson","n":432,"avg_latest":3.26,"avg_base":3.07,"t1_latest":82,"t1_base":100,"t3_latest":88,"t3_base":54,"delta":0.19,"t1_pct_chg":-18.0,"t3_pct_chg":63.0},{"oa":"Cellesha Steel","n":175,"avg_latest":3.23,"avg_base":3.1,"t1_latest":35,"t1_base":31,"t3_latest":32,"t3_base":17,"delta":0.13,"t1_pct_chg":12.9,"t3_pct_chg":88.2},{"oa":"Tim King","n":209,"avg_latest":3.19,"avg_base":3.07,"t1_latest":44,"t1_base":54,"t3_latest":39,"t3_base":29,"delta":0.12,"t1_pct_chg":-18.5,"t3_pct_chg":34.5},{"oa":"Jesse White","n":373,"avg_latest":3.16,"avg_base":3.12,"t1_latest":82,"t1_base":88,"t3_latest":58,"t3_base":59,"delta":0.04,"t1_pct_chg":-6.8,"t3_pct_chg":-1.7},{"oa":"Finley Klement","n":358,"avg_latest":3.15,"avg_base":3.0,"t1_latest":94,"t1_base":104,"t3_latest":77,"t3_base":55,"delta":0.16,"t1_pct_chg":-9.6,"t3_pct_chg":40.0},{"oa":"Sergio Villasenor","n":271,"avg_latest":3.15,"avg_base":2.88,"t1_latest":63,"t1_base":93,"t3_latest":42,"t3_base":34,"delta":0.27,"t1_pct_chg":-32.3,"t3_pct_chg":23.5},{"oa":"Hellen Lobaccaro","n":300,"avg_latest":3.11,"avg_base":3.15,"t1_latest":90,"t1_base":73,"t3_latest":62,"t3_base":63,"delta":-0.04,"t1_pct_chg":23.3,"t3_pct_chg":-1.6},{"oa":"Sarah Heitz","n":411,"avg_latest":3.07,"avg_base":2.92,"t1_latest":105,"t1_base":131,"t3_latest":50,"t3_base":41,"delta":0.15,"t1_pct_chg":-19.8,"t3_pct_chg":22.0},{"oa":"Kathleen Basbagill","n":267,"avg_latest":2.9,"avg_base":2.81,"t1_latest":82,"t1_base":95,"t3_latest":20,"t3_base":18,"delta":0.09,"t1_pct_chg":-13.7,"t3_pct_chg":11.1}],"binding_tbl":{"1":{"WIN_SCORE_STAR":57.4,"SPEED_STAR":33.9,"BRAND_STAR":0.4,"HB_ONTIME_STAR":7.9,"FSCC_STAR":0.4},"2":{"WIN_SCORE_STAR":40.5,"SPEED_STAR":34.5,"BRAND_STAR":15.7,"HB_ONTIME_STAR":7.3,"FSCC_STAR":2.0},"3":{"WIN_SCORE_STAR":33.0,"SPEED_STAR":32.9,"BRAND_STAR":30.1,"HB_ONTIME_STAR":3.0,"FSCC_STAR":0.9}},"corr_fivestar_sssg":0.08,"corr_fivestar_sstg":0.1,"n_defaulting":188,"n_at_risk":46,"n_t1_watch":534};
 const tierColors = {1:'#a3122a', 2:'#c07f1f', 3:'#276b4d'};
 const starLabels = {WIN_SCORE_STAR:'Win Score', SPEED_STAR:'Speed', HB_ONTIME_STAR:'Hutbot', BRAND_STAR:'Brand', FSCC_STAR:'FSCC'};
 const starColors = {WIN_SCORE_STAR:'#a3122a', SPEED_STAR:'#c07f1f', HB_ONTIME_STAR:'#5b7a9e', BRAND_STAR:'#7a5ba3', FSCC_STAR:'#6b6560'};
+
+// Health strip — national default/at-risk counts
+const healthStrip = document.getElementById('healthStrip');
+if(healthStrip){
+  const ndl = NAT.n_defaulting||0, nar = NAT.n_at_risk||0, ntw = NAT.n_t1_watch||0;
+  let hs = '<div style="display:flex;gap:18px;align-items:center;font-family:IBM Plex Mono;font-size:11px;">';
+  hs += '<span style="color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.06em;">Store Health</span>';
+  if(ndl) hs += '<span style="display:inline-flex;align-items:center;gap:5px;"><span class="badge-dl" style="display:inline-block;padding:1px 7px;border-radius:10px;font-family:IBM Plex Mono;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#a3122a;color:#fff;">'+ndl+'</span> defaulting</span>';
+  if(nar) hs += '<span style="display:inline-flex;align-items:center;gap:5px;"><span class="badge-ar" style="display:inline-block;padding:1px 7px;border-radius:10px;font-family:IBM Plex Mono;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#c07f1f;color:#fff;">'+nar+'</span> at risk</span>';
+  if(ntw) hs += '<span style="display:inline-flex;align-items:center;gap:5px;"><span class="badge-tw" style="display:inline-block;padding:1px 7px;border-radius:10px;font-family:IBM Plex Mono;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#a3122a22;color:#a3122a;">'+ntw+'</span> T1 watch</span>';
+  if(!ndl && !nar && !ntw) hs += '<span style="color:rgba(255,255,255,.5)">No stores defaulting or at risk.</span>';
+  hs += '</div>';
+  healthStrip.innerHTML = hs;
+}
 
 const latestMonthly = NAT.monthly[NAT.monthly.length-1];
 const baseMonthly = NAT.monthly[0];

@@ -9,6 +9,13 @@ import base64
 from pathlib import Path
 from scipy.stats import pearsonr
 
+# Optional Snowflake connector
+try:
+    import snowflake.connector
+    HAS_SNOWFLAKE = True
+except ImportError:
+    HAS_SNOWFLAKE = False
+
 # ─── Config ────────────────────────────────────────────────────────────────
 BASE_DIR = Path("C:/Users/axc1195/OneDrive - Yum! Brands, Inc/Documents/5-Star/Reporting")
 FIVESTAR_CSV = BASE_DIR / "5-Star.csv"
@@ -39,6 +46,15 @@ OPENCODE_SERVER_URL = os.environ.get("OPENCODE_SERVER_URL", "http://127.0.0.1:62
 OPENCODE_SERVER_USER = os.environ.get("OPENCODE_SERVER_USERNAME", "opencode")
 OPENCODE_SERVER_PASS = os.environ.get("OPENCODE_SERVER_PASSWORD", "")
 SUMMARIES_CACHE = BASE_DIR / "_summaries.json"
+
+# Snowflake config (optional — set env vars to enable)
+SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT", "")
+SNOWFLAKE_USER = os.environ.get("SNOWFLAKE_USER", "")
+SNOWFLAKE_PASSWORD = os.environ.get("SNOWFLAKE_PASSWORD", "")
+SNOWFLAKE_WAREHOUSE = os.environ.get("SNOWFLAKE_WAREHOUSE", "")
+SNOWFLAKE_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "")
+SNOWFLAKE_SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "")
+SNOWFLAKE_ENABLED = all([SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD])
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -129,30 +145,68 @@ def load_data():
 
     print(f"  {len(df):,} rows loaded")
 
-    print("Loading store list...")
-    stores = pd.read_csv(
-        STORE_LIST_CSV,
-        dtype={"CHAINED_STORE_ID": str},
-    )
-    print(f"  {len(stores):,} stores loaded")
+    # Try loading store list (optional — provides Area, Lat/Long, FOP)
+    store_list_loaded = False
+    if STORE_LIST_CSV.exists():
+        print("Loading store list...")
+        try:
+            stores = pd.read_csv(
+                STORE_LIST_CSV,
+                dtype={"CHAINED_STORE_ID": str},
+            )
+            print(f"  {len(stores):,} stores loaded")
 
-    # Join: bring Area, Lat/Long, DMA, Franchisee from store list
-    # Keep all 5-Star rows, left join with store list for enrichment
-    join_cols = ["CHAINED_STORE_ID", "CURR_FRAN_OWNER_NM", "NIELSENDMADESC"]
-    df = df.merge(
-        stores[["CHAINED_STORE_ID", "FREGIONDESC", "FAREADESC", "LATITUDE", "LONGITUDE",
-                 "CURR_FRAN_OWNER_NM", "NIELSENDMADESC"]],
-        on="CHAINED_STORE_ID",
-        how="left",
-        suffixes=("", "_sl")
-    )
-    # Use store list values for fran/dma if available (they're more current)
-    # but the CSV already has them, so just use the merged version
-    # Fill missing fran/dma from the 5-Star CSV if store list missing
-    df["CURR_FRAN_OWNER_NM"] = df["CURR_FRAN_OWNER_NM_sl"].fillna(df["CURR_FRAN_OWNER_NM"])
-    df["NIELSENDMADESC"] = df["NIELSENDMADESC_sl"].fillna(df["NIELSENDMADESC"])
+            # Join: bring Area, Lat/Long, DMA, Franchisee, FOP from store list
+            join_cols = ["CHAINED_STORE_ID"]
+            store_cols = ["CHAINED_STORE_ID", "FREGIONDESC", "FAREADESC",
+                          "LATITUDE", "LONGITUDE", "CURR_FRAN_OWNER_NM",
+                          "NIELSENDMADESC"]
+            # Add FOP if available in store list
+            if "FOP" in stores.columns:
+                store_cols.append("FOP")
+                join_cols.append("FOP")
 
-    print(f"  Joined: {len(df):,} rows")
+            df = df.merge(
+                stores[store_cols],
+                on=join_cols if len(join_cols) > 1 else "CHAINED_STORE_ID",
+                how="left",
+                suffixes=("", "_sl")
+            )
+
+            # Fill missing fran/dma from the 5-Star CSV if store list missing
+            if "CURR_FRAN_OWNER_NM_sl" in df.columns:
+                sfm = df["CURR_FRAN_OWNER_NM_sl"].notna()
+                df.loc[sfm, "CURR_FRAN_OWNER_NM"] = df.loc[sfm, "CURR_FRAN_OWNER_NM_sl"]
+            if "NIELSENDMADESC_sl" in df.columns:
+                sdm = df["NIELSENDMADESC_sl"].notna()
+                df.loc[sdm, "NIELSENDMADESC"] = df.loc[sdm, "NIELSENDMADESC_sl"]
+            if "FOP_sl" in df.columns:
+                sfp = df["FOP_sl"].notna()
+                df.loc[sfp, "FOP"] = df.loc[sfp, "FOP_sl"]
+
+            store_list_loaded = True
+            print(f"  Joined: {len(df):,} rows")
+        except Exception as e:
+            print(f"  Store list load failed: {e}, proceeding without it")
+
+    if not store_list_loaded:
+        print("  No store list — using 5-Star CSV fields only")
+        # Ensure lat/long columns exist as placeholders
+        for c in ["LATITUDE", "LONGITUDE", "FAREADESC", "FREGIONDESC"]:
+            if c not in df.columns:
+                df[c] = None
+
+    # Ensure FOP column exists (check OPX_FOP first, then FOP)
+    if "OPX_FOP" in df.columns:
+        df = df.rename(columns={"OPX_FOP": "FOP"})
+    if "FOP" not in df.columns:
+        df["FOP"] = "Unknown"
+
+    # Ensure Director column exists (check OPX_DIRECTOR, then DIRECTOR)
+    if "OPX_DIRECTOR" in df.columns:
+        df = df.rename(columns={"OPX_DIRECTOR": "DIRECTOR"})
+    if "DIRECTOR" not in df.columns:
+        df["DIRECTOR"] = "Unknown"
 
     return df
 
@@ -560,6 +614,12 @@ def compute_single_zone(zone_df):
         dma = latest.get("NIELSENDMADESC", "")
         if pd.isna(dma):
             dma = ""
+        fop = latest.get("FOP", "")
+        if pd.isna(fop):
+            fop = "Unknown"
+        director = latest.get("DIRECTOR", "")
+        if pd.isna(director):
+            director = "Unknown"
 
         # Component scores per month
         comps = {}
@@ -612,6 +672,8 @@ def compute_single_zone(zone_df):
             "a": str(area),
             "f": str(fran),
             "d": str(dma),
+            "o": str(fop),
+            "r": str(director),
             "m1": scores.get(1),
             "m2": scores.get(2),
             "m3": scores.get(3),
@@ -643,6 +705,7 @@ def compute_single_zone(zone_df):
             "s": s["s"],
             "a": s["a"],
             "f": s["f"],
+            "o": s["o"],
             "sc": s["y"] if s["y"] is not None else s["m5"],
             "st": s["st"],
             "cu": s["cu"],
@@ -787,6 +850,140 @@ def compute_rising_star(df):
         "points": points,
         "n_t2_total": len(t2),
     }
+
+
+# ─── FOP Dashboard ─────────────────────────────────────────────────────────
+
+def compute_fop_data(df, zones_data):
+    """Compute FOP-level data aggregated from zones_data stores.
+
+    Groups stores by FOP → Franchisee, computing summary counts and
+    per-store detail for the FOP Dashboard.
+    """
+    print("Computing FOP dashboard data...")
+
+    # Collect all stores with FOP from all zones
+    all_stores = []
+    for oa, z in zones_data.items():
+        for s in z.get("stores", []):
+            all_stores.append(s)
+
+    if not all_stores:
+        print("  No stores found for FOP data")
+        return {}
+
+    # Group by Director → FOP → Franchisee
+    director_fops = {}  # director -> set of fops
+    fop_groups = {}
+    fop_director = {}  # fop -> director
+    for s in all_stores:
+        fop = s.get("o", "Unknown")
+        fran = s.get("f", "Unknown")
+        director = s.get("r", "Unknown")
+        fop_director[fop] = director
+        if director not in director_fops:
+            director_fops[director] = set()
+        director_fops[director].add(fop)
+        if fop not in fop_groups:
+            fop_groups[fop] = {}
+        if fran not in fop_groups[fop]:
+            fop_groups[fop][fran] = []
+        fop_groups[fop][fran].append(s)
+
+    # Director-level aggregations
+    director_data = {}
+    for director, fops in director_fops.items():
+        dir_stores = [s for s in all_stores if s.get("r", "Unknown") == director]
+        dir_n_dl = sum(1 for s in dir_stores if s.get("st") == "dl")
+        dir_n_ar = sum(1 for s in dir_stores if s.get("st") == "ar")
+        dir_n_tw = sum(1 for s in dir_stores if s.get("st") == "tw")
+        dir_n_fran = len(set(s.get("f", "Unknown") for s in dir_stores))
+        director_data[director] = {
+            "director": director,
+            "n_stores": len(dir_stores),
+            "n_fran": dir_n_fran,
+            "n_defaulting": dir_n_dl,
+            "n_at_risk": dir_n_ar,
+            "n_t1_watch": dir_n_tw,
+            "fops": sorted(fops),
+        }
+
+    fop_data = {}
+    for fop in sorted(fop_groups.keys()):
+        fran_list = []
+        n_stores_total = 0
+        n_defaulting = 0
+        n_at_risk = 0
+        n_t1_watch = 0
+        sum_avg = 0.0
+        count_avg = 0
+
+        for fran in sorted(fop_groups[fop].keys()):
+            stores = fop_groups[fop][fran]
+            fran_avg = sum(s.get("y") or s.get("m5") or 0 for s in stores) / len(stores)
+            fran_dl = sum(1 for s in stores if s.get("st") == "dl")
+            fran_ar = sum(1 for s in stores if s.get("st") == "ar")
+            fran_tw = sum(1 for s in stores if s.get("st") == "tw")
+
+            n_stores_total += len(stores)
+            n_defaulting += fran_dl
+            n_at_risk += fran_ar
+            n_t1_watch += fran_tw
+            sum_avg += fran_avg
+            count_avg += 1
+
+            fran_list.append({
+                "fran": fran,
+                "n": len(stores),
+                "avg": round(fran_avg, 2),
+                "n_defaulting": fran_dl,
+                "n_at_risk": fran_ar,
+                "n_t1_watch": fran_tw,
+                "stores": [{
+                    "s": s["s"],
+                    "m1": s.get("m1"),
+                    "m2": s.get("m2"),
+                    "m3": s.get("m3"),
+                    "m4": s.get("m4"),
+                    "m5": s.get("m5"),
+                    "y": s.get("y"),
+                    "t": s.get("t", 0),
+                    "st": s.get("st", "ok"),
+                    "cu": s.get("cu", 0),
+                    "fscc": s.get("fscc", 0),
+                    "brand": s.get("brand", 0),
+                    "d": s.get("d", ""),
+                    "a": s.get("a", ""),
+                    "oa": s.get("o", ""),
+                    "cw": s.get("cw", []),
+                    "cs": s.get("cs", []),
+                    "cb": s.get("cb", []),
+                    "ch": s.get("ch", []),
+                    "cf": s.get("cf", []),
+                } for s in stores]
+            })
+
+        # Sort franchisees by defaulting count (desc), then at-risk, then watch
+        fran_list.sort(key=lambda x: (-x["n_defaulting"], -x["n_at_risk"], -x["n_t1_watch"]))
+
+        overall_avg = round(sum_avg / count_avg, 2) if count_avg > 0 else 0
+
+        fop_data[fop] = {
+            "fop": fop,
+            "director": fop_director.get(fop, "Unknown"),
+            "n_stores": n_stores_total,
+            "n_fran": len(fran_list),
+            "n_defaulting": n_defaulting,
+            "n_at_risk": n_at_risk,
+            "n_t1_watch": n_t1_watch,
+            "headline_avg": overall_avg,
+            "franchisees": fran_list,
+        }
+
+    print(f"  {len(fop_data)} FOPs across {len(director_data)} directors, "
+          f"{sum(v['n_fran'] for v in fop_data.values())} franchisees")
+    return {"fops": fop_data, "directors": sorted(director_data.keys()),
+            "directorData": director_data}
 
 
 # ─── LLM Summaries ─────────────────────────────────────────────────────────
@@ -978,6 +1175,105 @@ def summarize_zones(zones_data):
         print(f"  Could not write cache: {e}")
 
 
+# ─── Snowflake Integration ──────────────────────────────────────────────────
+
+def query_snowflake(sql, params=None):
+    """Execute a query against Snowflake and return results as a list of dicts.
+    Returns None if Snowflake is not configured or the connector is missing.
+    """
+    if not SNOWFLAKE_ENABLED:
+        print("  Snowflake not configured (set SNOWFLAKE_ACCOUNT/USER/PASSWORD)")
+        return None
+    if not HAS_SNOWFLAKE:
+        print("  snowflake-connector-python not installed; run: pip install snowflake-connector-python")
+        return None
+
+    try:
+        conn = snowflake.connector.connect(
+            account=SNOWFLAKE_ACCOUNT,
+            user=SNOWFLAKE_USER,
+            password=SNOWFLAKE_PASSWORD,
+            warehouse=SNOWFLAKE_WAREHOUSE or None,
+            database=SNOWFLAKE_DATABASE or None,
+            schema=SNOWFLAKE_SCHEMA or None,
+        )
+        cur = conn.cursor()
+        cur.execute(sql, params or [])
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        result = [dict(zip(cols, row)) for row in rows]
+        cur.close()
+        conn.close()
+        return result
+    except Exception as e:
+        print(f"  Snowflake query failed: {e}")
+        return None
+
+
+def enrich_with_snowflake(df):
+    """Enrich store-month data with actual FSCC visit results from Snowflake.
+    Falls back gracefully if Snowflake is unavailable.
+    """
+    if not SNOWFLAKE_ENABLED:
+        return df
+
+    print("  Enriching with Snowflake data...")
+
+    # TODO: Replace with actual SQL when provided by the user.
+    # Expected shape: store_id, visit_date, component ('FSCC' or 'BRAND'), result (pass/fail/underperforming)
+    # For now this is a placeholder that returns the data unchanged.
+    sql = """
+    SELECT
+        CHAINED_STORE_ID AS store_id,
+        VISIT_DATE AS visit_date,
+        COMPONENT AS component,
+        RESULT AS result
+    FROM FIVESTAR_VISITS
+    WHERE VISIT_DATE >= '2026-01-01' AND VISIT_DATE < '2026-06-01'
+      AND COMPONENT IN ('FSCC', 'BRAND')
+    ORDER BY VISIT_DATE
+    """
+    visit_data = query_snowflake(sql)
+    if visit_data is None:
+        print("  (proceeding without Snowflake enrichment)")
+        return df
+
+    # Convert visit data to a lookup: store_id -> [(date, component, result), ...]
+    visit_lookup = {}
+    for row in visit_data:
+        sid = str(row.get("store_id", "")).strip()
+        if not sid:
+            continue
+        visit_lookup.setdefault(sid, []).append({
+            "date": row.get("visit_date"),
+            "component": row.get("component"),
+            "result": row.get("result"),
+        })
+
+    # For each store-month row, look up the most recent visit result for each component
+    # and add it as extra columns (_fscc_visit, _brand_visit)
+    df["_fscc_visit"] = None
+    df["_brand_visit"] = None
+
+    for idx, row in df.iterrows():
+        sid = str(row["CHAINED_STORE_ID"]).strip()
+        monthnum = int(row["MONTHNUM"])
+        # Approximate month-end date for matching
+        month_end = f"2026-{monthnum:02d}-01"
+
+        visits = visit_lookup.get(sid, [])
+        for v in visits:
+            if str(v["date"])[:7] >= month_end[:7]:
+                continue  # visit after this month, skip
+            if v["component"] == "FSCC":
+                df.at[idx, "_fscc_visit"] = v["result"]
+            elif v["component"] == "BRAND":
+                df.at[idx, "_brand_visit"] = v["result"]
+
+    print(f"  Enriched {len(visit_data)} visits across {len(visit_lookup)} stores")
+    return df
+
+
 # ─── HTML Rendering ────────────────────────────────────────────────────────
 
 def replace_data_block(html, var_name, json_data, indent=0):
@@ -1091,6 +1387,43 @@ def generate_zones_html(zones_data, template_path, output_path):
     print(f"  Written to {output_path}")
 
 
+def generate_fop_html(fop_data, template_path, output_path):
+    """Generate fop_dashboard.html from template."""
+    print(f"Generating {output_path.name}...")
+    with open(template_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    html = replace_data_block(html, "FOP_DATA", fop_data)
+
+    # Update FOP dropdown options
+    fop_names = sorted(fop_data.get("fops", {}).keys())
+    options = "\n".join(f'<option value="{name}">{name}</option>' for name in fop_names)
+    html = re.sub(
+        r'<select id="fopSelect".*?</select>',
+        f'<select id="fopSelect" onchange="renderFOP(this.value)">\n{options}\n        </select>',
+        html,
+        count=1,
+        flags=re.DOTALL
+    )
+
+    # Update Director dropdown options
+    director_names = sorted(fop_data.get("directors", []))
+    dir_options = '<option value="">All Directors</option>\n' + "\n".join(
+        f'<option value="{name}">{name}</option>' for name in director_names
+    )
+    html = re.sub(
+        r'<select id="directorSelect".*?</select>',
+        f'<select id="directorSelect" onchange="renderDirector(this.value)">\n{dir_options}\n        </select>',
+        html,
+        count=1,
+        flags=re.DOTALL
+    )
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"  Written to {output_path}")
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -1103,6 +1436,9 @@ def main():
 
     # Filter to analysis period
     df = filter_analysis_data(raw_df)
+
+    # Enrich with Snowflake visit data (FSCC / Brand actual results)
+    df = enrich_with_snowflake(df)
 
     # Assign tiers and binding
     df["_tier"] = df["OVERALL_FIVESTAR"].apply(classify_tier)
@@ -1127,6 +1463,28 @@ def main():
     nat_data["n_at_risk"] = nat_at_risk
     nat_data["n_t1_watch"] = nat_t1_watch
 
+    # Build national watch store list (all DL/AR/TW stores across all zones)
+    status_rank = {"dl": 0, "ar": 1, "tw": 2}
+    watch_stores = []
+    for oa, z in zones_data.items():
+        for s in z.get("stores", []):
+            if s["st"] in ("dl", "ar", "tw"):
+                watch_stores.append({
+                    "s": s["s"],
+                    "oa": oa,
+                    "a": s["a"],
+                    "d": s["d"],
+                    "f": s["f"],
+                    "o": s.get("o", "Unknown"),
+                    "st": s["st"],
+                    "cu": s["cu"],
+                    "sc": s["y"] if s["y"] is not None else s["m5"],
+                    "fscc": s["fscc"],
+                    "brand": s["brand"],
+                })
+    watch_stores.sort(key=lambda x: (status_rank.get(x["st"], 9), x["sc"] if x["sc"] is not None else 99))
+    nat_data["watch_stores"] = watch_stores
+
     # Convert to JSON-safe types
     nat_data = convert_for_json(nat_data)
     zones_data = convert_for_json(zones_data)
@@ -1134,6 +1492,9 @@ def main():
 
     # Generate LLM summaries for each OA
     summarize_zones(zones_data)
+
+    # Compute FOP dashboard data
+    fop_data = compute_fop_data(df, zones_data)
 
     # Generate HTML files
     template_dir = BASE_DIR
@@ -1156,7 +1517,13 @@ def main():
         OUTPUT_DIR / "rising_star.html"
     )
 
-    print("\nAll reports generated successfully!")
+    generate_fop_html(
+        fop_data,
+        template_dir / "fop_dashboard.html",
+        OUTPUT_DIR / "fop_dashboard.html"
+    )
+
+    print("\nAll 4 reports generated successfully!")
 
 
 if __name__ == "__main__":

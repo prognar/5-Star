@@ -116,3 +116,89 @@ Locations in the reports:
 > *Option A — Policy alignment:* Add a post-blend override step: if FSCC_STAR < threshold (e.g. < 2.5), cap OVERALL_FIVESTAR at 1.0 for that period, regardless of other component scores.
 >
 > *Option B — Policy update:* If the weighted-average formula is intentional, update the Brand Standards Manual to remove or clarify the 1-star cap language so that field expectations match the actual calculation.
+
+---
+
+## Monthly Data Pipeline
+
+The report generator needs two input files each month. Most other files (Python script, HTML templates, this document) are static and only change when logic or layout is updated.
+
+### 1. `5-Star.csv` — Monthly, Required
+
+Exported from the 5-Star data source each period after monthly scores close.
+
+| Column | Type | Required | Used For |
+|---|---|---|---|
+| `CHAINED_STORE_ID` | string | Yes | Store identifier (zero-padded for display) |
+| `YEARNO` | number | Yes | Filter to current year |
+| `MONTHNUM` | number | Yes | 1–12; Jan–May window currently |
+| `STATUSDESC` | string | Yes | Filter `"Open"` only |
+| `OVERALL_FIVESTAR` | number | Yes | The blended 5-star score |
+| `WIN_SCORE_STAR` | number | Yes | Component — guest satisfaction |
+| `SPEED_STAR` | number | Yes | Component — service speed |
+| `BRAND_STAR` | number | Yes | Component — brand standards |
+| `HB_ONTIME_STAR` | number | Yes | Component — hutbot on-time |
+| `FSCC_STAR` | number | Yes | Component — food safety |
+| `CURR_FRAN_OWNER_NM` | string | Yes | Franchisee name |
+| `NIELSENDMADESC` | string | Yes | DMA designation |
+| `OPX_OA` | string | Yes | Zone / OA name (15 values) |
+| `OPX_FOP` | string | No | **Franchise Operations Partner** — owner of the franchisee relationship. Required for the FOP Dashboard to function (otherwise all stores show as "Unknown" FOP). |
+| `OPX_DIRECTOR` | string | No | **Director** — regional director over multiple FOPs. Adds Director selector to the FOP Dashboard for portfolio roll-up. |
+| `FAREADESC` | string | No | Area grouping (if omitted, area drill-down is unavailable; can be populated from Store List) |
+| `LATITUDE` | number | No | Map marker latitude (if omitted, Rising Star map markers are unavailable) |
+| `LONGITUDE` | number | No | Map marker longitude |
+| `SSSG` | number | No | Same-store sales growth (correlation) |
+| `SSTG` | number | No | Same-store transaction growth (correlation) |
+
+**Example row:**
+```
+CHAINED_STORE_ID,YEARNO,MONTHNUM,STATUSDESC,OVERALL_FIVESTAR,WIN_SCORE_STAR,...,OPX_OA,FOP,FAREADESC,LATITUDE,LONGITUDE
+"00001",2026,5,Open,3.42,3.1,2.8,3.5,4.2,4.9,"John Smith","DALLAS","Danielle Hudson","Jane FOP","North Dallas",32.87,-96.78
+```
+
+**Cadence:** Drop into the `Reporting` folder, replacing the previous month's file. The Python script reads `5-Star.csv` by name.
+
+### 2. `Store List - 7-7-26 v2.csv` — Optional, Reference
+
+Store master with geographic and organizational hierarchy. **Only needed if `FAREADESC`, `LATITUDE`, `LONGITUDE`, or `FOP` are not already in the 5-Star export.** If the file is missing or fails to load, the script proceeds using only 5-Star CSV columns.
+
+| Column | Type | Used For |
+|---|---|---|
+| `CHAINED_STORE_ID` | string | Join key with 5-Star data |
+| `FREGIONDESC` | string | Region grouping |
+| `FAREADESC` | string | Area grouping (drill-down level) |
+| `LATITUDE` | number | Map markers |
+| `LONGITUDE` | number | Map markers |
+| `CURR_FRAN_OWNER_NM` | string | Franchisee name override |
+| `NIELSENDMADESC` | string | DMA override |
+| `FOP` | string | FOP assignment override (or `OPX_FOP` in 5-Star CSV) |
+| `DIRECTOR` | string | Director assignment override (or `OPX_DIRECTOR` in 5-Star CSV) |
+
+**Cadence:** Update only when stores open/close or org structure changes.
+
+### 3. Generated Output Files (do not edit)
+
+| File | Contents |
+|---|---|
+| `leadership_summary.html` | National executive view with Overview + Default Watch tabs |
+| `zone_scorecards.html` | Per-zone drill-down (Overview + Portfolio tabs) with OA LLM summaries |
+| `rising_star.html` | Tier 2 targeting map + DMA×Franchisee table |
+| `fop_dashboard.html` | **NEW** — FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail |
+| `_summaries.json` | Cached OA LLM summaries (auto-created, do not edit) |
+
+### Monthly Workflow
+
+```
+1. Export 5-Star.csv  →  drop into Reporting/
+2. (Optional) Update Store List if org changed
+3. Run:  python generate_reports.py
+4. Open fop_dashboard.html, zone_scorecards.html, leadership_summary.html, rising_star.html
+```
+
+Environment variables needed if using LLM summaries:
+
+```powershell
+$env:OPENCODE_SERVER_PASSWORD = "your_password"
+```
+
+No other setup required — the script automatically picks up the latest CSV and regenerates all four HTML files.

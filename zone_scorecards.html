@@ -566,6 +566,7 @@ function statusBadge(st){
 }
 
 function renderDMALevel(d, body){
+  const groups = aggregateStores(d.stores);
   // Show OA summary if available
   let html = '';
   if(d.summary){

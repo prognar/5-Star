@@ -100,7 +100,8 @@ Locations in the reports:
 - **Default Watch** section: replaces the old Focus List — all defaulting/at-risk stores sorted by severity
 - **Leadership Summary**: national counts of defaulting, at-risk, and T1 Watch stores (top banner area), plus National Insight narrative above tabs
 - **FOP Dashboard**: per-FOP AI summaries in the Portfolio Insight box (LLM-generated, 3-paragraph Past | Present | Future for each FOP)
-- **Zone Scorecards**: Boot Camp Workshop History section with date-aggregated rows, sparkline trends, and per-store drill-down
+- **Zone Scorecards**: 4 tabs — Overview (Goal Tracker, Tier Cards, Sankey, Trend, Binding, Spotlight, Default Watch, Best Improvers), Portfolio (DMA/Area/Store drill-down), Boot Camps (date-aggregated Boot Camp workshop history with sparkline trends and per-store drill-down), Targeting (Bootcamp-tier store areas by count and concentration with binding focus bars)
+- **Zone Scorecards → Boot Camps tab**: Workshop count is by distinct date (each date = one workshop), not per-store entries
 - **Leadership Summary (Workshops tab)**: Workshop Effectiveness comparing Boot Camp **and Rising Star** attendees vs. control group, plus date-aggregated national workshop list and per-FOP summaries
 - **Benchmark month**: For workshops, if the workshop date is after the 14th, the benchmark month is the workshop month itself rather than the prior month
 
@@ -203,9 +204,10 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 | File | Contents |
 |---|---|
 | `leadership_summary.html` | National executive view with Overview + Default Watch + Workshops tabs. National Insight narrative (LLM), Workshop Effectiveness for Boot Camp and Rising Star, date-aggregated workshop list, per-FOP summaries. Per-zone and national LLM summaries. |
-| `zone_scorecards.html` | Per-zone drill-down (Overview + Portfolio tabs) with OA LLM summaries + Workshop History (date-aggregated with sparkline trends and per-store drill-down) |
+| `zone_scorecards.html` | Per-zone drill-down (4 tabs: Overview, Portfolio, Boot Camps, Targeting) with OA summaries + Boot Camp Workshop History (distinct-date aggregation with sparkline trends and per-store drill-down) + Bootcamp Targeting table (T1 areas by count/concentration with binding focus bars) |
 | `fop_dashboard.html` | FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box (also available in leadership Workshops tab). |
-| `_summaries.json` | Cached LLM summaries (auto-created, do not edit) |
+| `rising_star.html` | Rising Star targeting — national Tier 2 store map, top 30 DMA×Franchisee groups (sorted by T2 count, with binding focus bars and multi-zone flags), and Rising Star workshop history (past + upcoming). Zone-agnostic by design — groups may span multiple OAs. |
+| `_summaries.json` | Cached LLM or fallback summaries (auto-created, delete to force regeneration) |
 
 ### Monthly Workflow
 
@@ -213,13 +215,15 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 1. Export 5-Star.csv + Workshops.csv  →  drop into Reporting/
 2. (Optional) Update Store List if org changed
 3. Run:  python generate_reports.py
-4. Open fop_dashboard.html, zone_scorecards.html, leadership_summary.html
+4. Open fop_dashboard.html, zone_scorecards.html, leadership_summary.html, rising_star.html
 ```
 
-Environment variables needed if using LLM summaries:
+LLM summaries (optional, set this environment variable to enable):
 
 ```powershell
 $env:OPENCODE_SERVER_PASSWORD = "your_password"
 ```
 
-No other setup required — the script automatically picks up the latest CSV inputs and regenerates all three HTML files.
+If no LLM server is configured, the script generates **deterministic fallback summaries** for leadership, zones, and FOPs — the reports always have content. Delete `_summaries.json` to force regeneration of all summaries.
+
+No other setup required — the script automatically picks up the latest CSV inputs and regenerates all four HTML files.

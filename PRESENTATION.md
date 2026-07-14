@@ -19,12 +19,13 @@ The 5-Star program generates a huge volume of store-month data, but there was no
                     ▼
           generate_reports.py
                     │
-          ├──► leadership_summary.html     (national health + watch list + workshop effectiveness)
+          ├──► leadership_summary.html     (national health + watch list + workshops tab + per-FOP summaries)
           ├──► zone_scorecards.html        (per-OA deep dive + portfolio drill + workshop history)
-          └──► fop_dashboard.html          (FOP/Director franchisee portfolio + per-FOP AI summaries)
+          ├──► fop_dashboard.html          (FOP/Director franchisee portfolio + per-FOP AI summaries)
+          └──► rising_star.html            (Tier 2 targeting map + DMA×Franchisee groups + workshop history)
 ```
 
-**Why a Python script?** The CSV is ~34K rows and growing. Doing this in Excel would be error-prone and slow. Python automates the join, filter, aggregation, and HTML generation in ~30 seconds. Drop the file, run the script, get three reports.
+**Why a Python script?** The CSV is ~34K rows and growing. Doing this in Excel would be error-prone and slow. Python automates the join, filter, aggregation, and HTML generation in ~30 seconds. Drop the file, run the script, get four reports.
 
 **Why self-contained HTML?** No server, no database, no login. Each .html file embeds its own data as a JSON constant. Open it in any browser, share it as a file attachment, it just works.
 
@@ -38,15 +39,18 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 
 **How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop.
 
-**What the report gives them:**
+**What the report gives them (4 tabs):**
 
-| Feature | Why it matters |
-|---|---|
-| Overview tab → Goal Tracker | Shows if they're on pace for T1 reduction and T3 growth |
-| Overview tab → Bootcamp Areas | Tells them **where to go** — which area/franchisee has the most Tier 1 stores, and what's binding them (Win Score? Speed? Brand?) |
-| Portfolio tab (OA → DMA → Area → Store) | Lets them drill into a specific DMA before a workshop, see every store with scores, status, and trends |
-| Store Detail | During a workshop, pull up a store's component scores and say "here's why you're in Bootcamp" |
-| Default Watch | Quick check: any stores at risk of falling through the floor? |
+| Tab | Feature | Why it matters |
+|---|---|---|
+| Overview | Goal Tracker | Shows if they're on pace for T1 reduction and T3 growth |
+| Overview | Area & Franchisee Spotlight | Tells them **where to go** — lowest/highest areas and best/worst franchisee |
+| Overview | Binding chart | Per-tier view of which component holds stores back |
+| Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |
+| Portfolio | Drill-down (OA → DMA → Area → Store) | Drill into a specific DMA before a workshop, see every store with scores, status, and trends |
+| Portfolio | Store Detail | During a workshop, pull up a store's component scores |
+| Boot Camps | Workshop History | Past and upcoming Boot Camp workshops aggregated by distinct date, with sparkline trends and per-store drill-down |
+| Targeting | Bootcamp Targeting | **Where to go** — which area/franchisee has the most Tier 1 stores by count and concentration, with binding focus bars |
 
 **The tier system they care about:**
 
@@ -99,7 +103,7 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 
 | Feature | Why it matters |
 |---|---|
-| National Insight (above tabs) | LLM-generated narrative — what happened, current state, top priority, all in one flowing read |
+| National Insight (above tabs) | Narrative summary — what happened, current state, top priority, all in one flowing read. LLM-generated when server is available, otherwise data-driven fallback. |
 | Zone Ranking | Which zone is best/worst. Which director's territory needs attention. |
 | Tier Movement (Sankey) | Are stores flowing up or down across the system? |
 | National Trend (chart) | Are overall scores improving month over month? Which components are dragging? |
@@ -118,7 +122,22 @@ Workshops tab   → shows whether training investments are working
 
 ---
 
-### 4. Workshops Tab (in `leadership_summary.html`)
+### 4. `rising_star.html` — Rising Star Targeting (Cross-Zone)
+
+**Goal:** Identify the best DMA×Franchisee combinations for Rising Star workshops by aggregating Tier 2 stores nationally, independent of OA zone boundaries.
+
+**Why a separate page:** Because a franchisee's stores within a single DMA may cross OA zone boundaries, but they should be targeted together. This page groups by DMA×Franchisee regardless of zone.
+
+**Key features:**
+- **National map** of all Tier 2 stores, colored by binding constraint
+- **Top 30 DMA×Franchisee groups** sorted by Tier 2 count, with focus bars showing the dominant binding component
+- **Concentration rate** — what % of this franchisee's stores in this DMA are Tier 2 (high rate = good target)
+- **Multi-zone flag** — when a DMA×Franchisee group spans multiple OAs, flagged so the right people are in the room
+- **Rising Star Workshop History** — past and upcoming workshops for Tier 2 stores, with per-store pre/post scores
+
+---
+
+### 5. Workshops Tab (in `leadership_summary.html`)
 
 **Goal:** Measure whether Boot Camp and Rising Star workshops actually drive score improvement, and give leadership visibility into every workshop nationally.
 
@@ -141,8 +160,8 @@ A store that scores 1.9★ in May is different from one that's been below 2.0★
 **3. Why binding = lowest component**
 A store's overall score is a weighted average. But the lowest component tells you what to fix. If Speed is the binding constraint, don't coach on Brand — coach on Speed. This is the actionable insight.
 
-**4. Why three files instead of one**
-Each role has a different entry point. Leadership doesn't care about DMA drill-down. OAs don't care about franchisee portfolios. Three files = three lenses, zero friction.
+**4. Why four files instead of one**
+Each role has a different entry point. Leadership doesn't care about DMA drill-down. OAs don't care about franchisee portfolios. Four files = four lenses, zero friction. The Rising Star page is intentionally separate because it's zone-agnostic — it cuts across OA boundaries by design.
 
 **5. Why the Store List is optional**
 The Store List was originally required for Area/LatLong/FOP fields. Now the 5-Star CSV carries those columns directly, so the Store List join only overrides values when present. Simpler pipeline, fewer dependencies.
@@ -154,11 +173,11 @@ The Store List was originally required for Area/LatLong/FOP fields. Now the 5-St
 ```
 1st-5th: Scores close → export 5-Star.csv + Workshops.csv
 5th:     python generate_reports.py
-         → three HTML files ready
+         → four HTML files ready
          → share links or attach files
 ```
 
-No database, no server, no credentials (except optionally for LLM summaries). The reports are self-contained — email them, post them, open from a shared drive.
+No database, no server, no credentials needed — even LLM summaries are optional (fallback summaries are data-driven). The reports are self-contained — email them, post them, open from a shared drive.
 
 ---
 

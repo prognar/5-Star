@@ -99,7 +99,10 @@ Locations in the reports:
 - **Portfolio tab** (zone_scorecards.html): badges on DMA rows, store-level table, and store detail
 - **Default Watch** section: replaces the old Focus List — all defaulting/at-risk stores sorted by severity
 - **Leadership Summary**: national counts of defaulting, at-risk, and T1 Watch stores (top banner area)
-- **Rising Star targeting**: unaffected by default classification
+- **FOP Dashboard**: per-FOP AI summaries in the Portfolio Insight box (LLM-generated, 3-paragraph Past | Present | Future for each FOP)
+- **Zone Scorecards**: Boot Camp Workshop History section with date-aggregated rows, sparkline trends, and per-store drill-down
+- **Leadership Summary**: Workshop Effectiveness section comparing Boot Camp attendees vs. control group
+- **Benchmark month**: For workshops, if the workshop date is after the 14th, the benchmark month is the workshop month itself rather than the prior month
 
 ---
 
@@ -121,7 +124,7 @@ Locations in the reports:
 
 ## Monthly Data Pipeline
 
-The report generator needs two input files each month. Most other files (Python script, HTML templates, this document) are static and only change when logic or layout is updated.
+The report generator needs up to three input files each month. Most other files (Python script, HTML templates, this document) are static and only change when logic or layout is updated.
 
 ### 1. `5-Star.csv` — Monthly, Required
 
@@ -145,8 +148,8 @@ Exported from the 5-Star data source each period after monthly scores close.
 | `OPX_FOP` | string | No | **Franchise Operations Partner** — owner of the franchisee relationship. Required for the FOP Dashboard to function (otherwise all stores show as "Unknown" FOP). |
 | `OPX_DIRECTOR` | string | No | **Director** — regional director over multiple FOPs. Adds Director selector to the FOP Dashboard for portfolio roll-up. |
 | `FAREADESC` | string | No | Area grouping (if omitted, area drill-down is unavailable; can be populated from Store List) |
-| `LATITUDE` | number | No | Map marker latitude (if omitted, Rising Star map markers are unavailable) |
-| `LONGITUDE` | number | No | Map marker longitude |
+| `LATITUDE` | number | No | Map marker latitude (used by Portfolio drill-down) |
+| `LONGITUDE` | number | No | Map marker longitude (used by Portfolio drill-down) |
 | `SSSG` | number | No | Same-store sales growth (correlation) |
 | `SSTG` | number | No | Same-store transaction growth (correlation) |
 
@@ -176,23 +179,41 @@ Store master with geographic and organizational hierarchy. **Only needed if `FAR
 
 **Cadence:** Update only when stores open/close or org structure changes.
 
-### 3. Generated Output Files (do not edit)
+### 3. `Workshops.csv` — Optional, Boot Camp Data
+
+Boot Camp workshop records. If this file is missing, workshop history and effectiveness sections are hidden.
+
+| Column | Type | Required | Used For |
+|---|---|---|---|
+| `STORE_NUMBER` | string | Yes | Store identifier (matches `CHAINED_STORE_ID` in 5-Star CSV) |
+| `OA_NAME` | string | Yes | OA who ran the workshop |
+| `WORKSHOP_DATE` | date (YYYY-MM-DD) | Yes | Workshop date; benchmark month is the workshop month if day > 14, otherwise the prior month |
+| `WORKSHOP_TYPE` | string | Yes | Filtered to "Boot Camp" entries |
+
+**Example row:**
+```
+STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
+"00001","Danielle Hudson",2026-03-12,Boot Camp
+```
+
+**Benchmark logic:** If the workshop date is after the 14th of the month, the benchmark month is the workshop month itself (the store had already received that month's score before the workshop). If on or before the 14th, the benchmark is the prior month.
+
+### 4. Generated Output Files (do not edit)
 
 | File | Contents |
 |---|---|
-| `leadership_summary.html` | National executive view with Overview + Default Watch tabs |
-| `zone_scorecards.html` | Per-zone drill-down (Overview + Portfolio tabs) with OA LLM summaries |
-| `rising_star.html` | Tier 2 targeting map + DMA×Franchisee table |
-| `fop_dashboard.html` | **NEW** — FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail |
-| `_summaries.json` | Cached OA LLM summaries (auto-created, do not edit) |
+| `leadership_summary.html` | National executive view with Overview + Default Watch tabs + Workshop Effectiveness (control vs. variable). Per-zone and national LLM summaries. |
+| `zone_scorecards.html` | Per-zone drill-down (Overview + Portfolio tabs) with OA LLM summaries + Boot Camp Workshop History (date-aggregated with sparkline trends and per-store drill-down) |
+| `fop_dashboard.html` | FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box. |
+| `_summaries.json` | Cached LLM summaries (auto-created, do not edit) |
 
 ### Monthly Workflow
 
 ```
-1. Export 5-Star.csv  →  drop into Reporting/
+1. Export 5-Star.csv + Workshops.csv  →  drop into Reporting/
 2. (Optional) Update Store List if org changed
 3. Run:  python generate_reports.py
-4. Open fop_dashboard.html, zone_scorecards.html, leadership_summary.html, rising_star.html
+4. Open fop_dashboard.html, zone_scorecards.html, leadership_summary.html
 ```
 
 Environment variables needed if using LLM summaries:
@@ -201,4 +222,4 @@ Environment variables needed if using LLM summaries:
 $env:OPENCODE_SERVER_PASSWORD = "your_password"
 ```
 
-No other setup required — the script automatically picks up the latest CSV and regenerates all four HTML files.
+No other setup required — the script automatically picks up the latest CSV inputs and regenerates all three HTML files.

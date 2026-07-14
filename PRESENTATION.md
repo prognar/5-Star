@@ -13,18 +13,18 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 ## The Data Pipeline
 
 ```
-5-Star.csv (monthly export)
-    │
-    ▼
-generate_reports.py
-    │
-    ├──► leadership_summary.html     (national health + watch list)
-    ├──► zone_scorecards.html        (per-OA deep dive + portfolio drill)
-    ├──► rising_star.html            (Tier 2 growth map)
-    └──► fop_dashboard.html          (FOP/Director franchisee portfolio)
+5-Star.csv (monthly export)     Workshops.csv (optional, workshops)
+    │                                   │
+    └───────────────┬───────────────────┘
+                    ▼
+          generate_reports.py
+                    │
+          ├──► leadership_summary.html     (national health + watch list + workshop effectiveness)
+          ├──► zone_scorecards.html        (per-OA deep dive + portfolio drill + workshop history)
+          └──► fop_dashboard.html          (FOP/Director franchisee portfolio + per-FOP AI summaries)
 ```
 
-**Why a Python script?** The CSV is ~34K rows and growing. Doing this in Excel would be error-prone and slow. Python automates the join, filter, aggregation, and HTML generation in ~30 seconds. Drop the file, run the script, get four reports.
+**Why a Python script?** The CSV is ~34K rows and growing. Doing this in Excel would be error-prone and slow. Python automates the join, filter, aggregation, and HTML generation in ~30 seconds. Drop the file, run the script, get three reports.
 
 **Why self-contained HTML?** No server, no database, no login. Each .html file embeds its own data as a JSON constant. Open it in any browser, share it as a file attachment, it just works.
 
@@ -63,6 +63,8 @@ generate_reports.py
 ### 2. `fop_dashboard.html` — For FOPs and Directors
 
 **Goal:** Keep franchisees healthy and default-free.
+
+**New:** Per-FOP AI summaries — when you select a FOP, an LLM-generated 3-paragraph insight (Past | Present | Future) appears at the top, summarizing franchisee shifts, risk distribution, and recommended actions.
 
 **How FOPs work:** They manage the Franchisee relationship. If a franchisee's stores start defaulting, the FOP escalates with both the franchisee and the OA to build an action plan. They don't coach stores directly — they manage the portfolio.
 
@@ -115,16 +117,11 @@ Trend       → shows if strategy is working
 
 ---
 
-### 4. `rising_star.html` — For OAs and FOPs (Targeting)
+### 4. Workshop Effectiveness (in `leadership_summary.html`)
 
-**Goal:** Find growth opportunities — stores that are one coaching session away from Tier 3.
+**Goal:** Measure whether Boot Camp workshops actually drive score improvement.
 
-**Why a separate report:** The Zone Scorecard shows problems. The Rising Star map shows potential. OAs use it to decide where to run the next Bootcamp workshop (clusters of Tier 2 stores respond well to group coaching).
-
-**What it shows:**
-- Map of all 2,809 Tier 2 stores, color-coded by binding component
-- Top 30 DMA × Franchisee groups ranked by Tier 2 count
-- Binding focus per group (to tailor the workshop content)
+**What it shows:** Control vs. variable comparison — stores that attended a workshop vs. similar stores that didn't. Displayed as two side-by-side metric groups (n, avg benchmark, avg latest, avg improvement). A larger improvement in the workshop group validates the program.
 
 ---
 
@@ -139,8 +136,8 @@ A store that scores 1.9★ in May is different from one that's been below 2.0★
 **3. Why binding = lowest component**
 A store's overall score is a weighted average. But the lowest component tells you what to fix. If Speed is the binding constraint, don't coach on Brand — coach on Speed. This is the actionable insight.
 
-**4. Why four files instead of one**
-Each role has a different entry point. Leadership doesn't care about DMA drill-down. OAs don't care about franchisee portfolios. Four files = four lenses, zero friction.
+**4. Why three files instead of one**
+Each role has a different entry point. Leadership doesn't care about DMA drill-down. OAs don't care about franchisee portfolios. Three files = three lenses, zero friction.
 
 **5. Why the Store List is optional**
 The Store List was originally required for Area/LatLong/FOP fields. Now the 5-Star CSV carries those columns directly, so the Store List join only overrides values when present. Simpler pipeline, fewer dependencies.
@@ -150,9 +147,9 @@ The Store List was originally required for Area/LatLong/FOP fields. Now the 5-St
 ## Monthly Cadence
 
 ```
-1st-5th: Scores close → export 5-Star.csv
+1st-5th: Scores close → export 5-Star.csv + Workshops.csv
 5th:     python generate_reports.py
-         → four HTML files ready
+         → three HTML files ready
          → share links or attach files
 ```
 

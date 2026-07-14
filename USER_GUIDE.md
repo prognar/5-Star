@@ -1,6 +1,6 @@
 # 5-Star Reports — Quick Start Guide
 
-Four HTML dashboards, generated from `5-Star.csv`. Open in any browser.
+Three HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`. Open in any browser.
 
 ---
 
@@ -18,6 +18,8 @@ Four HTML dashboards, generated from `5-Star.csv`. Open in any browser.
 | Click a **FOP** row (or select from dropdown) | That FOP's summary (stores, franchisees, defaulting/at-risk/T1 counts) + table of their franchisees |
 | Click a **franchisee** row | Store list for that franchisee with status badges, scores, trend arrows |
 | Click **Detail** on a store | Full component breakdown (Win Score, Speed, Brand, Hutbot, FSCC) with monthly scores and sparklines |
+
+**Per-FOP AI Summary:** When you select a FOP (from the dropdown or by clicking a row), a box at the top of the page shows a 3-paragraph LLM-generated summary (Past | Present | Future) specific to that FOP's portfolio, covering which franchisees improved/declined, risk distribution, and recommended actions.
 
 **Key columns in the franchisee table:**
 - **Defaulting / At Risk / T1 Watch** — count of stores in each status within that franchisee
@@ -61,6 +63,7 @@ Four HTML dashboards, generated from `5-Star.csv`. Open in any browser.
 - **Trend chart** — zone-level 5-month trend with component lines
 - **Binding chart** — per-tier binding percentages
 - **Bootcamp Areas** — which area/franchisee combinations have the most Tier 1 stores, with binding focus bars
+- **Boot Camp Workshop History** — past and upcoming Boot Camp workshops aggregated by date. Each row shows the date, store count, average benchmark score, monthly post-scores with sparkline trend, and net delta. Click any date row to drill down to individual store details (pre-score, post-scores per month, and delta).
 - **Default Watch** — this zone's defaulting/at-risk/T1-watch stores
 - **Best Improvers** — stores with the biggest Jan→May score increase
 
@@ -75,24 +78,26 @@ Four HTML dashboards, generated from `5-Star.csv`. Open in any browser.
 
 ---
 
-## 4. `rising_star.html` — Rising Star Targeting
+## 4. Workshop Effectiveness (in `leadership_summary.html`)
 
-**Audience:** OAs and FOPs looking for growth opportunities.
+**Audience:** Leadership, Strategy.
 
-**What it does:** Maps where Tier 2 (Rising Star) stores cluster, so you can target coaching to push them to Tier 3.
+**Location:** In the Leadership Overview tab, below the Zone Ranking.
 
-- **Map** — each point is a Tier 2 store. Color-coded by binding component. Hover for store details.
-- **Top 30 DMA × Franchisee table** — groups with the most Tier 2 stores, ranked by count. Shows each group's binding focus (which component is holding them back).
-- **Headline number** — total Tier 2 stores nationally
+**What it does:** Compares stores that attended a Boot Camp workshop against a control group of similar stores that did not, to measure whether workshops actually improve scores.
+
+- **Variable (Boot Camp stores):** Average benchmark score, average latest score, and average improvement
+- **Control (non-attendees):** Same metrics for stores that didn't attend a workshop in the same benchmark period
+- If the variable group improves more than the control, workshops are working
 
 ---
 
 ## Monthly Update
 
 ```powershell
-# Drop new 5-Star.csv into the Reporting folder, then:
+# Drop 5-Star.csv (and optionally Workshops.csv) into the Reporting folder, then:
 python generate_reports.py
-# Open any of the 4 HTML files — they're self-contained.
+# Open any of the 3 HTML files — they're self-contained.
 ```
 
-No other files needed. The Store List CSV is optional (only needed if lat/lon for the map is required).
+The Store List CSV and Workshops.csv are optional. The script auto-detects available months and handles missing files gracefully.

@@ -20,7 +20,7 @@ The 5-Star program generates a huge volume of store-month data, but there was no
           generate_reports.py
                     │
            ├──► leadership_summary.html     (national health + watch list + workshops + per-FOP summaries)
-           ├──► fop_dashboard.html          (FOP/Director franchisee portfolio + per-FOP AI summaries)
+           ├──► fz_dashboard.html           (Franchisee Dashboard — franchisee portfolio + Director/FOP drill-down)
            ├──► zone_scorecards.html        (per-OA deep dive + portfolio drill + workshop history)
            └──► rising_star.html            (Tier 2 targeting map + DMA×Franchisee groups + workshop history)
 ```
@@ -66,7 +66,7 @@ Workshops      → shows whether training investments are paying off
 
 ---
 
-### 2. `fop_dashboard.html` — For FOPs and Directors
+### 2. `fz_dashboard.html` — Franchisee Dashboard
 
 **Goal:** Keep franchisees healthy and default-free.
 

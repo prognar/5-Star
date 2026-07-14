@@ -4,7 +4,7 @@ Four HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`. 
 
 ---
 
-## 1. `fop_dashboard.html` — FOP Portfolio View
+## 1. `fz_dashboard.html` — Franchisee Dashboard
 
 **Audience:** FOPs (Franchise Operations Partners) and Directors.
 

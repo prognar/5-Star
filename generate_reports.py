@@ -1180,13 +1180,13 @@ def generate_rising_star_html(rising_data, template_path, output_path):
     print(f"  Written to {output_path}")
 
 
-# ─── FOP Dashboard ─────────────────────────────────────────────────────────
+# ─── Franchisee Dashboard ──────────────────────────────────────────────────
 
 def compute_fop_data(df, zones_data):
     """Compute FOP-level data aggregated from zones_data stores.
 
     Groups stores by FOP → Franchisee, computing summary counts and
-    per-store detail for the FOP Dashboard.
+    per-store detail for the Franchisee Dashboard.
     """
     print("Computing FOP dashboard data...")
 
@@ -2206,8 +2206,8 @@ def generate_zones_html(zones_data, template_path, output_path):
 
 
 def generate_fop_html(fop_data, template_path, output_path):
-    """Generate fop_dashboard.html from template."""
-    print(f"Generating {output_path.name}...")
+    """Generate Franchisee Dashboard HTML from template."""
+    print(f"  Franchisee Dashboard → {output_path.name}")
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
 
@@ -2371,8 +2371,8 @@ def main():
 
     generate_fop_html(
         fop_data,
-        template_dir / "fop_dashboard.html",
-        OUTPUT_DIR / "fop_dashboard.html"
+        template_dir / "fz_dashboard.html",
+        OUTPUT_DIR / "fz_dashboard.html"
     )
 
     generate_rising_star_html(

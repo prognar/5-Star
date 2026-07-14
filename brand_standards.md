@@ -99,7 +99,7 @@ Locations in the reports:
 - **Portfolio tab** (zone_scorecards.html): badges on DMA rows, store-level table, and store detail
 - **Default Watch** section: replaces the old Focus List — all defaulting/at-risk stores sorted by severity
 - **Leadership Summary**: national counts of defaulting, at-risk, and T1 Watch stores (top banner area), plus National Insight narrative above tabs
-- **FOP Dashboard**: per-FOP AI summaries in the Portfolio Insight box (LLM-generated, 3-paragraph Past | Present | Future for each FOP)
+- **Franchisee Dashboard**: per-FOP AI summaries in the Portfolio Insight box (LLM-generated, 3-paragraph Past | Present | Future for each FOP)
 - **Zone Scorecards**: 4 tabs — Overview (Goal Tracker, Tier Cards, Sankey, Trend, Binding, Spotlight, Default Watch, Best Improvers), Portfolio (DMA/Area/Store drill-down), Boot Camps (date-aggregated Boot Camp workshop history with sparkline trends and per-store drill-down), Targeting (Bootcamp-tier store areas by count and concentration with binding focus bars)
 - **Zone Scorecards → Boot Camps tab**: Workshop count is by distinct date (each date = one workshop), not per-store entries
 - **Leadership Summary (Workshops tab)**: Workshop Effectiveness comparing Boot Camp **and Rising Star** attendees vs. control group, plus date-aggregated national workshop list and per-FOP summaries
@@ -146,8 +146,8 @@ Exported from the 5-Star data source each period after monthly scores close.
 | `CURR_FRAN_OWNER_NM` | string | Yes | Franchisee name |
 | `NIELSENDMADESC` | string | Yes | DMA designation |
 | `OPX_OA` | string | Yes | Zone / OA name (15 values) |
-| `OPX_FOP` | string | No | **Franchise Operations Partner** — owner of the franchisee relationship. Required for the FOP Dashboard to function (otherwise all stores show as "Unknown" FOP). |
-| `OPX_DIRECTOR` | string | No | **Director** — regional director over multiple FOPs. Adds Director selector to the FOP Dashboard for portfolio roll-up. |
+| `OPX_FOP` | string | No | **Franchise Operations Partner** — owner of the franchisee relationship. Required for the Franchisee Dashboard to function (otherwise all stores show as "Unknown" FOP). |
+| `OPX_DIRECTOR` | string | No | **Director** — regional director over multiple FOPs. Adds Director selector to the Franchisee Dashboard for portfolio roll-up. |
 | `FAREADESC` | string | No | Area grouping (if omitted, area drill-down is unavailable; can be populated from Store List) |
 | `LATITUDE` | number | No | Map marker latitude (used by Portfolio drill-down) |
 | `LONGITUDE` | number | No | Map marker longitude (used by Portfolio drill-down) |
@@ -205,7 +205,7 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 |---|---|
 | `leadership_summary.html` | National executive view with Overview + Default Watch + Workshops tabs. National Insight narrative (LLM), Workshop Effectiveness for Boot Camp and Rising Star, date-aggregated workshop list, per-FOP summaries. Per-zone and national LLM summaries. |
 | `zone_scorecards.html` | Per-zone drill-down (4 tabs: Overview, Portfolio, Boot Camps, Targeting) with OA summaries + Boot Camp Workshop History (distinct-date aggregation with sparkline trends and per-store drill-down) + Bootcamp Targeting table (T1 areas by count/concentration with binding focus bars) |
-| `fop_dashboard.html` | FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box (also available in leadership Workshops tab). |
+| `fz_dashboard.html` | Franchisee Dashboard: portfolio overview of all franchisees with Director/FOP drill-down. Select Director for roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box (also available in leadership Workshops tab). |
 | `rising_star.html` | Rising Star targeting — national Tier 2 store map, top 30 DMA×Franchisee groups (sorted by T2 count, with binding focus bars and multi-zone flags), and Rising Star workshop history (past + upcoming). Zone-agnostic by design — groups may span multiple OAs. |
 | `_summaries.json` | Cached LLM or fallback summaries (auto-created, delete to force regeneration) |
 
@@ -215,7 +215,7 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 1. Export 5-Star.csv + Workshops.csv  →  drop into Reporting/
 2. (Optional) Update Store List if org changed
 3. Run:  python generate_reports.py
-4. Open fop_dashboard.html, zone_scorecards.html, leadership_summary.html, rising_star.html
+4. Open fz_dashboard.html, zone_scorecards.html, leadership_summary.html, rising_star.html
 ```
 
 LLM summaries (optional, set this environment variable to enable):

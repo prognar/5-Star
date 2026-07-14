@@ -34,7 +34,9 @@ Three HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`.
 
 **Audience:** Leadership, Directors, Strategy.
 
-**What it does:** National roll-up of all 15 zones in one page. Two tabs.
+**What it does:** National roll-up of all 15 zones in one page. Three tabs.
+
+**National Insight** (shown above tabs): An LLM-generated narrative summary of the portfolio — no structured sections, just a flowing analysis of what happened, the current state, and the top priority.
 
 ### Overview tab
 - **Goal Tracker** — how the business is pacing toward annual T1 reduction, T3 growth, and upward movement targets (green = on pace, amber = behind, red = moving wrong way)
@@ -42,11 +44,17 @@ Three HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`.
 - **Zone Ranking** — all 15 zones sorted by current average, with movement arrows
 - **National Trend** — 5-month line chart of overall average and each component
 - **Binding chart** — for each tier nationally, which components are the binding constraint (lowest score)
+- **Caveat** — correlation of 5-Star scores with same-store sales/transaction growth
 
 ### Default Watch tab
 - **Sortable table** of every defaulting, at-risk, and T1-watch store nationwide
 - Columns: Store ID, OA, Franchisee, DMA, Score, Status, Consecutive months, FSCC/Brand fails
 - Sorted by severity (defaulting first, then at-risk, then watch) then score ascending
+
+### Workshops tab
+- **Workshop Effectiveness** — control vs. variable comparison for **both Boot Camp and Rising Star** workshops. Shows how attendees' scores changed vs non-attendees.
+- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date. Each date row shows store count, OA(s), type breakdown (BC/RS), and average trend. Click to drill down to individual store details with sparklines.
+- **Per-FOP Summaries** — LLM-generated operational summaries for each Franchisee Operator Partner, showing their portfolio health, risk distribution, and recommended actions.
 
 ---
 
@@ -82,13 +90,17 @@ Three HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`.
 
 **Audience:** Leadership, Strategy.
 
-**Location:** In the Leadership Overview tab, below the Zone Ranking.
+**Location:** In the Leadership **Workshops** tab (third tab).
 
-**What it does:** Compares stores that attended a Boot Camp workshop against a control group of similar stores that did not, to measure whether workshops actually improve scores.
+**What it does:** Compares stores that attended a workshop (Boot Camp **or** Rising Star) against a control group of similar stores that did not, to measure whether workshops actually improve scores.
 
-- **Variable (Boot Camp stores):** Average benchmark score, average latest score, and average improvement
-- **Control (non-attendees):** Same metrics for stores that didn't attend a workshop in the same benchmark period
-- If the variable group improves more than the control, workshops are working
+- **Variable group:** Stores that attended a workshop of the given type
+- **Control group:** Stores that didn't attend any workshop in the same benchmark period
+- Shows benchmark month, latest month, average scores, and average improvement (Δ) for both groups
+- If the variable group improves more than the control, workshops are working for that type
+
+### Per-FOP Summaries (same tab)
+Also in the Workshops tab: LLM-generated 3-paragraph summaries for each FOP, covering portfolio shifts, risk distribution, and recommended actions.
 
 ---
 

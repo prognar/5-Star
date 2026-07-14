@@ -99,29 +99,34 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 
 | Feature | Why it matters |
 |---|---|
-| Goal Tracker | T1 reduction, T3 growth, upward movement — is the system trending right? |
+| National Insight (above tabs) | LLM-generated narrative — what happened, current state, top priority, all in one flowing read |
 | Zone Ranking | Which zone is best/worst. Which director's territory needs attention. |
 | Tier Movement (Sankey) | Are stores flowing up or down across the system? |
 | National Trend (chart) | Are overall scores improving month over month? Which components are dragging? |
 | Default Watch tab | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual level |
 | Binding chart | What's holding each tier back nationally? If Bootcamp stores are all bound on Win Score, that's a strategic finding. |
+| Workshops tab | Workshop Effectiveness (Boot Camp **and** Rising Star), date-aggregated workshop history with per-store drill-down, and per-FOP LLM summaries |
 
 **The leadership loop:**
 
 ```
-Goal Tracker → shows if we're on pace
-Zone Ranking → shows who needs help
-Default Watch → shows who's in crisis
-Trend       → shows if strategy is working
+National Insight → narrative overview of the portfolio
+Zone Ranking    → shows who needs help
+Default Watch   → shows who's in crisis
+Workshops tab   → shows whether training investments are working
 ```
 
 ---
 
-### 4. Workshop Effectiveness (in `leadership_summary.html`)
+### 4. Workshops Tab (in `leadership_summary.html`)
 
-**Goal:** Measure whether Boot Camp workshops actually drive score improvement.
+**Goal:** Measure whether Boot Camp and Rising Star workshops actually drive score improvement, and give leadership visibility into every workshop nationally.
 
-**What it shows:** Control vs. variable comparison — stores that attended a workshop vs. similar stores that didn't. Displayed as two side-by-side metric groups (n, avg benchmark, avg latest, avg improvement). A larger improvement in the workshop group validates the program.
+**Workshop Effectiveness:** Control vs. variable comparison for both Boot Camp and Rising Star — stores that attended vs. similar stores that didn't. Displayed as two tables (n, avg benchmark, avg latest, avg improvement). A larger improvement in the workshop group validates the program for that workshop type.
+
+**Date-Aggregated Workshop List:** Every workshop across all zones, grouped by date. Each row shows store count, type breakdown (BC/RS), OAs, average trend delta, and click-to-expand per-store details with sparklines.
+
+**Per-FOP Summaries:** LLM-generated 3-paragraph summaries for each Franchisee Operator Partner, showing portfolio shifts, risk distribution, and recommended actions.
 
 ---
 

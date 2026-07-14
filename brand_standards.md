@@ -90,7 +90,7 @@ These flags identify stores that meet the contractual default thresholds or are 
 The automated 5-Star reports flag these stores as follows:
 
 | Status | Badge | Color | Definition |
-|---|---|---|---|
+|---|---|---|---|---|
 | Defaulting | `DEFAULT` | Red (#a3122a) | ≥3 consecutive months < 2.0★ OR ≥4 of 5 |
 | At Risk | `AT RISK` | Amber (#c07f1f) | 2 consecutive months < 2.0★ |
 | T1 Watch | `WATCH` | Red outline | Latest score 2.0–2.5★, not DL/AR |
@@ -98,10 +98,10 @@ The automated 5-Star reports flag these stores as follows:
 Locations in the reports:
 - **Portfolio tab** (zone_scorecards.html): badges on DMA rows, store-level table, and store detail
 - **Default Watch** section: replaces the old Focus List — all defaulting/at-risk stores sorted by severity
-- **Leadership Summary**: national counts of defaulting, at-risk, and T1 Watch stores (top banner area)
+- **Leadership Summary**: national counts of defaulting, at-risk, and T1 Watch stores (top banner area), plus National Insight narrative above tabs
 - **FOP Dashboard**: per-FOP AI summaries in the Portfolio Insight box (LLM-generated, 3-paragraph Past | Present | Future for each FOP)
 - **Zone Scorecards**: Boot Camp Workshop History section with date-aggregated rows, sparkline trends, and per-store drill-down
-- **Leadership Summary**: Workshop Effectiveness section comparing Boot Camp attendees vs. control group
+- **Leadership Summary (Workshops tab)**: Workshop Effectiveness comparing Boot Camp **and Rising Star** attendees vs. control group, plus date-aggregated national workshop list and per-FOP summaries
 - **Benchmark month**: For workshops, if the workshop date is after the 14th, the benchmark month is the workshop month itself rather than the prior month
 
 ---
@@ -179,16 +179,16 @@ Store master with geographic and organizational hierarchy. **Only needed if `FAR
 
 **Cadence:** Update only when stores open/close or org structure changes.
 
-### 3. `Workshops.csv` — Optional, Boot Camp Data
+### 3. `Workshops.csv` — Optional, Workshop Data
 
-Boot Camp workshop records. If this file is missing, workshop history and effectiveness sections are hidden.
+Boot Camp and Rising Star workshop records. If this file is missing, workshop history and effectiveness sections are hidden.
 
 | Column | Type | Required | Used For |
 |---|---|---|---|
 | `STORE_NUMBER` | string | Yes | Store identifier (matches `CHAINED_STORE_ID` in 5-Star CSV) |
 | `OA_NAME` | string | Yes | OA who ran the workshop |
 | `WORKSHOP_DATE` | date (YYYY-MM-DD) | Yes | Workshop date; benchmark month is the workshop month if day > 14, otherwise the prior month |
-| `WORKSHOP_TYPE` | string | Yes | Filtered to "Boot Camp" entries |
+| `WORKSHOP_TYPE` | string | Yes | "Boot Camp" or "Rising Star" — both types are tracked and analyzed |
 
 **Example row:**
 ```
@@ -202,9 +202,9 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 
 | File | Contents |
 |---|---|
-| `leadership_summary.html` | National executive view with Overview + Default Watch tabs + Workshop Effectiveness (control vs. variable). Per-zone and national LLM summaries. |
-| `zone_scorecards.html` | Per-zone drill-down (Overview + Portfolio tabs) with OA LLM summaries + Boot Camp Workshop History (date-aggregated with sparkline trends and per-store drill-down) |
-| `fop_dashboard.html` | FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box. |
+| `leadership_summary.html` | National executive view with Overview + Default Watch + Workshops tabs. National Insight narrative (LLM), Workshop Effectiveness for Boot Camp and Rising Star, date-aggregated workshop list, per-FOP summaries. Per-zone and national LLM summaries. |
+| `zone_scorecards.html` | Per-zone drill-down (Overview + Portfolio tabs) with OA LLM summaries + Workshop History (date-aggregated with sparkline trends and per-store drill-down) |
+| `fop_dashboard.html` | FOP + Director portfolio view: select Director for FOP roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box (also available in leadership Workshops tab). |
 | `_summaries.json` | Cached LLM summaries (auto-created, do not edit) |
 
 ### Monthly Workflow

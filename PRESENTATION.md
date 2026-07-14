@@ -19,10 +19,10 @@ The 5-Star program generates a huge volume of store-month data, but there was no
                     ▼
           generate_reports.py
                     │
-          ├──► leadership_summary.html     (national health + watch list + workshops tab + per-FOP summaries)
-          ├──► zone_scorecards.html        (per-OA deep dive + portfolio drill + workshop history)
-          ├──► fop_dashboard.html          (FOP/Director franchisee portfolio + per-FOP AI summaries)
-          └──► rising_star.html            (Tier 2 targeting map + DMA×Franchisee groups + workshop history)
+           ├──► leadership_summary.html     (national health + watch list + workshops + per-FOP summaries)
+           ├──► fop_dashboard.html          (FOP/Director franchisee portfolio + per-FOP AI summaries)
+           ├──► zone_scorecards.html        (per-OA deep dive + portfolio drill + workshop history)
+           └──► rising_star.html            (Tier 2 targeting map + DMA×Franchisee groups + workshop history)
 ```
 
 **Why a Python script?** The CSV is ~34K rows and growing. Doing this in Excel would be error-prone and slow. Python automates the join, filter, aggregation, and HTML generation in ~30 seconds. Drop the file, run the script, get four reports.
@@ -33,34 +33,36 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 
 ## The Four Reports, Mapped to Roles
 
-### 1. `zone_scorecards.html` — For OAs
+### 1. `leadership_summary.html` — For Leadership
 
-**Goal:** Raise low-tier stores, promote top-tier stores.
+**Goal:** Know the overall health of the system. Where are the problems? Are fixes working?
 
-**How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop.
+**How leadership works:** They set the strategy — which zones need investment, whether training programs are paying off, and where to escalate. They don't need store-level detail; they need trends, risk concentrations, and a narrative they can carry into a meeting.
 
-**What the report gives them (4 tabs):**
+**What the report gives them:**
 
 | Tab | Feature | Why it matters |
 |---|---|---|
-| Overview | Goal Tracker | Shows if they're on pace for T1 reduction and T3 growth |
-| Overview | Area & Franchisee Spotlight | Tells them **where to go** — lowest/highest areas and best/worst franchisee |
-| Overview | Binding chart | Per-tier view of which component holds stores back |
-| Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |
-| Portfolio | Drill-down (OA → DMA → Area → Store) | Drill into a specific DMA before a workshop, see every store with scores, status, and trends |
-| Portfolio | Store Detail | During a workshop, pull up a store's component scores |
-| Boot Camps | Workshop History | Past and upcoming Boot Camp workshops aggregated by distinct date, with sparkline trends and per-store drill-down |
-| Targeting | Bootcamp Targeting | **Where to go** — which area/franchisee has the most Tier 1 stores by count and concentration, with binding focus bars |
+| Overview | National Insight | Narrative summary (LLM or fallback) of what happened, current state, and top priority — one flowing read they can quote |
+| Overview | Zone Ranking | Which zone is best/worst; which director's territory needs attention |
+| Overview | Tier Movement (Sankey) | Are stores flowing up or down across the system? |
+| Overview | National Trend (chart) | Are overall scores improving month over month? Which components are dragging? |
+| Overview | Binding chart | What's holding each tier back nationally — if Bootcamp stores are all bound on Win Score, that's strategic |
+| Overview | FOP Summaries | Per-FOP 3-paragraph AI summaries (Past \| Present \| Future) showing portfolio shifts, risk counts, and recommended action |
+| Default Watch | Defaulting/At-Risk/T1 Watch tables | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual store level |
+| Workshops | Workshop Effectiveness | Control vs. variable analysis for Boot Camp **and** Rising Star — did attending stores improve more than similar stores that didn't? Validates the program investment |
+| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date, with per-store drill-down and sparkline trends |
+| Workshops | Per-FOP Summaries | Same FOP summaries from Overview, surfaced in the Workshops context |
 
-**The tier system they care about:**
+**The leadership loop:**
 
 ```
-< 2.5★  → Bootcamp  (needs intervention)
-2.5–4.0 → Rising Star (target for promotion)
-≥ 4.0   → Top Tier   (protect and replicate)
+Overview  → narrative health of the portfolio
+           → zone ranking shows who needs help
+           → binding shows what to fix
+Default Watch  → shows who's in crisis
+Workshops      → shows whether training investments are paying off
 ```
-
-**The binding logic:** Whichever of the five components (Win Score, Speed, Brand, Hutbot, FSCC) has the lowest score determines what's holding the store back. That tells the OA what to coach on.
 
 ---
 
@@ -68,19 +70,17 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 
 **Goal:** Keep franchisees healthy and default-free.
 
-**New:** Per-FOP AI summaries — when you select a FOP, an LLM-generated 3-paragraph insight (Past | Present | Future) appears at the top, summarizing franchisee shifts, risk distribution, and recommended actions.
-
 **How FOPs work:** They manage the Franchisee relationship. If a franchisee's stores start defaulting, the FOP escalates with both the franchisee and the OA to build an action plan. They don't coach stores directly — they manage the portfolio.
 
 **What the report gives them:**
 
-| Feature | Why it matters |
-|---|---|
-| Director selector → FOP list | Director sees all FOPs under them, ranked by defaulting count |
-| FOP selector → Franchisee table | FOP sees every franchisee, sorted by number of defaulting stores |
-| Defaulting / At Risk / T1 Watch counts | At a glance: which franchisees need a phone call |
-| Franchisee → Store list | Before a franchisee meeting, pull up every store in trouble |
-| Store Detail → Status banner | Clear language: "Default threshold met — immediate improvement plan required" |
+| Tab | Feature | Why it matters |
+|---|---|---|
+| Portfolio Overview | All-franchisee portfolio | Defaults to the full portfolio view showing every franchisee across all FOPs, with FOP & Director columns — a national franchisee health dashboard |
+| Director view | Director aggregate cards + franchisee list | Director sees their territory's health at a glance (stores, franchisees, risk counts) with every franchisee ranked by defaulting stores |
+| FOP view | Per-FOP AI summary + franchisee table | FOP gets a 3-paragraph AI insight (Past \| Present \| Future) and every franchisee sorted by risk — actionable intelligence for the next check-in |
+| Franchisee drill-down | Store list with search, status badges, trend arrows | Before a franchisee meeting, pull up every store in trouble with scores, consecutive months, and FSCC/Brand failures |
+| Store Detail | Status banner + component breakdown | Clear language: "Default threshold met — immediate improvement plan required" with month-by-month component scores |
 
 **The default framework:**
 
@@ -95,57 +95,52 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 
 ---
 
-### 3. `leadership_summary.html` — For Leadership
+### 3. `zone_scorecards.html` — For OAs
 
-**Goal:** Know the overall health of the system. Where are the problems? What are the problems? Is progress being made?
+**Goal:** Raise low-tier stores, promote top-tier stores.
 
-**What the report gives them:**
+**How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop.
 
-| Feature | Why it matters |
-|---|---|
-| National Insight (above tabs) | Narrative summary — what happened, current state, top priority, all in one flowing read. LLM-generated when server is available, otherwise data-driven fallback. |
-| Zone Ranking | Which zone is best/worst. Which director's territory needs attention. |
-| Tier Movement (Sankey) | Are stores flowing up or down across the system? |
-| National Trend (chart) | Are overall scores improving month over month? Which components are dragging? |
-| Default Watch tab | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual level |
-| Binding chart | What's holding each tier back nationally? If Bootcamp stores are all bound on Win Score, that's a strategic finding. |
-| Workshops tab | Workshop Effectiveness (Boot Camp **and** Rising Star), date-aggregated workshop history with per-store drill-down, and per-FOP LLM summaries |
+**What the report gives them (4 tabs):**
 
-**The leadership loop:**
+| Tab | Feature | Why it matters |
+|---|---|---|
+| Overview | Goal Tracker | Shows if they're on pace for T1 reduction and T3 growth |
+| Overview | Area & Franchisee Spotlight | Tells them **where to go** — lowest/highest areas and best/worst franchisee |
+| Overview | Binding chart | Per-tier view of which component holds stores back |
+| Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |
+| Portfolio | Drill-down (OA → DMA → Area → Store) | Before a workshop, drill into a DMA and see every store with scores, status, and trends |
+| Portfolio | Store Detail | During a workshop, pull up a store's component scores |
+| Boot Camps | Workshop History (date-aggregated) | Past and upcoming Boot Camp workshops by distinct date, with sparkline trends and per-store drill-down |
+| Targeting | Bootcamp Targeting | **Where to go** — which area/franchisee has the most Tier 1 stores by count and concentration, with binding focus bars |
+
+**The tier system they care about:**
 
 ```
-National Insight → narrative overview of the portfolio
-Zone Ranking    → shows who needs help
-Default Watch   → shows who's in crisis
-Workshops tab   → shows whether training investments are working
+< 2.5★  → Bootcamp  (needs intervention)
+2.5–4.0 → Rising Star (target for promotion)
+≥ 4.0   → Top Tier   (protect and replicate)
 ```
+
+**The binding logic:** Whichever of the five components (Win Score, Speed, Brand, Hutbot, FSCC) has the lowest score determines what's holding the store back. That tells the OA what to coach on.
 
 ---
 
 ### 4. `rising_star.html` — Rising Star Targeting (Cross-Zone)
 
-**Goal:** Identify the best DMA×Franchisee combinations for Rising Star workshops by aggregating Tier 2 stores nationally, independent of OA zone boundaries.
+**Goal:** Identify the best DMA×Franchisee combinations for Rising Star workshops by aggregating Tier 2 stores nationally, independent of OA zone boundaries.
 
-**Why a separate page:** Because a franchisee's stores within a single DMA may cross OA zone boundaries, but they should be targeted together. This page groups by DMA×Franchisee regardless of zone.
+**Why a separate page:** A franchisee's stores within a single DMA may cross OA zone boundaries, but they should be targeted together. This page groups by DMA×Franchisee regardless of zone, so the right people are in the room.
 
-**Key features:**
-- **National map** of all Tier 2 stores, colored by binding constraint
-- **Top 30 DMA×Franchisee groups** sorted by Tier 2 count, with focus bars showing the dominant binding component
-- **Concentration rate** — what % of this franchisee's stores in this DMA are Tier 2 (high rate = good target)
-- **Multi-zone flag** — when a DMA×Franchisee group spans multiple OAs, flagged so the right people are in the room
-- **Rising Star Workshop History** — past and upcoming workshops for Tier 2 stores, with per-store pre/post scores
+**What the report gives them:**
 
----
-
-### 5. Workshops Tab (in `leadership_summary.html`)
-
-**Goal:** Measure whether Boot Camp and Rising Star workshops actually drive score improvement, and give leadership visibility into every workshop nationally.
-
-**Workshop Effectiveness:** Control vs. variable comparison for both Boot Camp and Rising Star — stores that attended vs. similar stores that didn't. Displayed as two tables (n, avg benchmark, avg latest, avg improvement). A larger improvement in the workshop group validates the program for that workshop type.
-
-**Date-Aggregated Workshop List:** Every workshop across all zones, grouped by date. Each row shows store count, type breakdown (BC/RS), OAs, average trend delta, and click-to-expand per-store details with sparklines.
-
-**Per-FOP Summaries:** LLM-generated 3-paragraph summaries for each Franchisee Operator Partner, showing portfolio shifts, risk distribution, and recommended actions.
+| Tab | Feature | Why it matters |
+|---|---|---|
+| Targeting | National map of Tier 2 stores | Every Tier 2 store plotted with binding-constraint coloring — see the national distribution at a glance |
+| Targeting | Top 30 DMA×Franchisee groups | Ranked by Tier 2 count with focus bars showing the dominant binding component — these are the best workshop targets |
+| Targeting | Concentration rate | What % of this franchisee's stores in this DMA are Tier 2 (high rate = better ROI per workshop) |
+| Targeting | Multi-zone flag | When a DMA×Franchisee group spans multiple OAs, flagged so scheduling gets the right coaches together |
+| Workshops | Workshop History | Past and upcoming Rising Star workshops with per-store pre/post scores to measure lift |
 
 ---
 

@@ -1072,6 +1072,114 @@ def compute_single_zone(zone_df, workshops=None):
     }
 
 
+# ─── Rising Star Targeting ──────────────────────────────────────────────────
+
+def compute_rising_star_data(df, workshops_by_oa):
+    """Compute Rising Star targeting data: DMA×Franchisee groups, map points, workshops."""
+    last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else None
+    if last_m is None:
+        return {"n_t2": 0, "dmaFranData": [], "points": [], "workshops": []}
+
+    # Tier 2 stores in the latest month
+    t2 = df[(df["MONTHNUM"] == last_m) & (df["_tier"] == 2)].copy()
+    n_t2 = len(t2)
+
+    # Build binding letter map
+    bind_map = {"WIN_SCORE_STAR": "W", "SPEED_STAR": "S", "HB_ONTIME_STAR": "H", "BRAND_STAR": "B", "FSCC_STAR": "F"}
+
+    # Map points (all Tier 2 stores with lat/lon)
+    points = []
+    for _, row in t2.iterrows():
+        lat = row.get("LATITUDE")
+        lon = row.get("LONGITUDE")
+        if pd.isna(lat) or pd.isna(lon):
+            continue
+        sid = str(int(row["CHAINED_STORE_ID"])) if isinstance(row["CHAINED_STORE_ID"], float) else str(row["CHAINED_STORE_ID"])
+        if len(sid) < 5 and sid.isdigit():
+            sid = sid.zfill(5)
+        binding = bind_map.get(str(row["_binding"]), "W")
+        points.append({
+            "lat": round(float(lat), 3),
+            "lon": round(float(lon), 3),
+            "dma": str(row.get("NIELSENDMADESC", "")),
+            "fran": str(row.get("CURR_FRAN_OWNER_NM", "")),
+            "oa": str(row.get("OPX_OA", "")),
+            "binding": binding,
+            "score": round(float(row["OVERALL_FIVESTAR"]), 2),
+            "store": sid,
+        })
+
+    # DMA × Franchisee group by
+    groups = t2.groupby(["NIELSENDMADESC", "CURR_FRAN_OWNER_NM"])
+    dma_fran_data = []
+    for (dma, fran), grp in groups:
+        if pd.isna(dma) or pd.isna(fran) or dma == "" or fran == "":
+            continue
+        n_t2_grp = len(grp)
+        oas = grp["OPX_OA"].dropna().unique()
+        n_oa = len(oas)
+        oa_str = ", ".join(sorted(oas))
+
+        # Binding percentages among T2 stores in this group
+        win_pct = round((grp["_binding"] == "WIN_SCORE_STAR").sum() / n_t2_grp * 100)
+        speed_pct = round((grp["_binding"] == "SPEED_STAR").sum() / n_t2_grp * 100)
+        hb_pct = round((grp["_binding"] == "HB_ONTIME_STAR").sum() / n_t2_grp * 100)
+        brand_pct = round((grp["_binding"] == "BRAND_STAR").sum() / n_t2_grp * 100)
+        fscc_pct = round((grp["_binding"] == "FSCC_STAR").sum() / n_t2_grp * 100)
+
+        # Total stores for this franchisee in this DMA (all tiers)
+        total = len(df[(df["MONTHNUM"] == last_m) & (df["NIELSENDMADESC"] == dma) & (df["CURR_FRAN_OWNER_NM"] == fran)])
+        rate = round(n_t2_grp / total * 100) if total > 0 else 0
+
+        dma_fran_data.append({
+            "NIELSENDMADESC": str(dma),
+            "CURR_FRAN_OWNER_NM": str(fran),
+            "n_t2": n_t2_grp,
+            "oa": oa_str,
+            "n_oa": int(n_oa),
+            "win_pct": win_pct,
+            "speed_pct": speed_pct,
+            "hb_pct": hb_pct,
+            "brand_pct": brand_pct,
+            "fscc_pct": fscc_pct,
+            "total": int(total),
+            "rate": int(rate),
+        })
+
+    # Sort: descending by n_t2, limit to top 30
+    dma_fran_data.sort(key=lambda x: -x["n_t2"])
+    dma_fran_data = dma_fran_data[:30]
+
+    # Rising Star workshops
+    rs_entries = []
+    for oa, odata in workshops_by_oa.items():
+        for e in odata.get("rising_star", []):
+            e_copy = dict(e)
+            e_copy["oa"] = oa
+            rs_entries.append(e_copy)
+
+    print(f"  Rising Star: {n_t2} T2 stores, {len(points)} map points, {len(dma_fran_data)} DMA×Fran groups, {len(rs_entries)} workshops")
+    return {
+        "n_t2": n_t2,
+        "dmaFranData": dma_fran_data,
+        "points": points,
+        "workshops": rs_entries,
+    }
+
+
+def generate_rising_star_html(rising_data, template_path, output_path):
+    """Generate rising_star.html from template."""
+    print(f"Generating {output_path.name}...")
+    with open(template_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    html = replace_data_block(html, "DATA", rising_data)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"  Written to {output_path}")
+
+
 # ─── FOP Dashboard ─────────────────────────────────────────────────────────
 
 def compute_fop_data(df, zones_data):
@@ -1200,10 +1308,42 @@ def compute_fop_data(df, zones_data):
             "franchisees": fran_list,
         }
 
+    # Overall portfolio summary — all franchisees across all FOPs
+    all_franchisees = []
+    for fop_name, fop in fop_data.items():
+        for fran in fop["franchisees"]:
+            all_franchisees.append({
+                "fran": fran["fran"],
+                "fop": fop_name,
+                "director": fop["director"],
+                "n": fran["n"],
+                "avg": fran["avg"],
+                "n_defaulting": fran["n_defaulting"],
+                "n_at_risk": fran["n_at_risk"],
+                "n_t1_watch": fran["n_t1_watch"],
+            })
+    all_franchisees.sort(key=lambda x: (-x["n_defaulting"], -x["n_at_risk"], -x["n_t1_watch"]))
+    total_stores = sum(v["n_stores"] for v in fop_data.values())
+    total_dl = sum(v["n_defaulting"] for v in fop_data.values())
+    total_ar = sum(v["n_at_risk"] for v in fop_data.values())
+    total_tw = sum(v["n_t1_watch"] for v in fop_data.values())
+    overall_avg = round(
+        sum(v["headline_avg"] for v in fop_data.values()) / len(fop_data), 2
+    ) if fop_data else 0
+    overview_data = {
+        "n_stores": total_stores,
+        "n_fran": len(all_franchisees),
+        "n_defaulting": total_dl,
+        "n_at_risk": total_ar,
+        "n_t1_watch": total_tw,
+        "headline_avg": overall_avg,
+        "franchisees": all_franchisees,
+    }
+
     print(f"  {len(fop_data)} FOPs across {len(director_data)} directors, "
-          f"{sum(v['n_fran'] for v in fop_data.values())} franchisees")
+          f"{len(all_franchisees)} franchisees")
     return {"fops": fop_data, "directors": sorted(director_data.keys()),
-            "directorData": director_data}
+            "directorData": director_data, "overviewData": overview_data}
 
 
 # ─── LLM Summaries ─────────────────────────────────────────────────────────
@@ -1218,6 +1358,91 @@ def cleanup_session(session_id, headers):
         urllib.request.urlopen(req, timeout=5)
     except Exception:
         pass
+
+
+def generate_fallback_summary(nat_data):
+    """Generate a deterministic national leadership summary without LLM."""
+
+    def _pct(v): return f"{v:.0f}%" if v is not None else "N/A"
+    def _delta(v): return f"+{v:.2f}" if v and v >= 0 else f"{v:.2f}" if v else "N/A"
+
+    months = nat_data.get("monthly", [])
+    first = months[0] if months else {}
+    last = months[-1] if months else {}
+    period_label = f"{MONTH_LABELS[0] if MONTH_LABELS else 'Jan'} \u2192 {MONTH_LABELS[-1] if MONTH_LABELS else 'Jun'}"
+
+    # Trend
+    avg_start = first.get("avg", 0)
+    avg_end = last.get("avg", 0)
+    avg_delta = avg_end - avg_start
+    win_delta = (last.get("win", 0) - first.get("win", 0))
+    speed_delta = (last.get("speed", 0) - first.get("speed", 0))
+
+    # Tier movement
+    moved_up = nat_data.get("moved_up", 0)
+    moved_down = nat_data.get("moved_down", 0)
+    net = moved_up - moved_down
+    start_t1 = sum(nat_data.get("startCounts", {}).get(str(k), 0) for k in [1])
+    end_t1 = sum(nat_data.get("endCounts", {}).get(str(k), 0) for k in [1])
+    start_t3 = sum(nat_data.get("startCounts", {}).get(str(k), 0) for k in [3])
+    end_t3 = sum(nat_data.get("endCounts", {}).get(str(k), 0) for k in [3])
+    t1_change = end_t1 - start_t1
+    t3_change = end_t3 - start_t3
+
+    # Zone ranking — best/worst
+    zr = nat_data.get("zone_rank", [])
+    best_zone = zr[0] if zr else None
+    worst_zone = zr[-1] if zr else None
+
+    # Risk
+    ndl = nat_data.get("n_defaulting", 0)
+    nar = nat_data.get("n_at_risk", 0)
+
+    # Binding
+    bt = nat_data.get("binding_tbl", {})
+    top_bindings = {}
+    for t_key in ["1", "2", "3"]:
+        t_data = bt.get(t_key, {})
+        if t_data:
+            top = max(t_data, key=t_data.get)
+            top_bindings[t_key] = (top, t_data[top])
+
+    # Build paragraphs
+    para1_parts = [
+        f"Over {period_label}, the national 5-Star average moved from {avg_start:.2f} to {avg_end:.2f} ({_delta(avg_delta)}).",
+        f"Win Score changed {_delta(win_delta)} and Speed changed {_delta(speed_delta)} over the same period, with other components (Brand, Hutbot, FSCC) remaining relatively stable.",
+    ]
+    if net > 0:
+        para1_parts.append(f"Tier movement was positive: {moved_up} stores moved up while {moved_down} fell back, a net gain of {net}.")
+    else:
+        para1_parts.append(f"Tier movement was mixed: {moved_up} stores moved up and {moved_down} fell back, a net change of {net}.")
+    if best_zone:
+        para1_parts.append(f"The strongest zone was {best_zone.get('oa', 'N/A')} (avg {best_zone.get('avg_latest', 0):.2f}, {_delta(best_zone.get('delta', 0))}),")
+    if worst_zone:
+        para1_parts.append(f"while the zone needing the most attention was {worst_zone.get('oa', 'N/A')} (avg {worst_zone.get('avg_latest', 0):.2f}, {_delta(worst_zone.get('delta', 0))}).")
+
+    para2_parts = [
+        f"As of the latest month, the national portfolio averages {avg_end:.2f} stars across approximately {nat_data.get('n_stores_latest', 0):,} open stores.",
+        f"Tier 1 (Bootcamp) went from {start_t1} to {end_t1} stores ({'+' if t1_change >= 0 else ''}{t1_change}), and Tier 3 (Top Tier) went from {start_t3} to {end_t3} stores ({'+' if t3_change >= 0 else ''}{t3_change}).",
+    ]
+    for tk in ["1", "2", "3"]:
+        if tk in top_bindings:
+            comp, pct = top_bindings[tk]
+            label = {"WIN_SCORE_STAR": "Win Score", "SPEED_STAR": "Speed", "BRAND_STAR": "Brand", "HB_ONTIME_STAR": "Hutbot", "FSCC_STAR": "FSCC"}.get(comp, comp)
+            tier_name = {"1": "Bootcamp", "2": "Rising Star", "3": "Top Tier"}.get(tk, tk)
+            para2_parts.append(f"The dominant binding constraint for {tier_name} is {label} ({_pct(pct)}).")
+    if ndl > 0 or nar > 0:
+        para2_parts.append(f"Nationally, {ndl} stores are currently defaulting and {nar} are at risk, requiring immediate intervention.")
+
+    para3_parts = [
+        "The top national priority is reducing the Tier 1 store count by addressing Win Score and Speed, which are the most common binding constraints across the portfolio.",
+    ]
+    if best_zone and worst_zone:
+        para3_parts.append(f"Focus should be on supporting the bottom-ranked zones ({worst_zone.get('oa', 'N/A')}) while studying and replicating the practices of top performers ({best_zone.get('oa', 'N/A')}).")
+    para3_parts.append("Continued investment in Boot Camp and Rising Star workshops should be paired with a focus on component-level coaching — particularly on the specific metrics driving each store's binding constraint.")
+
+    summary = " ".join(para1_parts) + "\n\n" + " ".join(para2_parts) + "\n\n" + " ".join(para3_parts)
+    return summary
 
 
 def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
@@ -1302,6 +1527,77 @@ def _summary_version():
     return f"months_{len(PERIOD_MONTHS)}_{m_str}"
 
 
+def generate_fallback_zone_summary(z):
+    """Deterministic 3-paragraph zone summary from data without LLM."""
+
+    def _pct(v): return f"{v:.0f}%" if v is not None else "N/A"
+    def _delta(v): return f"+{v:.2f}" if v and v >= 0 else f"{v:.2f}" if v else "N/A"
+
+    mu = z.get("moved_up", 0)
+    md = z.get("moved_down", 0)
+    net = mu - md
+    n = z.get("n_stores", 0)
+    avg = z.get("headline_avg")
+    avg_str = f"{avg:.2f}" if avg else "N/A"
+    start_t1 = sum(z.get("startCounts", {}).get(str(k), 0) for k in [1])
+    end_t1 = sum(z.get("endCounts", {}).get(str(k), 0) for k in [1])
+    start_t3 = sum(z.get("startCounts", {}).get(str(k), 0) for k in [3])
+    end_t3 = sum(z.get("endCounts", {}).get(str(k), 0) for k in [3])
+    ndl = z.get("n_defaulting", 0)
+    nar = z.get("n_at_risk", 0)
+    ntw = z.get("n_t1_watch", 0)
+    t1_fix = z.get("t1_reduction_pct", 0)
+    t3_growth = z.get("t3_growth_pct", 0)
+    bind_t1 = z.get("binding_tbl", {}).get("1", {})
+    top_t1 = sorted(bind_t1.items(), key=lambda x: -x[1])[:1]
+    bind1_str = f"{top_t1[0][0]} ({_pct(top_t1[0][1])})" if top_t1 else "N/A"
+
+    p1 = f"Over the period, this zone's {n} stores saw {mu} move up and {md} move down ({'+' if net >= 0 else ''}{net} net). Tier 1 (Bootcamp) went from {start_t1} to {end_t1} stores ({'+' if end_t1 - start_t1 >= 0 else ''}{end_t1 - start_t1}), while Tier 3 (Top Tier) went from {start_t3} to {end_t3} stores ({'+' if end_t3 - start_t3 >= 0 else ''}{end_t3 - start_t3}). The primary binding constraint for Tier 1 stores was {bind1_str}. T1 reduction was {_pct(t1_fix)} and T3 growth was {_pct(t3_growth)}."
+    p2 = f"The current portfolio average is {avg_str}. There are {ndl} defaulting stores, {nar} at risk, and {ntw} on Tier 1 Watch, requiring focused intervention."
+    hs = z.get("bootcamp_areas", [])
+    if hs:
+        tops = hs[:3]
+        p2 += f" The areas with the most Tier 1 concentration are {', '.join(a['FAREADESC'] for a in tops)}."
+    p3 = f"The top priority is reducing Tier 1 headcount by addressing {bind1_str}. "
+    imp = z.get("best_improvers", [])
+    if imp:
+        p3 += f"Study what stores like {imp[0]['CHAINED_STORE_ID']} (improved {_delta(imp[0]['delta'])}) did right and replicate those practices."
+    else:
+        p3 += "Focus coaching efforts on the worst-performing stores to drive early improvement."
+
+    return f"{p1}\n\n{p2}\n\n{p3}"
+
+
+def generate_fallback_fop_summary(fop_compact):
+    """Deterministic 3-paragraph FOP summary from data without LLM."""
+
+    def _delta(v): return f"{v:.2f}" if v else "N/A"
+
+    n = fop_compact.get("n_stores", 0)
+    nf = fop_compact.get("n_fran", 0)
+    avg = fop_compact.get("headline_avg", 0)
+    ndl = fop_compact.get("n_defaulting", 0)
+    nar = fop_compact.get("n_at_risk", 0)
+    ntw = fop_compact.get("n_t1_watch", 0)
+    frans = fop_compact.get("franchisees", [])
+
+    best = max(frans, key=lambda f: f.get("avg", 0)) if frans else None
+    worst = min(frans, key=lambda f: f.get("avg", 0)) if frans else None
+
+    p1 = f"Over the period, this FOP's {n} stores across {nf} franchisees have an average of {avg:.2f}. There are {ndl} defaulting, {nar} at risk, and {ntw} on Tier 1 Watch."
+    p2 = f"The current portfolio average is {avg:.2f}. "
+    if best and worst:
+        p2 += f"The top franchisee is {best.get('name', 'N/A')} (avg {best.get('avg', 0):.2f}, {best.get('n_stores', 0)} stores), and the one needing most support is {worst.get('name', 'N/A')} (avg {worst.get('avg', 0):.2f}, {worst.get('n_stores', 0)} stores)."
+    p3 = f"Focus should be on the franchisees with the most risk counts: "
+    risky = sorted(frans, key=lambda f: -(f.get("n_defaulting", 0) + f.get("n_at_risk", 0)))[:3]
+    if risky:
+        p3 += ", ".join(f"{r['name']} ({r['n_defaulting']} defaulting, {r['n_at_risk']} at risk)" for r in risky)
+    else:
+        p3 += "None — maintain current trajectory."
+
+    return f"{p1}\n\n{p2}\n\n{p3}"
+
+
 def summarize_zones(zones_data):
     """Generate LLM summaries for each OA zone using the opencode server."""
     oa_names = sorted(zones_data.keys())
@@ -1337,7 +1633,9 @@ def summarize_zones(zones_data):
             print("  Using cached LLM summaries (no server configured)")
             _apply_cached()
             return
-        print("  No LLM server configured and no cached summaries")
+        print("  No LLM server configured, using fallback zone summaries")
+        for oa in oa_names:
+            zones_data[oa]["summary"] = generate_fallback_zone_summary(zones_data[oa])
         return
 
     print("  Generating LLM summaries...")
@@ -1465,7 +1763,8 @@ def summarize_leadership(nat_data):
             print("  Using cached leadership summary (no server)")
             nat_data["summary"] = cache[SUM_KEY]
             return
-        print("  No LLM server configured and no cached leadership summary")
+        print("  No LLM server configured, using fallback summary")
+        nat_data["summary"] = generate_fallback_summary(nat_data)
         return
 
     print("  Generating leadership summary...")
@@ -1570,23 +1869,10 @@ def summarize_fops(fop_data):
         _apply_cached()
         return
 
-    has_any_cache = any(name in cache for name in fop_names)
-
-    if not OPENCODE_SERVER_PASS:
-        if has_any_cache:
-            print("  Using cached FOP summaries (no server)")
-            _apply_cached()
-            return
-        print("  No LLM server configured and no cached FOP summaries")
-        return
-
-    print("  Generating FOP summaries...")
-
-    # Build per-FOP compact data
+    # Build per-FOP compact data (needed for both fallback and LLM)
     fop_data_compact = {}
     for name in fop_names:
         fop = fop_data.get("fops", {}).get(name, {})
-        # Collect franchisee summaries for this FOP
         fran_compact = []
         for fr in (fop.get("franchisees") or []):
             fran_compact.append({
@@ -1608,6 +1894,22 @@ def summarize_fops(fop_data):
             "n_t1_watch": fop.get("n_t1_watch", 0),
             "franchisees": fran_compact,
         }
+
+    has_any_cache = any(name in cache for name in fop_names)
+
+    if not OPENCODE_SERVER_PASS:
+        if has_any_cache:
+            print("  Using cached FOP summaries (no server)")
+            _apply_cached()
+            return
+        print("  No LLM server configured, using fallback FOP summaries")
+        for name in fop_names:
+            d = fop_data.get("fops", {}).get(name)
+            if d:
+                d["summary"] = generate_fallback_fop_summary(fop_data_compact[name])
+        return
+
+    print("  Generating FOP summaries...")
 
     system_prompt = (
         "You are a 5-Star operations analyst for a major pizza chain. "
@@ -1917,7 +2219,7 @@ def generate_fop_html(fop_data, template_path, output_path):
 
     # Update FOP dropdown options
     fop_names = sorted(fop_data.get("fops", {}).keys())
-    options = "\n".join(f'<option value="{name}">{name}</option>' for name in fop_names)
+    options = '<option value="">All FOPs</option>\n' + "\n".join(f'<option value="{name}">{name}</option>' for name in fop_names)
     html = re.sub(
         r'<select id="fopSelect".*?</select>',
         f'<select id="fopSelect" onchange="renderFOP(this.value)">\n{options}\n        </select>',
@@ -2012,9 +2314,13 @@ def main():
     # Compute workshop effectiveness and attach to nat_data
     nat_data["workshop_effectiveness"] = compute_workshop_effectiveness(df, workshops_by_oa)
 
+    # Compute Rising Star targeting data
+    rising_data = compute_rising_star_data(df, workshops_by_oa)
+
     # Convert to JSON-safe types
     nat_data = convert_for_json(nat_data)
     zones_data = convert_for_json(zones_data)
+    rising_data = convert_for_json(rising_data)
 
     # Generate LLM summaries
     summarize_zones(zones_data)
@@ -2028,11 +2334,13 @@ def main():
     fop_summaries = {}
     for fop_name, fop_info in fop_data.get("fops", {}).items():
         if fop_info.get("summary"):
+            n_fran = len(fop_info.get("franchisees", []))
             fop_summaries[fop_name] = {
                 "summary": fop_info["summary"],
                 "stores": fop_info.get("n_stores", 0),
-                "avg": fop_info.get("avg", None),
-                "franchisee": fop_info.get("franchisee", ""),
+                "avg": fop_info.get("headline_avg", None),
+                "franchisees": n_fran,
+                "director": fop_info.get("director", ""),
             }
     nat_data["fop_summaries"] = fop_summaries
 
@@ -2067,7 +2375,13 @@ def main():
         OUTPUT_DIR / "fop_dashboard.html"
     )
 
-    print("\nAll 3 reports generated successfully!")
+    generate_rising_star_html(
+        rising_data,
+        template_dir / "rising_star.html",
+        OUTPUT_DIR / "rising_star.html"
+    )
+
+    print("\nAll 4 reports generated successfully!")
 
 
 if __name__ == "__main__":

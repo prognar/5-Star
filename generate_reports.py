@@ -1226,6 +1226,8 @@ def compute_fop_data(df, zones_data):
         dir_n_ar = sum(1 for s in dir_stores if s.get("st") == "ar")
         dir_n_tw = sum(1 for s in dir_stores if s.get("st") == "tw")
         dir_n_fran = len(set(s.get("f", "Unknown") for s in dir_stores))
+        _dir_avgs = [s.get("y") or s.get("m5") for s in dir_stores if s.get("y") is not None or s.get("m5") is not None]
+        dir_headline = round(sum(_dir_avgs) / len(_dir_avgs), 2) if _dir_avgs else 0
         director_data[director] = {
             "director": director,
             "n_stores": len(dir_stores),
@@ -1233,6 +1235,7 @@ def compute_fop_data(df, zones_data):
             "n_defaulting": dir_n_dl,
             "n_at_risk": dir_n_ar,
             "n_t1_watch": dir_n_tw,
+            "headline_avg": dir_headline,
             "fops": sorted(fops),
         }
 
@@ -1249,6 +1252,16 @@ def compute_fop_data(df, zones_data):
         for fran in sorted(fop_groups[fop].keys()):
             stores = fop_groups[fop][fran]
             fran_avg = sum(s.get("y") or s.get("m5") or 0 for s in stores) / len(stores)
+            # Latest month (m5) avg
+            _m5_scores = [s.get("m5") for s in stores if s.get("m5") is not None]
+            fran_m5 = round(sum(_m5_scores) / len(_m5_scores), 2) if _m5_scores else 0
+            # Latest quarter avg (m3,m4,m5)
+            _lq_vals = []
+            for s in stores:
+                _q = [s.get(f"m{m}") for m in (3, 4, 5) if s.get(f"m{m}") is not None]
+                if _q:
+                    _lq_vals.append(sum(_q) / len(_q))
+            fran_lq = round(sum(_lq_vals) / len(_lq_vals), 2) if _lq_vals else 0
             fran_dl = sum(1 for s in stores if s.get("st") == "dl")
             fran_ar = sum(1 for s in stores if s.get("st") == "ar")
             fran_tw = sum(1 for s in stores if s.get("st") == "tw")
@@ -1264,6 +1277,8 @@ def compute_fop_data(df, zones_data):
                 "fran": fran,
                 "n": len(stores),
                 "avg": round(fran_avg, 2),
+                "m5": fran_m5,
+                "lq": fran_lq,
                 "n_defaulting": fran_dl,
                 "n_at_risk": fran_ar,
                 "n_t1_watch": fran_tw,
@@ -1318,6 +1333,8 @@ def compute_fop_data(df, zones_data):
                 "director": fop["director"],
                 "n": fran["n"],
                 "avg": fran["avg"],
+                "m5": fran["m5"],
+                "lq": fran["lq"],
                 "n_defaulting": fran["n_defaulting"],
                 "n_at_risk": fran["n_at_risk"],
                 "n_t1_watch": fran["n_t1_watch"],
@@ -1439,6 +1456,18 @@ def generate_fallback_summary(nat_data):
     ]
     if best_zone and worst_zone:
         para3_parts.append(f"Focus should be on supporting the bottom-ranked zones ({worst_zone.get('oa', 'N/A')}) while studying and replicating the practices of top performers ({best_zone.get('oa', 'N/A')}).")
+
+    # Franchisee rankings
+    _franks = nat_data.get("franchisee_rankings", {})
+    _top_lst = _franks.get("top", [])
+    _bot_lst = _franks.get("bottom", [])
+    if _top_lst:
+        _top_str = ", ".join([f"{x['name']} ({x['fop']}, avg {x['avg']:.2f})" for x in _top_lst])
+        para3_parts.append(f"Top 5 franchisees: {_top_str}.")
+    if _bot_lst:
+        _bot_str = ", ".join([f"{x['name']} ({x['fop']}, avg {x['avg']:.2f})" for x in _bot_lst])
+        para3_parts.append(f"Bottom 5 franchisees: {_bot_str}.")
+
     para3_parts.append("Continued investment in Boot Camp and Rising Star workshops should be paired with a focus on component-level coaching — particularly on the specific metrics driving each store's binding constraint.")
 
     summary = " ".join(para1_parts) + "\n\n" + " ".join(para2_parts) + "\n\n" + " ".join(para3_parts)
@@ -1798,6 +1827,7 @@ def summarize_leadership(nat_data):
         "n_defaulting": nat_data.get("n_defaulting", 0),
         "n_at_risk": nat_data.get("n_at_risk", 0),
         "n_t1_watch": nat_data.get("n_t1_watch", 0),
+        "franchisee_rankings": nat_data.get("franchisee_rankings", {}),
     }
 
     system_prompt = (
@@ -1807,6 +1837,7 @@ def summarize_leadership(nat_data):
         "the national trend over the period (overall average, tier movement, which zones improved most/least, "
         "which components drove the movement), the current state of the portfolio (average, tier distribution, "
         "zones needing attention, binding constraints by tier, risk counts), "
+        "the top and bottom 5 franchisees by average score, "
         "and the top national priority with operational focus areas. "
         "Use specific numbers throughout. Be direct and operational. "
         "This is for senior leadership — 3-4 paragraphs, no section labels."
@@ -2309,6 +2340,22 @@ def main():
                     "brand": s["brand"],
                 })
     watch_stores.sort(key=lambda x: (status_rank.get(x["st"], 9), x["sc"] if x["sc"] is not None else 99))
+
+    # Enrich watch stores with workshop completion/scheduled flags
+    _ws_map = {}
+    for _oa, _odata in workshops_by_oa.items():
+        for _tk in ("boot_camp", "rising_star"):
+            for _entry in _odata.get(_tk, []):
+                _sid = str(_entry["store"]).strip()
+                if _sid.isdigit() and len(_sid) < 5:
+                    _sid = _sid.zfill(5)
+                if _sid not in _ws_map:
+                    _ws_map[_sid] = "scheduled"
+                if _entry["status"] == "past":
+                    _ws_map[_sid] = "completed"
+    for _s in watch_stores:
+        _s["ws"] = _ws_map.get(_s["s"])
+
     nat_data["watch_stores"] = watch_stores
 
     # Compute workshop effectiveness and attach to nat_data
@@ -2317,16 +2364,7 @@ def main():
     # Compute Rising Star targeting data
     rising_data = compute_rising_star_data(df, workshops_by_oa)
 
-    # Convert to JSON-safe types
-    nat_data = convert_for_json(nat_data)
-    zones_data = convert_for_json(zones_data)
-    rising_data = convert_for_json(rising_data)
-
-    # Generate LLM summaries
-    summarize_zones(zones_data)
-    summarize_leadership(nat_data)
-
-    # Compute FOP dashboard data
+    # Compute FOP dashboard data (needed for summaries and rankings)
     fop_data = compute_fop_data(df, zones_data)
     summarize_fops(fop_data)
 
@@ -2343,6 +2381,31 @@ def main():
                 "director": fop_info.get("director", ""),
             }
     nat_data["fop_summaries"] = fop_summaries
+
+    # Build franchisee rankings (top/bottom 5 by avg score)
+    _all_frans = []
+    for _fop_name, _fop in fop_data.get("fops", {}).items():
+        for _fran in _fop.get("franchisees", []):
+            _all_frans.append({
+                "name": _fran["fran"],
+                "fop": _fop_name,
+                "director": _fop["director"],
+                "n": _fran["n"],
+                "avg": _fran["avg"],
+            })
+    _all_frans.sort(key=lambda x: x["avg"])
+    _b5 = _all_frans[:5]
+    _t5 = list(reversed(_all_frans[-5:])) if len(_all_frans) >= 5 else list(reversed(_all_frans))
+    nat_data["franchisee_rankings"] = {"top": _t5, "bottom": _b5}
+
+    # Convert to JSON-safe types
+    nat_data = convert_for_json(nat_data)
+    zones_data = convert_for_json(zones_data)
+    rising_data = convert_for_json(rising_data)
+
+    # Generate LLM summaries (now with enriched nat_data)
+    summarize_zones(zones_data)
+    summarize_leadership(nat_data)
 
     # Attach all workshops (national aggregate) for the Workshops tab
     all_workshops = []

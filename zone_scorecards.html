@@ -985,8 +985,8 @@ function renderZone(oaName){
   _curStoreData = d;
   document.getElementById('subLine').textContent = `${d.n_stores} active restaurants, ${d.n_fran} franchisees`;
   document.getElementById('headlineNum').textContent = d.headline_avg.toFixed(2);
-  const deltaAvg = (d.headline_avg - d.base_avg).toFixed(2);
-  document.getElementById('headlineLbl').textContent = `Avg 5-Star, Jun 2026 (${deltaAvg>=0?'+':''}${deltaAvg} vs Jan '26)`;
+  const ytdAvg = (d.monthly && d.monthly.length ? d.monthly.reduce((s,m)=>s+m.avg,0)/d.monthly.length : d.headline_avg).toFixed(2);
+  document.getElementById('headlineLbl').textContent = `Current ${d.headline_avg.toFixed(2)} · YTD avg ${ytdAvg}`;
   document.getElementById('footerNote').textContent = `Zone: ${d.oa} · ${d.n_stores} stores · ${d.n_fran} franchisees`;
 
   // Goal cards

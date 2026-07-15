@@ -78,9 +78,9 @@
 
 <section>
   <h2>Top 30 DMA &times; Franchisee Targets</h2>
-  <p class="h2-sub">For each DMA, the franchisee with the most Rising Star restaurants there — matching how these are currently identified. "Concentration" is that franchisee's Rising Star share of their total stores in the DMA. A flag shows when a group spans more than one OA zone, since that changes who needs to be in the room to schedule it.</p>
+  <p class="h2-sub">For each DMA, the franchisee with the most Rising Star restaurants there — matching how these are currently identified. "Concentration" is that franchisee's Rising Star share of their total stores in the DMA. A flag shows when a group spans more than one OA zone, since that changes who needs to be in the room to schedule it. <strong>Table sorted by # of Rising Stars per DMA × Franchisee, descending.</strong></p>
   <table>
-    <thead><tr><th>#</th><th>DMA</th><th>Franchisee</th><th>Zone (OA)</th><th>Rising Star / Total</th><th>Concentration</th><th>Workshop Focus</th></tr></thead>
+    <thead><tr><th>#</th><th>Franchisee</th><th>DMA</th><th>Zone (OA)</th><th>Rising Star / Total</th><th>Concentration</th><th>Workshop Focus</th></tr></thead>
     <tbody id="dmaFranTable"></tbody>
   </table>
 </section>
@@ -151,7 +151,7 @@ let rows='';
 dmaFranData.forEach((a,i)=>{
   const rateColor = a.rate>=75?'#a3122a':a.rate>=50?'#c07f1f':'#6b6560';
   const zoneFlag = a.n_oa>1 ? `<div class="zone-flag">spans ${a.n_oa} zones</div>` : '';
-  rows += `<tr><td class="rank">${i+1}</td><td>${esc(a.NIELSENDMADESC)}</td><td class="name">${esc(a.CURR_FRAN_OWNER_NM)}</td><td>${esc(a.oa)}${zoneFlag}</td><td>${a.n_t2} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${focusBarHTML(a)}</td></tr>`;
+  rows += `<tr><td class="rank">${i+1}</td><td class="name">${esc(a.CURR_FRAN_OWNER_NM)}</td><td>${esc(a.NIELSENDMADESC)}</td><td>${esc(a.oa)}${zoneFlag}</td><td>${a.n_t2} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${focusBarHTML(a)}</td></tr>`;
 });
 document.getElementById('dmaFranTable').innerHTML = rows;
 

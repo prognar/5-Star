@@ -273,6 +273,13 @@ def load_workshops(df):
     w["STORE_NUMBER"] = w["STORE_NUMBER"].str.strip()
     w["OA_NAME"] = w["OA_NAME"].str.strip().replace(_OA_NAME_FIXES)
     w["WORKSHOP_DATE"] = pd.to_datetime(w["WORKSHOP_DATE"], errors="coerce")
+
+    # Deduplicate: remove exact row dupes, then collapse to one entry per store per date
+    before = len(w)
+    w = w.drop_duplicates(subset=["STORE_NUMBER", "WORKSHOP_DATE", "OA_NAME", "WORKSHOP_TYPE"])
+    if before - len(w) > 0:
+        print(f"  Removed {before - len(w)} duplicate workshop rows ({len(w)} unique)")
+
     w["workshop_month"] = w["WORKSHOP_DATE"].dt.month.astype(int)
     w["workshop_day"] = w["WORKSHOP_DATE"].dt.day.astype(int)
 
@@ -1536,12 +1543,15 @@ def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
                     parsed = json.loads(json_match.group(1))
                     cleanup_session(session_id, headers)
                     return parsed
-                # Try bare JSON object
-                json_match = re.search(r"\{.*\}", text, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group(0))
-                    cleanup_session(session_id, headers)
-                    return parsed
+                # Try bare JSON object — use raw_decode to handle trailing content
+                decoder = json.JSONDecoder()
+                for m in re.finditer(r"\{", text):
+                    try:
+                        parsed, idx = decoder.raw_decode(text, m.start())
+                        cleanup_session(session_id, headers)
+                        return parsed
+                    except (json.JSONDecodeError, ValueError):
+                        continue
                 return None
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         print(f"    Could not parse LLM response: {e}")
@@ -1721,16 +1731,18 @@ def summarize_zones(zones_data):
         }
 
     system_prompt = (
-        "You are a 5-Star operations analyst for a major pizza chain. "
-        "Write a structured 3-paragraph summary for each OA zone. "
-        "Paragraph 1 — PAST: What happened over the period. How many stores moved up vs down in tiers, "
-        "what drove the movement (which metrics were binding). Use specific numbers. "
-        "Paragraph 2 — PRESENT: Current state of the portfolio. Overall average, tier distribution, "
-        "hotspots (areas with the most Tier 1 stores), risk counts (defaulting, at-risk, T1 watch), "
-        "and the biggest binding constraint holding the zone back. "
-        "Paragraph 3 — FUTURE: The single most important action the OA should take, and where to focus "
-        "(specific areas or franchisees). "
-        "Be direct and operational — use specific numbers. This is for OAs who know their business."
+        "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
+        "Draft a professional 3-paragraph executive summary for each OA zone. "
+        "Paragraph 1 — PAST PERFORMANCE: Summarize the period's results including tier movement volumes, "
+        "binding constraint drivers, and key numerical trends. "
+        "Paragraph 2 — CURRENT STATE: Assess the zone's portfolio health — overall average, tier composition, "
+        "high-risk areas (Tier 1 concentration), risk metrics (defaulting, at-risk, T1 watch), "
+        "and the primary binding constraint limiting performance. "
+        "Paragraph 3 — RECOMMENDED ACTION: Identify the single highest-impact action for the OA and "
+        "specific areas or franchisees requiring attention. "
+        "Support all observations with specific figures. "
+        "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
+        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
     )
 
     period_label = get_period_label()
@@ -1831,16 +1843,17 @@ def summarize_leadership(nat_data):
     }
 
     system_prompt = (
-        "You are a 5-Star operations analyst for a major pizza chain. "
-        "Write a concise national narrative summary for leadership. "
-        "No headings, no sections — just a flowing narrative that covers: "
-        "the national trend over the period (overall average, tier movement, which zones improved most/least, "
-        "which components drove the movement), the current state of the portfolio (average, tier distribution, "
-        "zones needing attention, binding constraints by tier, risk counts), "
-        "the top and bottom 5 franchisees by average score, "
-        "and the top national priority with operational focus areas. "
-        "Use specific numbers throughout. Be direct and operational. "
-        "This is for senior leadership — 3-4 paragraphs, no section labels."
+        "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
+        "Write a concise national narrative summary for senior leadership. "
+        "No headings or section labels — a flowing 3-4 paragraph executive memo covering: "
+        "national trends over the period (overall average, tier migration, top/bottom zones by improvement, "
+        "component-driven movement), current portfolio health (average, tier distribution, "
+        "zones requiring attention, binding constraints by tier, risk exposure), "
+        "the top and bottom 5 franchisees ranked by average score, "
+        "and the primary national priority with recommended operational focus areas. "
+        "Substantiate all claims with specific figures. Adopt a tone appropriate for executive readership. "
+        "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
+        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
     )
 
     period_label = get_period_label()
@@ -1943,14 +1956,16 @@ def summarize_fops(fop_data):
     print("  Generating FOP summaries...")
 
     system_prompt = (
-        "You are a 5-Star operations analyst for a major pizza chain. "
-        "Write a structured 3-paragraph summary for each FOP (Franchise Operator Partner). "
-        "Paragraph 1 — PAST: What happened over the period. How the franchisee portfolio shifted, "
-        "which franchisees improved or declined, risk count changes. Use specific numbers. "
-        "Paragraph 2 — PRESENT: Current state of the FOP's portfolio. Overall average, franchisee distribution, "
-        "risk counts (defaulting, at-risk, T1 watch), and the biggest challenges. "
-        "Paragraph 3 — FUTURE: The single most important action this FOP should take, "
-        "and which franchisees need the most support. Be direct and operational."
+        "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
+        "Draft a professional 3-paragraph executive summary for each FOP (Franchise Operator Partner). "
+        "Paragraph 1 — PAST PERFORMANCE: Summarize the period's portfolio shifts, including which franchisees "
+        "improved or declined and changes in risk exposure, supported by specific figures. "
+        "Paragraph 2 — CURRENT STATE: Assess the FOP's portfolio — overall average, franchisee distribution, "
+        "risk metrics (defaulting, at-risk, T1 watch), and the most pressing operational challenges. "
+        "Paragraph 3 — RECOMMENDED ACTION: Identify the single highest-impact action for this FOP and "
+        "specific franchisees requiring the most support. "
+        "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
+        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
     )
 
     period_label = get_period_label()
@@ -2220,8 +2235,8 @@ def generate_zones_html(zones_data, template_path, output_path):
     html = replace_data_block(html, "MONTHS", MONTH_LABELS)
     html = _replace_month_refs(html)
 
-    # Update OA dropdown options to match actual OAs
-    oa_names = sorted(zones_data.keys())
+    # Update OA dropdown options to match actual OAs (exclude internal keys starting with _)
+    oa_names = sorted(k for k in zones_data if not k.startswith("_"))
     options = "\n".join(f'<option value="{name}">{name}</option>' for name in oa_names)
     html = re.sub(
         r'<select id="oaSelect".*?</select>',
@@ -2238,7 +2253,7 @@ def generate_zones_html(zones_data, template_path, output_path):
 
 def generate_fop_html(fop_data, template_path, output_path):
     """Generate Franchisee Dashboard HTML from template."""
-    print(f"  Franchisee Dashboard → {output_path.name}")
+    print(f"  Franchisee Dashboard -> {output_path.name}")
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
 
@@ -2416,6 +2431,12 @@ def main():
                 entry["type_label"] = tk
                 all_workshops.append(entry)
     nat_data["all_workshops"] = all_workshops
+
+    # Attach national monthly averages for top-right display on all dashboards
+    _nat_monthly = nat_data.get("monthly", [])
+    zones_data["_national_monthly"] = _nat_monthly
+    fop_data["monthly"] = _nat_monthly
+    rising_data["monthly"] = _nat_monthly
 
     # Generate HTML files
     template_dir = BASE_DIR

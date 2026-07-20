@@ -65,9 +65,11 @@
   .count-ar{color:#c07f1f;font-weight:700;font-size:15px;}
   .count-tw{color:#a3122a;font-weight:600;font-size:14px;}
   .sc{display:inline-block;width:42px;text-align:center;padding:2px 0;border-radius:2px;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:11.5px;}
-  .sc-t1{background:#a3122a22;color:#a3122a;}
-  .sc-t2{background:#c07f1f22;color:#c07f1f;}
-  .sc-t3{background:#276b4d22;color:#276b4d;}
+  .sc-t1{color:#C90F2D;background:#C90F2D22;}
+  .sc-t2{color:#F15B73;background:#F15B7322;}
+  .sc-t3{color:inherit;}
+  .sc-t4{color:#A9D18E;background:#A9D18E22;}
+  .sc-t5{color:#00B050;background:#00B05022;}
   .sc-na{color:var(--muted);opacity:.4;}
   .tr-up{color:var(--pine);font-size:14px;}
   .tr-down{color:var(--cardinal);font-size:14px;}
@@ -200,7 +202,7 @@ const COMP_COLORS = {cw:'#a3122a',cs:'#c07f1f',ch:'#5b7a9e',cb:'#7a5ba3',cf:'#6b
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fm(v){ return v!=null&&!isNaN(v) ? (Math.round(v*100)/100).toFixed(2) : '—'; }
-function scoreClass(v){ if(v==null||isNaN(v)) return 'sc-na'; if(v>=4) return 'sc-t3'; if(v>=2.5) return 'sc-t2'; return 'sc-t1'; }
+function scoreClass(v){ if(v==null||isNaN(v)) return 'sc-na'; if(v>=5) return 'sc-t5'; if(v>=4) return 'sc-t4'; if(v>=3) return 'sc-t3'; if(v>=2) return 'sc-t2'; return 'sc-t1'; }
 function statusBadge(st){
   if(st==='dl') return '<span class="badge-dl">Defaulting</span>';
   if(st==='ar') return '<span class="badge-ar">At Risk</span>';

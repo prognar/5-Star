@@ -285,6 +285,38 @@ def load_workshops(df):
 
     last_data_month = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
 
+    # Build store->franchisee lookup from main df
+    _fran_cache = {}
+    if "CURR_FRAN_OWNER_NM" in df.columns:
+        _fran_map = df.groupby("CHAINED_STORE_ID")["CURR_FRAN_OWNER_NM"].first().to_dict()
+        _fran_cache = {k: str(v) for k, v in _fran_map.items() if pd.notna(v)}
+
+    # Build a fast (store, month) -> score lookup
+    _score_lookup = {}
+    for _, r in df.iterrows():
+        _score_lookup[(r["CHAINED_STORE_ID"], int(r["MONTHNUM"]))] = (
+            float(r["OVERALL_FIVESTAR"]) if pd.notna(r["OVERALL_FIVESTAR"]) else None,
+            int(r["_tier"]) if pd.notna(r["_tier"]) else None,
+            str(r["_binding"]) if pd.notna(r["_binding"]) else None,
+        )
+
+    def _rolling3(sid, cmonth, offset_start):
+        """Rolling 3-month average centered at cmonth+offset_start .. cmonth+offset_start+2.
+        Returns (avg, tier, binding) if all 3 months have valid scores, else (None, None, None)."""
+        scores, tiers, bindings = [], [], []
+        for i in range(3):
+            m = cmonth + offset_start + i
+            key = (sid, m)
+            if key not in _score_lookup:
+                return None, None, None
+            s, t, b = _score_lookup[key]
+            if s is None:
+                return None, None, None
+            scores.append(s)
+            tiers.append(t)
+            bindings.append(b)
+        return round(sum(scores) / 3, 2), tiers[-1], bindings[-1]
+
     results = {}
     for _, row in w.iterrows():
         sid = row["STORE_NUMBER"]
@@ -294,6 +326,7 @@ def load_workshops(df):
         bm_month = ws_month if ws_day > 14 else ws_month - 1
         ws_type = str(row["WORKSHOP_TYPE"]).strip()
         date_str = str(row["WORKSHOP_DATE"].strftime("%Y-%m-%d")) if pd.notna(row["WORKSHOP_DATE"]) else ""
+        is_bootcamp = "rising" not in ws_type.lower()
 
         # Classify: future if workshop month > last data month
         if ws_month > last_data_month:
@@ -303,30 +336,44 @@ def load_workshops(df):
         else:
             status = "past"
 
-        # Get benchmark score from main df (month before workshop)
-        bench_score = None
-        bench_tier = None
-        bench_binding = None
-        if bm_month >= 1 and bm_month <= 12:
-            bm_row = df[(df["CHAINED_STORE_ID"] == sid) & (df["MONTHNUM"] == bm_month)]
-            if not bm_row.empty:
-                r = bm_row.iloc[0]
-                bench_score = round(float(r["OVERALL_FIVESTAR"]), 2) if pd.notna(r["OVERALL_FIVESTAR"]) else None
-                bench_tier = int(r["_tier"]) if pd.notna(r["_tier"]) else None
-                bench_binding = str(r["_binding"]) if pd.notna(r["_binding"]) else None
+        if is_bootcamp:
+            # Rolling 3-month benchmark ending at bm_month
+            bench_score, bench_tier, bench_binding = _rolling3(sid, bm_month, -2)
 
-        # Get post-workshop scores (months after workshop, up to last data month)
-        post_scores = []
-        for pm in range(ws_month + 1, last_data_month + 1):
-            pm_row = df[(df["CHAINED_STORE_ID"] == sid) & (df["MONTHNUM"] == pm)]
-            if not pm_row.empty:
-                ps = round(float(pm_row.iloc[0]["OVERALL_FIVESTAR"]), 2) if pd.notna(pm_row.iloc[0]["OVERALL_FIVESTAR"]) else None
-                if ps is not None:
+            # Post-workshop rolling windows: 30d (M-1,M,M+1), 60d (M,M+1,M+2), 90d (M+1,M+2,M+3)
+            post_scores = []
+            for offset, label in [(-1, "30d"), (0, "60d"), (1, "90d")]:
+                avg_score, _, _ = _rolling3(sid, bm_month, offset)
+                if avg_score is not None:
                     post_scores.append({
-                        "month": int(pm),
-                        "label": MONTH_LABELS[PERIOD_MONTHS.index(pm)] if pm in PERIOD_MONTHS else str(pm),
-                        "score": ps,
+                        "month": bm_month + offset + 1,  # middle-ish month for sorting
+                        "label": label,
+                        "score": avg_score,
                     })
+        else:
+            # Rising Star: original single-month logic
+            bench_score = None
+            bench_tier = None
+            bench_binding = None
+            if bm_month >= 1 and bm_month <= 12:
+                key = (sid, bm_month)
+                if key in _score_lookup:
+                    s, t, b = _score_lookup[key]
+                    bench_score = s
+                    bench_tier = t
+                    bench_binding = b
+
+            post_scores = []
+            for pm in range(ws_month + 1, last_data_month + 1):
+                key = (sid, pm)
+                if key in _score_lookup:
+                    s, _, _ = _score_lookup[key]
+                    if s is not None:
+                        post_scores.append({
+                            "month": int(pm),
+                            "label": MONTH_LABELS[PERIOD_MONTHS.index(pm)] if pm in PERIOD_MONTHS else str(pm),
+                            "score": s,
+                        })
 
         entry = {
             "store": sid,
@@ -339,6 +386,7 @@ def load_workshops(df):
             "benchmark_binding": bench_binding,
             "post_scores": post_scores,
             "status": status,
+            "franchisee": _fran_cache.get(sid, ""),
         }
 
         if "rising" in ws_type.lower():

@@ -220,19 +220,7 @@ function setScoreMode(mode){
   document.querySelectorAll('.avg-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   refreshCurrentView();
 }
-(function(){
-  const natM = FOP_DATA.monthly || [];
-  const f = natM[0] || {}, l = natM[natM.length-1] || {};
-  const mLbl = {202601:'Jan',202602:'Feb',202603:'Mar',202604:'Apr',202605:'May',202606:'Jun'};
-  const sLbl = f.period ? (mLbl[f.period]||f.period) : '\u2014';
-  const eLbl = l.period ? (mLbl[l.period]||l.period) : '\u2014';
-  let totalN = 0, totalSum = 0;
-  natM.forEach(m => { if(m.avg != null && m.n) { totalSum += m.avg * m.n; totalN += m.n; } });
-  const overall = totalN ? (totalSum / totalN) : null;
-  document.getElementById('overallAvgLine').textContent = overall != null ? overall.toFixed(2) : '\u2014';
-  const delta = (l.avg != null && f.avg != null) ? (l.avg - f.avg) : null;
-  document.getElementById('avgDeltaLine').textContent = delta != null ? sLbl + ' ' + f.avg.toFixed(2) + ' \u2192 ' + eLbl + ' ' + l.avg.toFixed(2) + ' (' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')' : '';
-})();
+
 function getFranAvg(fran){
   if(_scoreMode === 'lm') return fran.m5 != null ? fran.m5 : fran.avg;
   if(_scoreMode === 'lq') return fran.lq != null ? fran.lq : fran.avg;
@@ -244,6 +232,17 @@ function refreshCurrentView(){
   else if(lv === 'director') renderDirector(_state.director);
   else if(lv === 'fop') renderFOP(_state.fop);
   else if(lv === 'fran') showFranchisee(_state.fran);
+}
+function updateHeadlineScore(avgVal, firstVal, lastVal){
+  const el = document.getElementById('overallAvgLine');
+  const dEl = document.getElementById('avgDeltaLine');
+  el.textContent = avgVal != null ? avgVal.toFixed(2) : '\u2014';
+  if(firstVal != null && lastVal != null){
+    const delta = lastVal - firstVal;
+    dEl.textContent = 'Jan ' + firstVal.toFixed(2) + ' \u2192 Jun ' + lastVal.toFixed(2) + ' (' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')';
+  } else {
+    dEl.textContent = '';
+  }
 }
 function avg(arr){
   const v = arr.filter(x=>x!=null&&!isNaN(x));
@@ -387,6 +386,14 @@ function renderOverview(){
   document.getElementById('directorSelect').value = '';
   document.getElementById('fopSelect').value = '';
 
+  const natM = FOP_DATA.monthly || [];
+  const natN = natM.length;
+  updateHeadlineScore(
+    ov.headline_avg,
+    natN > 0 ? natM[0].avg : null,
+    natN > 1 ? natM[natN - 1].avg : null
+  );
+
   document.getElementById('subLine').textContent = ov.n_stores + ' stores \u00b7 ' + ov.n_fran + ' franchisees across ' + Object.keys(getAllFOPs()).length + ' FOPs';
   setSection('Franchisee Portfolio', 'All franchisees across all FOPs and Directors.');
   setBreadcrumb(['Portfolio Overview']);
@@ -450,6 +457,36 @@ function renderDirector(dirName){
   fopSel.value = '';
 
   _state = {level:'director', director:dirName, fop:null, fran:null};
+
+  // Compute weighted average from stores under this director
+  let dirN = 0, dirSum = 0;
+  const dirMonthlySums = [], dirMonthlyN = [];
+  Object.values(allFops).forEach(fop => {
+    if(fop.director !== dirName) return;
+    (fop.franchisees || []).forEach(fran => {
+      (fran.stores || []).forEach(s => {
+        let v;
+        if(_scoreMode === 'lm') { v = s.m6 || s.m5; }
+        else if(_scoreMode === 'lq') {
+          const mv = [s.m4, s.m5, s.m6].filter(x => x != null);
+          v = mv.length ? mv.reduce((a,b)=>a+b,0)/mv.length : s.y;
+        } else { v = s.y; }
+        if(v != null) { dirSum += v; dirN++; }
+        for(let i = 1; i <= MONTHS.length; i++) {
+          const mv = s['m' + i];
+          if(mv != null) {
+            dirMonthlySums[i - 1] = (dirMonthlySums[i - 1] || 0) + mv;
+            dirMonthlyN[i - 1] = (dirMonthlyN[i - 1] || 0) + 1;
+          }
+        }
+      });
+    });
+  });
+  const dirAvg = dirN > 0 ? dirSum / dirN : null;
+  const dirFirst = dirMonthlyN[0] > 0 ? dirMonthlySums[0] / dirMonthlyN[0] : null;
+  const dirLastIdx = MONTHS.length - 1;
+  const dirLast = dirMonthlyN[dirLastIdx] > 0 ? dirMonthlySums[dirLastIdx] / dirMonthlyN[dirLastIdx] : null;
+  updateHeadlineScore(dirAvg, dirFirst, dirLast);
 
   const dd = FOP_DATA.directorData && FOP_DATA.directorData[dirName];
   if(!dd){
@@ -538,7 +575,26 @@ function renderFOP(fopName){
 
   _state = {level:'fop', director:d.director, fop:fopName, fran:null};
 
-  document.getElementById('subLine').textContent = d.n_stores + ' stores \u00b7 ' + d.n_fran + ' franchisees \u00b7 Director: ' + (d.director || 'Unknown');
+  let fopN = 0, fopSum = 0;
+  const fopMS = [], fopMN = [];
+  (d.franchisees || []).forEach(fran => {
+    (fran.stores || []).forEach(s => {
+      let v;
+      if(_scoreMode === 'lm') { v = s.m6 || s.m5; }
+      else if(_scoreMode === 'lq') {
+        const mv = [s.m4, s.m5, s.m6].filter(x => x != null);
+        v = mv.length ? mv.reduce((a,b)=>a+b,0)/mv.length : s.y;
+      } else { v = s.y; }
+      if(v != null) { fopSum += v; fopN++; }
+      for(let i = 1; i <= MONTHS.length; i++) {
+        const mv = s['m' + i];
+        if(mv != null) { fopMS[i-1] = (fopMS[i-1]||0) + mv; fopMN[i-1] = (fopMN[i-1]||0) + 1; }
+      }
+    });
+  });
+  updateHeadlineScore(fopN > 0 ? fopSum/fopN : null, fopMN[0] > 0 ? fopMS[0]/fopMN[0] : null, fopMN[MONTHS.length-1] > 0 ? fopMS[MONTHS.length-1]/fopMN[MONTHS.length-1] : null);
+
+  document.getElementById('subLine').textContent = d.n_stores + ' stores \u00b7 ' + d.n_fran + ' franchisees \u2014 Director: ' + (d.director || 'Unknown');
 
   if(_state.director){
     setBreadcrumb([
@@ -599,6 +655,23 @@ function showFranchisee(franName){
   if(!fran) return;
   _state.fran = franName;
   _state.level = 'fran';
+
+  let frN = 0, frSum = 0;
+  const frMS = [], frMN = [];
+  (fran.stores || []).forEach(s => {
+    let v;
+    if(_scoreMode === 'lm') { v = s.m6 || s.m5; }
+    else if(_scoreMode === 'lq') {
+      const mv = [s.m4, s.m5, s.m6].filter(x => x != null);
+      v = mv.length ? mv.reduce((a,b)=>a+b,0)/mv.length : s.y;
+    } else { v = s.y; }
+    if(v != null) { frSum += v; frN++; }
+    for(let i = 1; i <= MONTHS.length; i++) {
+      const mv = s['m' + i];
+      if(mv != null) { frMS[i-1] = (frMS[i-1]||0) + mv; frMN[i-1] = (frMN[i-1]||0) + 1; }
+    }
+  });
+  updateHeadlineScore(frN > 0 ? frSum/frN : null, frMN[0] > 0 ? frMS[0]/frMN[0] : null, frMN[MONTHS.length-1] > 0 ? frMS[MONTHS.length-1]/frMN[MONTHS.length-1] : null);
 
   setBreadcrumb([
     ['Portfolio Overview', 'renderOverview()'],

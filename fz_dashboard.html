@@ -794,7 +794,6 @@ function showStoreDetail(storeId){
 
   const monthKeys = [];
   for(let i=1;i<=MONTHS.length;i++) if(s['m'+i]!=null) monthKeys.push('m'+i);
-  monthKeys.reverse();
   html += '<div class="detail-overview">';
   html += '<div><span class="store-title">#' + esc(s.s) + '</span> <span class="store-info">' + esc(s.a) + ' \u00b7 ' + esc(s.d) + '</span></div>';
   html += '<div class="score-strip">';

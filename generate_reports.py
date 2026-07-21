@@ -285,11 +285,15 @@ def load_workshops(df):
 
     last_data_month = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
 
-    # Build store->franchisee lookup from main df
+    # Build store->franchisee and store->area lookups from main df
     _fran_cache = {}
+    _area_cache = {}
     if "CURR_FRAN_OWNER_NM" in df.columns:
         _fran_map = df.groupby("CHAINED_STORE_ID")["CURR_FRAN_OWNER_NM"].first().to_dict()
         _fran_cache = {k: str(v) for k, v in _fran_map.items() if pd.notna(v)}
+    if "FAREADESC" in df.columns:
+        _area_map = df.groupby("CHAINED_STORE_ID")["FAREADESC"].first().to_dict()
+        _area_cache = {k: str(v) for k, v in _area_map.items() if pd.notna(v)}
 
     # Build a fast (store, month) -> score lookup
     _score_lookup = {}
@@ -387,6 +391,7 @@ def load_workshops(df):
             "post_scores": post_scores,
             "status": status,
             "franchisee": _fran_cache.get(sid, ""),
+            "area": _area_cache.get(sid, ""),
         }
 
         if "rising" in ws_type.lower():

@@ -405,9 +405,16 @@ function switchTab(tab){
   }
 
 function trendArrow(slope){
-  if(slope>0.05) return '<span class="tr-up">\u2191</span>';
-  if(slope<-0.05) return '<span class="tr-down">\u2193</span>';
-  return '<span class="tr-flat">\u2192</span>';
+  const a = Math.abs(slope);
+  if(slope > 0.05){
+    const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
+    return '<span style="color:hsl(142,70%,'+l+'%);font-size:14px">\u2191</span>';
+  }
+  if(slope < -0.05){
+    const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
+    return '<span style="color:hsl(0,70%,'+l+'%);font-size:14px">\u2193</span>';
+  }
+  return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
 }
 
 // ─── Portfolio Drill-Down ──────────────────────────────────────────────────
@@ -665,9 +672,16 @@ function calcSlope(vals){
   }
 
 function trendArrow(slope){
-  if(slope>0.05) return '<span class="tr-up">\u2191</span>';
-  if(slope<-0.05) return '<span class="tr-down">\u2193</span>';
-  return '<span class="tr-flat">\u2192</span>';
+  const a = Math.abs(slope);
+  if(slope > 0.05){
+    const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
+    return '<span style="color:hsl(142,70%,'+l+'%);font-size:14px">\u2191</span>';
+  }
+  if(slope < -0.05){
+    const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
+    return '<span style="color:hsl(0,70%,'+l+'%);font-size:14px">\u2193</span>';
+  }
+  return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
 }
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
@@ -1267,19 +1281,15 @@ function renderZone(oaName){
   const d = ZONES[oaName];
   _curStoreData = d;
   document.getElementById('subLine').textContent = `${d.n_stores} active restaurants, ${d.n_fran} franchisees`;
-  (function(){
-    const natM = ZONES._national_monthly || [];
-    const f = natM[0] || {}, l = natM[natM.length-1] || {};
-    const mLbl = {202601:'Jan',202602:'Feb',202603:'Mar',202604:'Apr',202605:'May',202606:'Jun'};
-    const sLbl = f.period ? (mLbl[f.period]||f.period) : '\u2014';
-    const eLbl = l.period ? (mLbl[l.period]||l.period) : '\u2014';
-    let totalN = 0, totalSum = 0;
-    natM.forEach(m => { if(m.avg != null && m.n) { totalSum += m.avg * m.n; totalN += m.n; } });
-    const overall = totalN ? (totalSum / totalN) : null;
-    document.getElementById('overallAvgLine').textContent = overall != null ? overall.toFixed(2) : '\u2014';
-    const delta = (l.avg != null && f.avg != null) ? (l.avg - f.avg) : null;
-    document.getElementById('avgDeltaLine').textContent = delta != null ? sLbl + ' ' + f.avg.toFixed(2) + ' \u2192 ' + eLbl + ' ' + l.avg.toFixed(2) + ' (' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')' : '';
-  })();
+  const oaM = d.monthly || [];
+  const oaF = oaM[0] || {}, oaL = oaM[oaM.length - 1] || {};
+  document.getElementById('overallAvgLine').textContent = d.headline_avg != null ? d.headline_avg.toFixed(2) : '\u2014';
+  if(oaF.avg != null && oaL.avg != null){
+    const delta = oaL.avg - oaF.avg;
+    document.getElementById('avgDeltaLine').textContent = 'Jan ' + oaF.avg.toFixed(2) + ' \u2192 Jun ' + oaL.avg.toFixed(2) + ' (' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')';
+  } else {
+    document.getElementById('avgDeltaLine').textContent = '';
+  }
   document.getElementById('footerNote').textContent = `Zone: ${d.oa} · ${d.n_stores} stores · ${d.n_fran} franchisees`;
 
   // Goal cards

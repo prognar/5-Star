@@ -113,7 +113,7 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 
 ### Overview tab
 - **National Insight** (above tabs) — a flowing narrative summary: what happened, current state, top priority. LLM-generated when server is available; otherwise data-driven fallback.
-- **Zone Ranking** — all zones sorted by current average with movement arrows
+- **Zone Ranking** — all zones sorted by current average with gradient trend indicators (green = improving, red = declining, darker = more severe)
 - **Tier Movement (Sankey)** — how stores flowed between tiers over the period
 - **National Trend (chart)** — 5-month line chart of overall average and each component
 - **Binding chart** — for each tier nationally, which component is the lowest score
@@ -124,7 +124,7 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 
 ### Workshops tab
 - **Workshop Effectiveness** — control vs. variable comparison for Boot Camp **and** Rising Star. Compares stores that attended a workshop against similar stores that did not, measuring whether scores improved more for attendees. Validates the program investment.
-- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date. Each row shows store count, OA(s), type breakdown (BC/RS), and average trend. Click to drill down to individual store details with sparklines.
+- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date and facilitator. Each row shows store count, OA, type breakdown (BC/RS), and average trend. Drill down: Date → Area Coach → Individual stores. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Same-day workshops by different Area Coaches appear as separate blocks.
 - **Per-FOP Summaries** — same FOP summaries from the Overview tab, surfaced here for context
 
 ---
@@ -139,11 +139,22 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 
 | Step | What you see |
 |---|---|
-| **Default (All Directors + All FOPs)** | Full portfolio of every franchisee with FOP & Director columns, sorted by defaulting count |
-| Select a **Director** | Aggregate stats for that director's territory + their franchisees (grouped by FOP) |
-| Select a **FOP** (or click a franchisee row) | AI summary (3-paragraph Past \| Present \| Future) + franchisee table for that FOP |
-| Click a **franchisee** row | Store list with status badges, scores, trend arrows, and search |
+| **Default (All Directors + All FOPs)** | Full portfolio of every franchisee with FOP & Director columns, sorted by defaulting count. Headline score = national weighted average across all stores |
+| Select a **Director** | Aggregate stats for that director's territory + their franchisees (grouped by FOP). Headline score updates to that director's store-weighted average |
+| Select a **FOP** (or click a franchisee row) | AI summary (3-paragraph Past \| Present \| Future) + franchisee table for that FOP. Headline score updates to that FOP's average |
+| Click a **franchisee** row | Store list with status badges, scores, trend arrows, search, and Region/Area Coach filter dropdowns. Headline score updates to that franchisee's average |
 | Click **Detail** on a store | Full component breakdown with monthly scores, sparklines, and status banner |
+
+### Score Mode Toggle
+
+Toggle between **LM** (Last Month), **LQ** (Last Quarter), and **YTD** (Year-to-Date) to change how scores are displayed. The headline score and all table averages update to reflect the selected mode.
+
+### Trend Arrows
+
+Trend arrows use gradient coloring to indicate severity:
+- **Green** (↑) — improving. Darker green = stronger improvement
+- **Red** (↓) — declining. Darker red = steeper decline
+- **Gray** (→) — flat / no meaningful change
 
 ### Status Framework
 
@@ -159,7 +170,7 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 
 **Audience:** OAs (Operations Assistants / Zone Managers).
 
-**What it does:** Per-zone deep dive. Select a zone from the dropdown. Four tabs.
+**What it does:** Per-zone deep dive. Select a zone from the dropdown. Four tabs. Headline score updates to the selected zone's weighted average.
 
 ### Overview tab
 - **Goal Tracker** — T1 reduction, T3 growth, net upward movement pacing
@@ -174,6 +185,7 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 - Drill-down: **OA → DMA → Area → Store → Component**
 - Toggle between Monthly/Quarterly/YTD view
 - Click **Detail** on a store for component breakdown with sparklines
+- Trend arrows use gradient coloring (green improving, red declining, darker = more severe)
 
 ### Boot Camps tab
 - **Boot Camp Workshop History** — past and upcoming Boot Camp workshops aggregated by distinct date. Each date row shows store count, average benchmark, monthly post-scores with sparkline trend, and net delta. Click to drill down to per-store details.

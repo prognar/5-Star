@@ -973,6 +973,9 @@ def compute_single_zone(zone_df, workshops=None):
         director = latest.get("DIRECTOR", "")
         if pd.isna(director):
             director = "Unknown"
+        region = latest.get("FREGIONDESC", "")
+        if pd.isna(region):
+            region = ""
 
         # Component scores per month
         comps = {}
@@ -1029,6 +1032,7 @@ def compute_single_zone(zone_df, workshops=None):
             "d": str(dma),
             "o": str(fop),
             "r": str(director),
+            "g": str(region),
             "q1": q1_avg,
             "q2": q2_avg,
             "y": ytd_avg,
@@ -1357,6 +1361,7 @@ def compute_fop_data(df, zones_data):
                     "brand": s.get("brand", 0),
                     "d": s.get("d", ""),
                     "a": s.get("a", ""),
+                    "g": s.get("g", ""),
                     "oa": s.get("o", ""),
                     "cw": s.get("cw", []),
                     "cs": s.get("cs", []),

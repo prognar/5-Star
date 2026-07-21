@@ -210,10 +210,17 @@ function statusBadge(st){
   return '<span class="badge-ok">OK</span>';
 }
 function trendArrow(t){
-  if(t==null||isNaN(t)) return '<span class="tr-flat">→</span>';
-  if(t>0.02) return '<span class="tr-up">↑</span>';
-  if(t<-0.02) return '<span class="tr-down">↓</span>';
-  return '<span class="tr-flat">→</span>';
+  if(t==null||isNaN(t)) return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
+  const a = Math.abs(t);
+  if(t > 0.02){
+    const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
+    return '<span style="color:hsl(142,70%,'+l+'%);font-size:14px">\u2191</span>';
+  }
+  if(t < -0.02){
+    const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
+    return '<span style="color:hsl(0,70%,'+l+'%);font-size:14px">\u2193</span>';
+  }
+  return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
 }
 function setScoreMode(mode){
   _scoreMode = mode;
@@ -388,8 +395,11 @@ function renderOverview(){
 
   const natM = FOP_DATA.monthly || [];
   const natN = natM.length;
+  let totalN = 0, totalSum = 0;
+  natM.forEach(m => { if(m.avg != null && m.n) { totalSum += m.avg * m.n; totalN += m.n; } });
+  const weightedAvg = totalN ? totalSum / totalN : null;
   updateHeadlineScore(
-    ov.headline_avg,
+    weightedAvg,
     natN > 0 ? natM[0].avg : null,
     natN > 1 ? natM[natN - 1].avg : null
   );
@@ -690,7 +700,7 @@ function renderStoreList(fran){
     '<input class="pf-search" id="storeSearch" placeholder="Search stores..." oninput="filterStoreTable()">' +
   '</div>';
 
-  const regions = [...new Set(fran.stores.map(s=>s.d).filter(Boolean))].sort();
+  const regions = [...new Set(fran.stores.map(s=>s.g).filter(Boolean))].sort();
   const areas = [...new Set(fran.stores.map(s=>s.a).filter(Boolean))].sort();
   html += '<div class="pf-filters" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">';
   html += '<select class="pf-filter-select" id="regionFilter" onchange="filterStoreTable()"><option value="">All Regions</option>';
@@ -714,7 +724,7 @@ function renderStoreList(fran){
   sorted.forEach(s => {
     const sc = s.y || s.m5 || null;
     const st = computeStoreStatus(s);
-    html += '<tr class="pf-store-row" data-store="' + esc(s.s) + '" data-region="' + esc(s.d||'') + '" data-area="' + esc(s.a||'') + '" data-filters="' + esc(s.s + ' ' + (s.d||'') + ' ' + (s.a||'')) + '">' +
+    html += '<tr class="pf-store-row" data-store="' + esc(s.s) + '" data-region="' + esc(s.g||'') + '" data-area="' + esc(s.a||'') + '" data-filters="' + esc(s.s + ' ' + (s.g||'') + ' ' + (s.d||'') + ' ' + (s.a||'')) + '">' +
       '<td class="store-id">#' + esc(s.s) + '</td>' +
       '<td><span class="sc ' + scoreClass(sc) + '">' + fm(sc) + '</span></td>' +
       '<td>' + statusBadge(st) + '</td>' +

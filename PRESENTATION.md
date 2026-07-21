@@ -44,14 +44,14 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 | Tab | Feature | Why it matters |
 |---|---|---|
 | Overview | National Insight | Narrative summary (LLM or fallback) of what happened, current state, and top priority — one flowing read they can quote |
-| Overview | Zone Ranking | Which zone is best/worst; which director's territory needs attention |
+| Overview | Zone Ranking | Which zone is best/worst; which director's territory needs attention. Gradient trend indicators (green = improving, red = declining, darker = more severe) |
 | Overview | Tier Movement (Sankey) | Are stores flowing up or down across the system? |
 | Overview | National Trend (chart) | Are overall scores improving month over month? Which components are dragging? |
 | Overview | Binding chart | What's holding each tier back nationally — if Bootcamp stores are all bound on Win Score, that's strategic |
 | Overview | FOP Summaries | Per-FOP 3-paragraph AI summaries (Past \| Present \| Future) showing portfolio shifts, risk counts, and recommended action |
 | Default Watch | Defaulting/At-Risk/T1 Watch tables | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual store level |
 | Workshops | Workshop Effectiveness | Control vs. variable analysis for Boot Camp **and** Rising Star — did attending stores improve more than similar stores that didn't? Validates the program investment |
-| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date, with per-store drill-down and sparkline trends |
+| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date and facilitator. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Drill down: Date → Area Coach → Individual stores |
 | Workshops | Per-FOP Summaries | Same FOP summaries from Overview, surfaced in the Workshops context |
 
 **The leadership loop:**
@@ -79,8 +79,14 @@ Workshops      → shows whether training investments are paying off
 | Portfolio Overview | All-franchisee portfolio | Defaults to the full portfolio view showing every franchisee across all FOPs, with FOP & Director columns — a national franchisee health dashboard |
 | Director view | Director aggregate cards + franchisee list | Director sees their territory's health at a glance (stores, franchisees, risk counts) with every franchisee ranked by defaulting stores |
 | FOP view | Per-FOP AI summary + franchisee table | FOP gets a 3-paragraph AI insight (Past \| Present \| Future) and every franchisee sorted by risk — actionable intelligence for the next check-in |
-| Franchisee drill-down | Store list with search, status badges, trend arrows | Before a franchisee meeting, pull up every store in trouble with scores, consecutive months, and FSCC/Brand failures |
+| Franchisee drill-down | Store list with search, status badges, trend arrows, Region & Area Coach filters | Before a franchisee meeting, pull up every store in trouble with scores, consecutive months, and FSCC/Brand failures. Filter by Region or Area Coach |
 | Store Detail | Status banner + component breakdown | Clear language: "Default threshold met — immediate improvement plan required" with month-by-month component scores |
+
+**Dynamic headline score:** The Average 5-star in the header updates as you drill down — national → director → FOP → franchisee — always showing the weighted average for your current selection. The Jan→Jun delta below it updates too.
+
+**Score mode toggle:** LM / LQ / YTD buttons change how scores are computed across all views.
+
+**Trend arrows:** Gradient coloring — darker green = stronger improvement, darker red = steeper decline.
 
 **The default framework:**
 
@@ -111,8 +117,12 @@ Workshops      → shows whether training investments are paying off
 | Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |
 | Portfolio | Drill-down (OA → DMA → Area → Store) | Before a workshop, drill into a DMA and see every store with scores, status, and trends |
 | Portfolio | Store Detail | During a workshop, pull up a store's component scores |
-| Boot Camps | Workshop History (date-aggregated) | Past and upcoming Boot Camp workshops by distinct date, with sparkline trends and per-store drill-down |
+| Boot Camps | Workshop History (date-aggregated) | Past and upcoming Boot Camp workshops by distinct date, with sparkline trends and per-store drill-down. Workshop type tags (BC/RS) on each store row |
 | Targeting | Bootcamp Targeting | **Where to go** — which area/franchisee has the most Tier 1 stores by count and concentration, with binding focus bars |
+
+**Dynamic headline score:** The Average 5-star updates to the selected zone's weighted average. The Jan→Jun delta updates too.
+
+**Trend arrows:** Gradient coloring — darker green = stronger improvement, darker red = steeper decline.
 
 **The tier system they care about:**
 

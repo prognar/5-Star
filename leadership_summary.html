@@ -454,19 +454,16 @@ document.getElementById('tierCards').innerHTML = tierHTML;
 let zoneRows='';
 NAT.zone_rank.forEach((z,i)=>{
   const scoreDelta = z.delta;
-  const scoreClass = scoreDelta>=0?'delta-up':'delta-down';
   const t1DeltaCount = z.t1_latest - z.t1_base;
   const t3DeltaCount = z.t3_latest - z.t3_base;
-  const t1Class = t1DeltaCount<=0?'delta-up':'delta-down';
-  const t3Class = t3DeltaCount>=0?'delta-up':'delta-down';
   zoneRows += `<tr>
     <td class="rank">${i+1}</td>
     <td class="name">${z.oa}</td>
     <td>${z.n}</td>
     <td>${z.avg_latest.toFixed(2)}</td>
-    <td class="${scoreClass}">${scoreDelta>=0?'+':''}${scoreDelta.toFixed(2)}</td>
-    <td class="${t1Class}">${t1DeltaCount>=0?'+':''}${t1DeltaCount} (${z.t1_pct_chg>=0?'+':''}${z.t1_pct_chg}%)</td>
-    <td class="${t3Class}">${t3DeltaCount>=0?'+':''}${t3DeltaCount} (${z.t3_pct_chg>=0?'+':''}${z.t3_pct_chg}%)</td>
+    <td style="${trendColor(scoreDelta)};font-weight:600">${scoreDelta>=0?'+':''}${scoreDelta.toFixed(2)}</td>
+    <td style="${trendColor(-t1DeltaCount)};font-weight:600">${t1DeltaCount>=0?'+':''}${t1DeltaCount} (${z.t1_pct_chg>=0?'+':''}${z.t1_pct_chg}%)</td>
+    <td style="${trendColor(t3DeltaCount)};font-weight:600">${t3DeltaCount>=0?'+':''}${t3DeltaCount} (${z.t3_pct_chg>=0?'+':''}${z.t3_pct_chg}%)</td>
   </tr>`;
 });
 document.getElementById('zoneTable').innerHTML = zoneRows;
@@ -515,6 +512,17 @@ if(NAT.summary){
 }
 
 function scoreClass(v){ return v>=5?'sc-t5':v>=4?'sc-t4':v>=3?'sc-t3':v>=2?'sc-t2':'sc-t1'; }
+function trendColor(v){
+  if(v==null) return 'color:var(--muted)';
+  const a = Math.abs(v);
+  if(v >= 0){
+    const l = a >= 1 ? 30 : a >= 0.5 ? 36 : 42;
+    return 'color:hsl(142,70%,'+l+'%)';
+  } else {
+    const l = a >= 1 ? 30 : a >= 0.5 ? 36 : 42;
+    return 'color:hsl(0,70%,'+l+'%)';
+  }
+}
 
 // ─── Workshops tab ────────────────────────────────────────────────────────
 function renderWorkshopEff(containerId, data, label){
@@ -528,9 +536,8 @@ function renderWorkshopEff(containerId, data, label){
   [['Variable (workshop)', data.variable], ['Control (no workshop)', data.control]].forEach(([grp, d])=>{
     if(!d.n) return;
     const imp = d.avg_improvement;
-    const impClass = imp>=0 ? 'delta-up' : 'delta-down';
     const impStr = imp!=null ? (imp>=0?'+':'')+imp.toFixed(3) : '\u2014';
-    h += `<tr><td class="name">${grp}</td><td>${d.n}</td><td>${d.avg_benchmark!=null?'<span class="sc '+scoreClass(d.avg_benchmark)+'">'+d.avg_benchmark.toFixed(2)+'</span>':'\u2014'}</td><td>${d.avg_latest!=null?'<span class="sc '+scoreClass(d.avg_latest)+'">'+d.avg_latest.toFixed(2)+'</span>':'\u2014'}</td><td class="${impClass}">${impStr}</td></tr>`;
+    h += `<tr><td class="name">${grp}</td><td>${d.n}</td><td>${d.avg_benchmark!=null?'<span class="sc '+scoreClass(d.avg_benchmark)+'">'+d.avg_benchmark.toFixed(2)+'</span>':'\u2014'}</td><td>${d.avg_latest!=null?'<span class="sc '+scoreClass(d.avg_latest)+'">'+d.avg_latest.toFixed(2)+'</span>':'\u2014'}</td><td style="${trendColor(imp)};font-weight:600">${impStr}</td></tr>`;
   });
   h += '</tbody></table>';
   h += `<p style="font-size:11.5px;color:var(--muted);margin-top:6px;">Benchmark period: ${data.benchmark_period}, latest: ${data.latest_period}. ${data.n_workshops} workshops across ${data.n_stores} unique stores (${data.n_future} upcoming).</p>`;
@@ -611,7 +618,7 @@ function renderWorkshopsTab(){
       if(p2.length) avg90 = p2.reduce((a,b)=>a+b.score,0) / p2.length;
       const avgDelta = avgBmk!=null && avg90!=null ? avg90-avgBmk : avgBmk!=null && avg30!=null ? avg30-avgBmk : null;
       const hdrDeltaStr = avgDelta!=null ? (avgDelta>=0?'+'+avgDelta.toFixed(2):avgDelta.toFixed(2)) : '\u2014';
-      const hdrDeltaClass = avgDelta!=null ? (avgDelta>=0?'delta-up':'delta-down') : '';
+      const hdrDeltaStyle = avgDelta!=null ? trendColor(avgDelta)+';font-weight:600' : 'color:var(--muted)';
 
       listHtml += `<div class="ws-date-block">
         <div class="ws-date-head" onclick="this.nextElementSibling.classList.toggle('open')">
@@ -631,7 +638,7 @@ function renderWorkshopsTab(){
             <span style="color:var(--muted);">30d <span class="sc ${scoreClass(avg30)}">${avg30!=null?avg30.toFixed(2):'\u2014'}</span></span>
             <span style="color:var(--muted);">60d <span class="sc ${scoreClass(avg60)}">${avg60!=null?avg60.toFixed(2):'\u2014'}</span></span>
             <span style="color:var(--muted);">90d <span class="sc ${scoreClass(avg90)}">${avg90!=null?avg90.toFixed(2):'\u2014'}</span></span>
-            <span style="color:var(--muted);">Δ <span class="${hdrDeltaClass}" style="font-weight:600;">${hdrDeltaStr}</span></span>
+            <span style="color:var(--muted);">Δ <span style="${hdrDeltaStyle}">${hdrDeltaStr}</span></span>
           </div>
         </div>
         <div class="ws-stores">
@@ -666,7 +673,7 @@ function renderWorkshopsTab(){
               const a90 = p2.length ? p2.reduce((a,b)=>a+b.score,0)/p2.length : null;
               const aDelta = aBmk!=null && a90!=null ? a90-aBmk : aBmk!=null && a30!=null ? a30-aBmk : null;
               const aDeltaStr = aDelta!=null ? (aDelta>=0?'+':'')+aDelta.toFixed(2) : '\u2014';
-              const aDeltaCls = aDelta!=null ? (aDelta>=0?'delta-up':'delta-down') : '';
+              const aDeltaStyle = aDelta!=null ? trendColor(aDelta)+';font-weight:600' : 'color:var(--muted)';
               const safeAn = an.replace(/[^a-zA-Z0-9]/g,'_');
               const areaId = 'area_'+safeAn+'_'+d.replace(/[^0-9]/g,'')+'_'+oaName.replace(/[^a-zA-Z0-9]/g,'_');
               return `<div class="ws-area-block">
@@ -683,7 +690,7 @@ function renderWorkshopsTab(){
                     <span style="color:var(--muted);">Bmk <span class="sc ${scoreClass(aBmk)}">${aBmk!=null?aBmk.toFixed(2):'\u2014'}</span></span>
                     <span style="color:var(--muted);">30d <span class="sc ${scoreClass(a30)}">${a30!=null?a30.toFixed(2):'\u2014'}</span></span>
                     <span style="color:var(--muted);">90d <span class="sc ${scoreClass(a90)}">${a90!=null?a90.toFixed(2):'\u2014'}</span></span>
-                    <span style="color:var(--muted);">Δ <span class="${aDeltaCls}" style="font-weight:600;">${aDeltaStr}</span></span>
+                    <span style="color:var(--muted);">Δ <span style="${aDeltaStyle}">${aDeltaStr}</span></span>
                   </div>
                 </div>
                 <div class="ws-area-stores" id="${esc(areaId)}">
@@ -709,14 +716,13 @@ function renderWorkshopsTab(){
                       const s = post[i];
                       if(!s || s.score == null) return '<span style="color:var(--muted);">\u2014</span>';
                       const imp = s.score - (bmkScore || 0);
-                      const cls = imp >= 0 ? 'ws-post-up' : 'ws-post-down';
                       const sign = imp >= 0 ? '+' : '';
-                      return `<span class="sc ${scoreClass(s.score)}">${s.score.toFixed(2)}</span> <span class="${cls}" style="font-size:9.5px;">(${sign}${imp.toFixed(2)})</span>`;
+                      return `<span class="sc ${scoreClass(s.score)}">${s.score.toFixed(2)}</span> <span style="${trendColor(imp)};font-size:9.5px;font-weight:600">(${sign}${imp.toFixed(2)})</span>`;
                     };
                     const latestPost = post.length ? post[post.length-1].score : null;
                     const delta = latestPost!=null && bmkScore!=null ? (latestPost - bmkScore) : null;
                     const deltaStr = delta!=null ? (delta>=0?'+'+delta.toFixed(2):delta.toFixed(2)) : '\u2014';
-                    const deltaClass = delta!=null ? (delta>=0?'delta-up':'delta-down') : '';
+                    const deltaStyle = delta!=null ? trendColor(delta)+';font-weight:600' : 'color:var(--muted)';
                     const wsType = e.type_label === 'rising_star' ? 'rs' : 'bc';
                     const wsLabel = e.type_label === 'rising_star' ? 'RS' : 'BC';
                     return `<div class="ws-store-row">
@@ -727,7 +733,7 @@ function renderWorkshopsTab(){
                       <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(1)}</div>
                       <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(2)}</div>
                       <div style="text-align:center;">${spk}</div>
-                      <div class="${deltaClass}" style="font-family:IBM Plex Mono;font-size:10px;text-align:right;font-weight:600;">${deltaStr}</div>
+                      <div style="${deltaStyle};font-family:IBM Plex Mono;font-size:10px;text-align:right;">${deltaStr}</div>
                     </div>`;
                   }).join('')}
                 </div>

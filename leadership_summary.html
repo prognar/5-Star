@@ -237,7 +237,14 @@
 
   <section>
     <h2>All Workshops — Date Aggregated</h2>
-    <p class="h2-sub">Workshops grouped by date across all zones. Click to expand individual store detail.</p>
+    <p class="h2-sub">Workshops grouped by date and OA. Click to expand individual store detail.</p>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <label style="font-size:11px;color:var(--muted);font-family:IBM Plex Mono;">Franchisee
+        <select id="wsFranFilter" onchange="renderWorkshopsTab()" style="margin-left:4px;padding:3px 6px;font-size:11px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:3px;">
+          <option value="">All</option>
+        </select>
+      </label>
+    </div>
     <div id="allWorkshopsList"></div>
   </section>
 
@@ -536,24 +543,50 @@ function renderWorkshopsTab(){
   renderWorkshopEff('wsBootCampEff', NAT.workshop_effectiveness && NAT.workshop_effectiveness.boot_camp, 'Boot Camp Workshops');
   renderWorkshopEff('wsRisingStarEff', NAT.workshop_effectiveness && NAT.workshop_effectiveness.rising_star, 'Rising Star Workshops');
 
-  // Date-aggregated workshop list
+  // Populate franchisee filter (only once)
+  const sel = document.getElementById('wsFranFilter');
+  if(sel && sel.options.length <= 1){
+    const rawWs = NAT.all_workshops || [];
+    const franSet = new Set(rawWs.map(e => e.franchisee).filter(Boolean));
+    const frans = [...franSet].sort();
+    frans.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f; opt.textContent = f;
+      sel.appendChild(opt);
+    });
+  }
+  const franFilter = sel ? sel.value : '';
+
+  // Date+OA aggregated workshop list
   const ws = NAT.all_workshops || [];
   if(ws.length){
+    // Deduplicate: keep only entries with franchisee (drop OA-name dupes)
+    const deduped = ws.filter(e => e.franchisee);
+
+    // Filter by franchisee
+    const filtered = franFilter ? deduped.filter(e => e.franchisee === franFilter) : deduped;
+
+    // Group by date + OA
     const groups = {};
-    ws.forEach(e => {
+    const groupOrder = [];
+    filtered.forEach(e => {
       const d = e.date || 'unknown';
-      if(!groups[d]) groups[d] = [];
-      groups[d].push(e);
+      const oa = e.oa || 'Unknown OA';
+      const key = d + '|||' + oa;
+      if(!groups[key]) { groups[key] = []; groupOrder.push(key); }
+      groups[key].push(e);
     });
-    const sortedDates = Object.keys(groups).sort();
+    groupOrder.sort((a,b) => a.localeCompare(b));
+
     let listHtml = '';
-    sortedDates.forEach(d => {
-      const entries = groups[d];
+    groupOrder.forEach(key => {
+      const entries = groups[key];
+      const d = key.split('|||')[0];
+      const oaName = key.split('|||')[1];
       const n = entries.length;
       const bc = entries.filter(e => e.type_label === 'boot_camp').length;
       const rs = entries.filter(e => e.type_label === 'rising_star').length;
       const frans = [...new Set(entries.map(e => e.franchisee || '').filter(Boolean))];
-      const oas = [...new Set(entries.map(e => e.oa || '').filter(Boolean))];
       // Benchmark avg: use benchmark_score where available; fallback to prior post avg for newer stores
       let avgBmk = null, avg30 = null, avg60 = null, avg90 = null;
       const withBmk = entries.filter(e => e.benchmark_score != null);
@@ -585,12 +618,12 @@ function renderWorkshopsTab(){
           <div>
             <div style="font-size:13px;font-weight:600;font-family:Inter,sans-serif;color:var(--ink);">${esc(d)}</div>
             <div style="margin-top:3px;font-size:11px;color:var(--muted);font-family:IBM Plex Mono;">
-              ${esc(frans.join(', ')||'\u2014')} · ${n} stores
+              ${esc(oaName)} &middot; ${n} stores
               <span class="ws-type-tag bc" style="margin-left:8px;font-size:9px;">${bc} BC</span>
               ${rs ? ` <span class="ws-type-tag rs" style="font-size:9px;">${rs} RS</span>` : ''}
             </div>
             <div style="margin-top:2px;font-size:10.5px;color:var(--muted);">
-              OA: ${esc(oas.join(', '))}
+              ${esc(frans.join(', ')||'')}
             </div>
           </div>
           <div style="display:flex;gap:16px;font-family:IBM Plex Mono;font-size:10px;">
@@ -606,7 +639,7 @@ function renderWorkshopsTab(){
             const areaGroups = {};
             const areaOrder = [];
             entries.forEach(e => {
-              const a = e.area || e.oa || 'Unknown';
+              const a = e.area || 'Unknown';
               if(!areaGroups[a]) { areaGroups[a] = []; areaOrder.push(a); }
               areaGroups[a].push(e);
             });
@@ -635,7 +668,7 @@ function renderWorkshopsTab(){
               const aDeltaStr = aDelta!=null ? (aDelta>=0?'+':'')+aDelta.toFixed(2) : '\u2014';
               const aDeltaCls = aDelta!=null ? (aDelta>=0?'delta-up':'delta-down') : '';
               const safeAn = an.replace(/[^a-zA-Z0-9]/g,'_');
-              const areaId = 'area_'+safeAn+'_'+d.replace(/[^0-9]/g,'');
+              const areaId = 'area_'+safeAn+'_'+d.replace(/[^0-9]/g,'')+'_'+oaName.replace(/[^a-zA-Z0-9]/g,'_');
               return `<div class="ws-area-block">
                 <div class="ws-area-head" onclick="document.getElementById('${esc(areaId)}').classList.toggle('open');this.querySelector('.ws-chevron').textContent=this.querySelector('.ws-chevron').textContent==='\u25B6'?'\u25BC':'\u25B6'">
                   <div>

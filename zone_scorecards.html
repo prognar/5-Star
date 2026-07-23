@@ -434,7 +434,7 @@ const COMP_COLORS = {cw:'#a3122a', cs:'#c07f1f', cb:'#7a5ba3', ch:'#5b7a9e', cf:
 function getViewScores(s){
   if(_pfState.view==='quarterly') return [s.q1, s.q2];
   if(_pfState.view==='ytd') return [s.y];
-  return [s.m1, s.m2, s.m3, s.m4, s.m5];
+  return MONTHS.map((_,i) => s['m'+(i+1)]);
 }
 function getViewLabel(i){
   if(_pfState.view==='quarterly') return ['Q1','Q2*'][i];
@@ -442,7 +442,7 @@ function getViewLabel(i){
   return MONTHS[i];
 }
 function getViewCount(){
-  return _pfState.view==='quarterly'?2:_pfState.view==='ytd'?1:5;
+  return _pfState.view==='quarterly'?2:_pfState.view==='ytd'?1:MONTHS.length;
 }
 function avg(arr){ const v=arr.filter(x=>x!=null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; }
 
@@ -586,12 +586,12 @@ function aggregateStores(stores){
     const all = grp.stores;
     const sc = all.map(s=>getViewScores(s)).flat().filter(x=>x!=null);
     const avg = sc.length ? sc.reduce((a,b)=>a+b,0)/sc.length : null;
-    const t1 = all.filter(s=>scoreTier(s.m5)===1).length;
-    const t2 = all.filter(s=>scoreTier(s.m5)===2).length;
-    const t3 = all.filter(s=>scoreTier(s.m5)===3).length;
+    const t1 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===1).length;
+    const t2 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===2).length;
+    const t3 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===3).length;
     // Overall trend from monthly averages
-    const mAvgs = [1,2,3,4,5].map(m=>{
-      const vals = all.map(s=>s['m'+m]).filter(v=>v!=null);
+    const mAvgs = MONTHS.map((_,i)=>{
+      const vals = all.map(s=>s['m'+(i+1)]).filter(v=>v!=null);
       return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
     });
     const slope = calcSlope(mAvgs.filter(v=>v!=null));
@@ -614,11 +614,11 @@ function aggregateAreas(stores){
     const all = grp.stores;
     const sc = all.map(s=>getViewScores(s)).flat().filter(x=>x!=null);
     const avg = sc.length ? sc.reduce((a,b)=>a+b,0)/sc.length : null;
-    const t1 = all.filter(s=>scoreTier(s.m5)===1).length;
-    const t2 = all.filter(s=>scoreTier(s.m5)===2).length;
-    const t3 = all.filter(s=>scoreTier(s.m5)===3).length;
-    const mAvgs = [1,2,3,4,5].map(m=>{
-      const vals = all.map(s=>s['m'+m]).filter(v=>v!=null);
+    const t1 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===1).length;
+    const t2 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===2).length;
+    const t3 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===3).length;
+    const mAvgs = MONTHS.map((_,i)=>{
+      const vals = all.map(s=>s['m'+(i+1)]).filter(v=>v!=null);
       return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
     });
     const slope = calcSlope(mAvgs.filter(v=>v!=null));
@@ -641,11 +641,11 @@ function aggregateFranchisees(stores){
     const all = grp.stores;
     const sc = all.map(s=>getViewScores(s)).flat().filter(x=>x!=null);
     const avg = sc.length ? sc.reduce((a,b)=>a+b,0)/sc.length : null;
-    const t1 = all.filter(s=>scoreTier(s.m5)===1).length;
-    const t2 = all.filter(s=>scoreTier(s.m5)===2).length;
-    const t3 = all.filter(s=>scoreTier(s.m5)===3).length;
-    const mAvgs = [1,2,3,4,5].map(m=>{
-      const vals = all.map(s=>s['m'+m]).filter(v=>v!=null);
+    const t1 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===1).length;
+    const t2 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===2).length;
+    const t3 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===3).length;
+    const mAvgs = MONTHS.map((_,i)=>{
+      const vals = all.map(s=>s['m'+(i+1)]).filter(v=>v!=null);
       return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
     });
     const slope = calcSlope(mAvgs.filter(v=>v!=null));
@@ -835,11 +835,11 @@ function renderFranAreaLevel(d, body){
     const all = grp.stores;
     const sc = all.map(s=>getViewScores(s)).flat().filter(x=>x!=null);
     const avg = sc.length ? sc.reduce((a,b)=>a+b,0)/sc.length : null;
-    const t1 = all.filter(s=>scoreTier(s.m5)===1).length;
-    const t2 = all.filter(s=>scoreTier(s.m5)===2).length;
-    const t3 = all.filter(s=>scoreTier(s.m5)===3).length;
-    const mAvgs = [1,2,3,4,5].map(m=>{
-      const vals = all.map(s=>s['m'+m]).filter(v=>v!=null);
+    const t1 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===1).length;
+    const t2 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===2).length;
+    const t3 = all.filter(s=>scoreTier(s['m'+MONTHS.length])===3).length;
+    const mAvgs = MONTHS.map((_,i)=>{
+      const vals = all.map(s=>s['m'+(i+1)]).filter(v=>v!=null);
       return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
     });
     const slope = calcSlope(mAvgs.filter(v=>v!=null));
@@ -950,7 +950,7 @@ function renderStoreLevel(d, body){
       html += `<td><span class="sc ${scoreClass(v)}">${fm(v)}</span></td>`;
     });
     html += `<td style="text-align:center">${trendArrow(s.t)}</td>
-      <td class="pf-spark">${sparkline([s.m1,s.m2,s.m3,s.m4,s.m5])}</td>
+      <td class="pf-spark">${sparkline(MONTHS.map((_,i)=>s['m'+(i+1)]))}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
@@ -972,7 +972,7 @@ function renderStoreLevel(d, body){
         rows += `<td><span class="sc ${scoreClass(v)}">${fm(v)}</span></td>`;
       });
       rows += `<td style="text-align:center">${trendArrow(s.t)}</td>
-        <td class="pf-spark">${sparkline([s.m1,s.m2,s.m3,s.m4,s.m5])}</td></tr>`;
+        <td class="pf-spark">${sparkline(MONTHS.map((_,i)=>s['m'+(i+1)]))}</td></tr>`;
     });
     document.getElementById('pfStoreBody').innerHTML = rows||'<tr><td colspan="'+(5+nCols)+'" style="padding:20px;text-align:center;color:var(--muted);font-family:Inter">No stores match.</td></tr>';
   };

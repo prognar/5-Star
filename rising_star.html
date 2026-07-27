@@ -27,7 +27,9 @@
   .h2-sub{font-size:12.5px; color:var(--muted); margin:0 0 18px;}
   .map-box{height:460px; width:100%; border:1px solid var(--line); border-radius:2px;}
   .legend{display:flex; gap:16px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin-top:10px; font-family:'IBM Plex Mono',monospace;}
-  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend span{display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 8px; border-radius:3px; transition:background .15s,opacity .15s;}
+  .legend span:hover{background:rgba(0,0,0,0.06);}
+  .legend span.dimmed{opacity:0.35;}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
   table{width:100%; border-collapse:collapse; font-size:12.8px;}
   th{font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); text-align:left; padding:8px 8px; border-bottom:2px solid var(--ink); font-weight:500;}
@@ -74,12 +76,12 @@
   <h2>Where Rising Star Stores Cluster</h2>
   <p class="h2-sub">Each dot is a Tier 2 store, colored by its binding constraint. This group is larger and more spread out than Bootcamp, so targeting works at the DMA level rather than by Area.</p>
   <div id="map" class="map-box"></div>
-  <div class="legend">
-    <span><span class="dot" style="background:#a3122a"></span>Win Score</span>
-    <span><span class="dot" style="background:#c07f1f"></span>Speed</span>
-    <span><span class="dot" style="background:#5b7a9e"></span>Hutbot On-Time</span>
-    <span><span class="dot" style="background:#7a5ba3"></span>Brand</span>
-    <span><span class="dot" style="background:#6b6560"></span>FSCC</span>
+  <div class="legend" id="rsLegend">
+    <span data-binding="WIN_SCORE_STAR"><span class="dot" style="background:#a3122a"></span>Win Score</span>
+    <span data-binding="SPEED_STAR"><span class="dot" style="background:#c07f1f"></span>Speed</span>
+    <span data-binding="HB_ONTIME_STAR"><span class="dot" style="background:#5b7a9e"></span>Hutbot On-Time</span>
+    <span data-binding="BRAND_STAR"><span class="dot" style="background:#7a5ba3"></span>Brand</span>
+    <span data-binding="FSCC_STAR"><span class="dot" style="background:#6b6560"></span>FSCC</span>
   </div>
 </section>
 
@@ -139,11 +141,33 @@ const bindLabels = {WIN_SCORE_STAR:'Win Score', SPEED_STAR:'Speed', HB_ONTIME_ST
 
 const map = L.map('map', {scrollWheelZoom:false}).setView([39.5,-98.35], 4);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:12}).addTo(map);
+const _rsLayers = {};
 points.forEach(p=>{
   const bind = codeMap[p.binding];
-  L.circleMarker([p.lat,p.lon], {radius:3.5, color:bindColors[bind]||'#999', weight:0, fillOpacity:0.6})
+  const layer = L.circleMarker([p.lat,p.lon], {radius:3.5, color:bindColors[bind]||'#999', weight:0, fillOpacity:0.6})
     .bindPopup(`<b>Store #${p.store}</b><br>${p.fran}<br>${p.dma}<br>Zone: ${p.oa}<br>Score: ${p.score.toFixed(2)}<br>Binding: ${bindLabels[bind]}`)
     .addTo(map);
+  if(!_rsLayers[bind]) _rsLayers[bind] = [];
+  _rsLayers[bind].push(layer);
+});
+
+let _rsFilter = null;
+document.getElementById('rsLegend').addEventListener('click', function(e){
+  const span = e.target.closest('span[data-binding]');
+  if(!span) return;
+  const key = span.dataset.binding;
+  if(_rsFilter === key){
+    _rsFilter = null;
+  } else {
+    _rsFilter = key;
+  }
+  Object.entries(_rsLayers).forEach(([k, layers])=>{
+    const show = !_rsFilter || _rsFilter === k;
+    layers.forEach(l => show ? l.addTo(map) : map.removeLayer(l));
+  });
+  document.querySelectorAll('#rsLegend span[data-binding]').forEach(s=>{
+    s.classList.toggle('dimmed', _rsFilter && s.dataset.binding !== _rsFilter);
+  });
 });
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }

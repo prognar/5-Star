@@ -337,7 +337,7 @@ function renderWatchRows(ws){
       <div class="ws-oa">${esc(s.oa)}</div>
       <div class="ws-fran">${esc(s.f)}</div>
       <div style="font-size:10.5px;color:var(--muted);">${esc(s.d)}</div>
-      <div class="ws-score" style="color:${s.sc>=5?'#00B050':s.sc>=4?'#A9D18E':s.sc>=3?'':s.sc>=2?'#F15B73':'#C90F2D'}">${s.sc!=null?s.sc.toFixed(2):'\u2014'}</div>
+      <div class="ws-score" style="color:${s.sc>=5?'#00B050':s.sc>=4?'#A9D18E':s.sc>=3?'#70AD47':s.sc>=2?'#F15B73':'#C90F2D'}">${s.sc!=null?s.sc.toFixed(2):'\u2014'}</div>
       <div style="text-align:center">${statusBadge}</div>
       <div class="ws-cons">${consTxt}</div>
       <div class="ws-fails">${failsTxt}</div>
@@ -351,7 +351,7 @@ function sparkline(vals, w=60, h=20){
   if(v.length<1) return '';
   const lo=Math.min(...v)-0.2, hi=Math.max(...v)+0.2, rng=hi-lo||1;
   const mid = (lo+hi)/2;
-  const col = mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'':mid>=2?'#F15B73':'#C90F2D';
+  const col = mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'#70AD47':mid>=2?'#F15B73':'#C90F2D';
   if(v.length===1){
     const cx = (w-1)/2, cy = h/2;
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><circle cx="${cx}" cy="${cy}" r="2.5" fill="${col}"/></svg>`;

@@ -464,7 +464,7 @@ function sparkline(vals, w=60, h=20){
   if(v.length<1) return '';
   const lo=Math.min(...v)-0.2, hi=Math.max(...v)+0.2, rng=hi-lo||1;
   const mid = (lo+hi)/2;
-  const col = mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'':mid>=2?'#F15B73':'#C90F2D';
+  const col = mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'#70AD47':mid>=2?'#F15B73':'#C90F2D';
   if(v.length===1){
     const cx = (w-1)/2, cy = h/2;
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><circle cx="${cx}" cy="${cy}" r="2.5" fill="${col}"/></svg>`;
@@ -727,7 +727,7 @@ function renderDMALevel(d, body){
     if(!statusHTML) statusHTML = '<span style="color:var(--muted);font-size:10px;">\u2014</span>';
     html += `<div class="pf-row" onclick="drillDMA('${esc(g.name)}')">
       <div class="pf-name">${esc(g.name)} <span class="pf-count">(${g.n} stores)</span></div>
-      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
+      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'#70AD47':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#a3122a;font-size:12px;font-weight:600">${g.t1}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#c07f1f;font-size:12px;font-weight:600">${g.t2}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#276b4d;font-size:12px;font-weight:600">${g.t3}</div>
@@ -769,7 +769,7 @@ function renderAreaOverviewLevel(d, body){
     if(!statusHTML) statusHTML = '<span style="color:var(--muted);font-size:10px;">\u2014</span>';
     html += `<div class="pf-row" onclick="drillAreaOverview('${esc(g.name)}')">
       <div class="pf-name">${esc(g.name)} <span class="pf-count">(${g.n} stores)</span><span class="pf-sub">${esc(franStr)}</span></div>
-      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
+      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'#70AD47':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#a3122a;font-size:12px;font-weight:600">${g.t1}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#c07f1f;font-size:12px;font-weight:600">${g.t2}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#276b4d;font-size:12px;font-weight:600">${g.t3}</div>
@@ -809,7 +809,7 @@ function renderFranLevel(d, body){
     if(!statusHTML) statusHTML = '<span style="color:var(--muted);font-size:10px;">\u2014</span>';
     html += `<div class="pf-row" onclick="drillFranchisee('${esc(g.name)}')">
       <div class="pf-name">${esc(g.name)} <span class="pf-count">(${g.n} stores)</span></div>
-      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
+      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'#70AD47':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#a3122a;font-size:12px;font-weight:600">${g.t1}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#c07f1f;font-size:12px;font-weight:600">${g.t2}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#276b4d;font-size:12px;font-weight:600">${g.t3}</div>
@@ -862,7 +862,7 @@ function renderFranAreaLevel(d, body){
     if(!statusHTML) statusHTML = '<span style="color:var(--muted);font-size:10px;">\u2014</span>';
     html += `<div class="pf-row" onclick="drillFranchiseeArea('${esc(g.name)}')">
       <div class="pf-name">${esc(g.name)} <span class="pf-count">(${g.n} stores)</span></div>
-      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
+      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'#70AD47':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#a3122a;font-size:12px;font-weight:600">${g.t1}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#c07f1f;font-size:12px;font-weight:600">${g.t2}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#276b4d;font-size:12px;font-weight:600">${g.t3}</div>
@@ -900,7 +900,7 @@ function renderAreaLevel(d, body){
     if(!statusHTML) statusHTML = '<span style="color:var(--muted);font-size:10px;">\u2014</span>';
     html += `<div class="pf-row" onclick="drillArea('${esc(g.name)}')">
       <div class="pf-name">${esc(g.name)} <span class="pf-count">(${g.n} stores)</span></div>
-      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
+      <div class="pf-score" style="color:${g.avg>=5?'#00B050':g.avg>=4?'#A9D18E':g.avg>=3?'#70AD47':g.avg>=2?'#F15B73':'#C90F2D'}">${fm(g.avg)}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#a3122a;font-size:12px;font-weight:600">${g.t1}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#c07f1f;font-size:12px;font-weight:600">${g.t2}</div>
       <div style="text-align:center;font-family:'IBM Plex Mono',monospace;color:#276b4d;font-size:12px;font-weight:600">${g.t3}</div>
@@ -994,6 +994,7 @@ function renderStoreDetail(d, body){
   
   const nCols = getViewCount();
   const scores = getViewScores(s);
+  let html = '';
   
   // Status banner
   if(s.st==='dl'){
@@ -1027,7 +1028,7 @@ function renderStoreDetail(d, body){
   html += '<div style="display:flex;gap:12px;align-items:center;">';
   for(let i=0;i<nCols;i++){
     html += '<div style="text-align:center"><div style="font-family:IBM Plex Mono;font-size:10px;color:var(--muted)">'+getViewLabel(i)+'</div>';
-    html += '<div style="font-family:Oswald;font-size:22px;font-weight:600;color:'+(scores[i]>=5?'#00B050':scores[i]>=4?'#A9D18E':scores[i]>=3?'':scores[i]>=2?'#F15B73':'#C90F2D')+'">'+fm(scores[i])+'</div></div>';
+    html += '<div style="font-family:Oswald;font-size:22px;font-weight:600;color:'+(scores[i]>=5?'#00B050':scores[i]>=4?'#A9D18E':scores[i]>=3?'#70AD47':scores[i]>=2?'#F15B73':'#C90F2D')+'">'+fm(scores[i])+'</div></div>';
   }
   html += '</div></div>';
   
@@ -1038,7 +1039,7 @@ function renderStoreDetail(d, body){
     const avgVal = avg(vals);
     html += `<div class="comp-card">
       <div class="comp-name">${COMP_LABELS[k]}</div>
-      <div class="comp-val" style="color:${avgVal>=5?'#00B050':avgVal>=4?'#A9D18E':avgVal>=3?'':avgVal>=2?'#F15B73':'#C90F2D'}">${fm(avgVal)}</div>
+      <div class="comp-val" style="color:${avgVal>=5?'#00B050':avgVal>=4?'#A9D18E':avgVal>=3?'#70AD47':avgVal>=2?'#F15B73':'#C90F2D'}">${fm(avgVal)}</div>
       <div style="font-family:IBM Plex Mono;font-size:10px;color:var(--muted);margin-top:2px;">
         ${vals.map((cv,j)=>{
           const sep = j>0?' · ':'';

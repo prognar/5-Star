@@ -281,7 +281,7 @@ function sparkline(vals, w=60, h=20){
   const v = vals.filter(x=>x!=null);
   if(v.length===0) return '';
   if(v.length===1){
-    const mid=v[0]; const col=mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'':mid>=2?'#F15B73':'#C90F2D';
+    const mid=v[0]; const col=mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'#70AD47':mid>=2?'#F15B73':'#C90F2D';
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><circle cx="${w/2}" cy="${h/2}" r="3" fill="${col}"/></svg>`;
   }
   const lo=Math.min(...v)-0.2, hi=Math.max(...v)+0.2, rng=hi-lo||1;
@@ -289,7 +289,7 @@ function sparkline(vals, w=60, h=20){
   const ys = v.map(x=>h-(x-lo)/rng*(h-2)-1);
   const pts = xs.map((x,i)=>`${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
   const mid = (lo+hi)/2;
-  const col = mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'':mid>=2?'#F15B73':'#C90F2D';
+  const col = mid>=5?'#00B050':mid>=4?'#A9D18E':mid>=3?'#70AD47':mid>=2?'#F15B73':'#C90F2D';
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${xs[xs.length-1].toFixed(1)}" cy="${ys[ys.length-1].toFixed(1)}" r="2" fill="${col}"/></svg>`;
 }
 
@@ -437,7 +437,7 @@ function renderOverview(){
       '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.fop) + '</td>' +
       '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.director) + '</td>' +
       '<td class="fran-n">' + f.n + '</td>' +
-      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
+      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
       '<td style="text-align:center"><span class="badge-dl">' + f.n_defaulting + '</span></td>' +
       '<td style="text-align:center"><span class="badge-ar">' + f.n_at_risk + '</span></td>' +
       '<td style="text-align:center"><span class="badge-tw">' + f.n_t1_watch + '</span></td>' +
@@ -535,7 +535,7 @@ function renderDirector(dirName){
     fopHtml += '<tr class="fran-row" onclick="selectFOP(\'' + esc(fopName) + '\')">' +
       '<td class="fran-name">' + esc(fopName) + '</td>' +
       '<td class="fran-n">' + fop.n_stores + '</td>' +
-      '<td class="fran-score" style="text-align:center;color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'':fa>=2?'#F15B73':'#C90F2D') + '">' + (fa != null ? fa.toFixed(2) : '\u2014') + '</td>' +
+      '<td class="fran-score" style="text-align:center;color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + (fa != null ? fa.toFixed(2) : '\u2014') + '</td>' +
       '<td style="text-align:center"><span class="badge-dl">' + (fop.n_defaulting||0) + '</span></td>' +
       '<td style="text-align:center"><span class="badge-ar">' + (fop.n_at_risk||0) + '</span></td>' +
       '<td style="text-align:center"><span class="badge-tw">' + (fop.n_t1_watch||0) + '</span></td>' +
@@ -557,7 +557,7 @@ function renderDirector(dirName){
       '<td class="fran-name">' + esc(f.fran) + '</td>' +
       '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.fop) + '</td>' +
       '<td class="fran-n">' + f.n + '</td>' +
-      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
+      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
       '<td style="text-align:center"><span class="badge-dl">' + f.n_defaulting + '</span></td>' +
       '<td style="text-align:center"><span class="badge-ar">' + f.n_at_risk + '</span></td>' +
       '<td style="text-align:center"><span class="badge-tw">' + f.n_t1_watch + '</span></td>' +
@@ -653,7 +653,7 @@ function renderFranchiseeList(franchisees){
     html += '<tr class="fran-row" onclick="showFranchisee(\'' + esc(f.fran) + '\')">' +
       '<td class="fran-name">' + esc(f.fran) + '</td>' +
       '<td class="fran-n">' + f.n + '</td>' +
-      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
+      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
       '<td style="text-align:center"><span class="badge-dl">' + f.n_defaulting + '</span></td>' +
       '<td style="text-align:center"><span class="badge-ar">' + f.n_at_risk + '</span></td>' +
       '<td style="text-align:center"><span class="badge-tw">' + f.n_t1_watch + '</span></td>' +
@@ -806,7 +806,7 @@ function showStoreDetail(storeId){
   monthKeys.forEach((k,i) => {
     const v = s[k];
     const mi = parseInt(k.slice(1))-1;
-    html += '<div class="score-item"><div class="sval" style="color:' + (v>=5?'#00B050':v>=4?'#A9D18E':v>=3?'':v>=2?'#F15B73':'#C90F2D') + '">' + fm(v) + '</div><div class="slbl">' + MONTHS[mi] + '</div></div>';
+    html += '<div class="score-item"><div class="sval" style="color:' + (v>=5?'#00B050':v>=4?'#A9D18E':v>=3?'#70AD47':v>=2?'#F15B73':'#C90F2D') + '">' + fm(v) + '</div><div class="slbl">' + MONTHS[mi] + '</div></div>';
   });
   html += '</div></div>';
 
@@ -816,7 +816,7 @@ function showStoreDetail(storeId){
     const avgVal = avg(vals);
     html += '<div class="comp-card">' +
       '<div class="comp-name">' + COMP_LABELS[k] + '</div>' +
-      '<div class="comp-val" style="color:' + (avgVal>=5?'#00B050':avgVal>=4?'#A9D18E':avgVal>=3?'':avgVal>=2?'#F15B73':'#C90F2D') + '">' + fm(avgVal) + '</div>' +
+      '<div class="comp-val" style="color:' + (avgVal>=5?'#00B050':avgVal>=4?'#A9D18E':avgVal>=3?'#70AD47':avgVal>=2?'#F15B73':'#C90F2D') + '">' + fm(avgVal) + '</div>' +
       '<div class="comp-mo">' + vals.map((cv,j) => {
         const sep = j>0?' \u00b7 ':'';
         const clr = cv!=null && cv<2.5 ? 'color:#a3122a;font-weight:600' : cv!=null && cv>=4 ? 'color:#276b4d;font-weight:600' : '';

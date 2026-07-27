@@ -1293,7 +1293,7 @@ function renderZone(oaName){
   document.getElementById('overallAvgLine').textContent = d.headline_avg != null ? d.headline_avg.toFixed(2) : '\u2014';
   if(oaF.avg != null && oaL.avg != null){
     const delta = oaL.avg - oaF.avg;
-    document.getElementById('avgDeltaLine').textContent = 'Jan ' + oaF.avg.toFixed(2) + ' \u2192 Jun ' + oaL.avg.toFixed(2) + ' (' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')';
+    document.getElementById('avgDeltaLine').textContent = MONTHS[0] + ' ' + oaF.avg.toFixed(2) + ' \u2192 ' + MONTHS[MONTHS.length-1] + ' ' + oaL.avg.toFixed(2) + ' (' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')';
   } else {
     document.getElementById('avgDeltaLine').textContent = '';
   }
@@ -1316,7 +1316,7 @@ function renderZone(oaName){
       <div class="big" style="color:${col}">${g.big}</div>
       <div class="target">${g.target}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${barW}%; background:${col};"></div></div>
-      <div class="progress-lbl">${Math.round(g.progress)}% of annual goal, at 5-mo pace</div>
+      <div class="progress-lbl">${Math.round(g.progress)}% of annual goal, at ${MONTHS.length}-mo pace</div>
     </div>`;
   });
   document.getElementById('goalCards').innerHTML = goalHTML;
@@ -1335,7 +1335,7 @@ function renderZone(oaName){
       const rPct = ts.n?(toRis/ts.n*100).toFixed(0):'0', tPct = ts.n?(toTop/ts.n*100).toFixed(0):'0';
       verdict = ts.avgEnd > ts.avgStart ? `Score trending up (${ts.avgStart}\u2192${ts.avgEnd}). ${upPct}% moved up \u2014 ${tPct}% double-jumped to Top Tier.` : `Score flat or down (${ts.avgStart}\u2192${ts.avgEnd}) despite ${upPct}% moving up \u2014 worth a closer look at who's stuck.`;
       rows = `
-        <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
+        <div class="tier-stat"><span>Avg score, ${MONTHS[0]} \u2192 ${MONTHS[MONTHS.length-1]}</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
         <div class="tier-stat"><span>Stayed in Bootcamp</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
         <div class="tier-stat"><span>\u2192 Rising Star</span><span class="v" style="color:#c07f1f">${toRis} (${rPct}%)</span></div>
         <div class="tier-stat"><span>\u2192 Top Tier \u2605\u2605</span><span class="v" style="color:#276b4d">${toTop} (${tPct}%)</span></div>`;
@@ -1343,7 +1343,7 @@ function renderZone(oaName){
       const toTop = _fw(2,3), toBoot = _fw(2,1);
       verdict = `${stayedPct}% held steady, ${upPct}% promoted vs ${downPct}% slipped back \u2014 ${ts.up>ts.down ? 'net positive' : ts.up===ts.down ? 'a wash' : 'net negative'} churn.`;
       rows = `
-        <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
+        <div class="tier-stat"><span>Avg score, ${MONTHS[0]} \u2192 ${MONTHS[MONTHS.length-1]}</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
         <div class="tier-stat"><span>Stayed in Rising Star</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
         <div class="tier-stat"><span>Promoted to Top Tier</span><span class="v" style="color:#276b4d">${toTop} (${upPct}%)</span></div>
         <div class="tier-stat"><span>Fell to Bootcamp</span><span class="v" style="color:#a3122a">${toBoot} (${downPct}%)</span></div>`;
@@ -1352,7 +1352,7 @@ function renderZone(oaName){
       const bPct = ts.n?(toBoot/ts.n*100).toFixed(0):'0';
       verdict = ts.down > ts.up ? `Losing ground: ${downPct}% fell out of Top Tier \u2014 ${bPct}% double-dropped to Bootcamp. Retention risk.` : `Holding steady \u2014 ${stayedPct}% retained Top Tier status.`;
       rows = `
-        <div class="tier-stat"><span>Avg score, Jan \u2192 May</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
+        <div class="tier-stat"><span>Avg score, ${MONTHS[0]} \u2192 ${MONTHS[MONTHS.length-1]}</span><span class="v">${ts.avgStart} \u2192 ${ts.avgEnd}</span></div>
         <div class="tier-stat"><span>Retained Top Tier</span><span class="v">${ts.stayed} (${stayedPct}%)</span></div>
         <div class="tier-stat"><span>\u2192 Rising Star</span><span class="v" style="color:#c07f1f">${toRis} (${(ts.n?(toRis/ts.n*100).toFixed(0):'0')}%)</span></div>
         <div class="tier-stat"><span>\u2192 Bootcamp \u2605\u2605</span><span class="v" style="color:#a3122a">${toBoot} (${bPct}%)</span></div>`;
@@ -1446,12 +1446,12 @@ function drawSankey(d){
     const path=`M${x0},${y0} C${midX},${y0} ${midX},${y1} ${x1},${y1} L${x1},${y1+h1} C${midX},${y1+h1} ${midX},${y0+h0} ${x0},${y0+h0} Z`;
     out += `<path d="${path}" fill="${tierColors[f.from]}" opacity="${f.from===f.to?0.28:0.16}"/>`;
   });
-  out += `<text x="${leftX}" y="14" font-family="IBM Plex Mono" font-size="10" fill="#6b6560">JAN '26</text><text x="${rightX}" y="14" font-family="IBM Plex Mono" font-size="10" fill="#6b6560">JUN '26</text>`;
+  out += `<text x="${leftX}" y="14" font-family="IBM Plex Mono" font-size="10" fill="#6b6560">${MONTHS[0].toUpperCase()} '26</text><text x="${rightX}" y="14" font-family="IBM Plex Mono" font-size="10" fill="#6b6560">${MONTHS[MONTHS.length-1].toUpperCase()} '26</text>`;
   svg.innerHTML = out;
 }
 
 function drawTrend(d){
-  const months = d.monthly.map(m=>({202601:'Jan',202602:'Feb',202603:'Mar',202604:'Apr',202605:'May',202606:'Jun'}[m.period]));
+  const months = d.monthly.map(m=>MONTHS[(m.period%100)-1]);
   const fivestar = d.monthly.map(m=>m.avg);
   const win = d.monthly.map(m=>m.win);
   const speed = d.monthly.map(m=>m.speed);

@@ -114,7 +114,7 @@ Status is recomputed from store data at render time (not from the CSV), using th
 
 | Tab | Feature | Why it matters |
 |---|---|---|
-| Overview | Goal Tracker | Shows if they're on pace for T1 reduction and T3 growth |
+| Overview | Goal Tracker | Shows if they're on pace for T1 reduction, T3 growth, and gross stores moved up (target: 75) |
 | Overview | Area & Franchisee Spotlight | Tells them **where to go** — lowest/highest areas and best/worst franchisee |
 | Overview | Binding chart | Per-tier view of which component holds stores back |
 | Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |

@@ -353,10 +353,8 @@ def load_workshops(df):
         bench_binding = None
         post_scores = []
         if is_bootcamp:
-            if has_anchor:
-                # Rolling 3-month benchmark ending at anchor
+            if status in ("past", "current") and has_anchor:
                 bench_score, bench_tier, bench_binding = _rolling3(sid, anchor, -2)
-                # Post-workshop rolling windows
                 for offset, label in [(-1, "30d"), (0, "60d"), (1, "90d")]:
                     avg_score, _, _ = _rolling3(sid, anchor, offset)
                     if avg_score is not None:
@@ -366,15 +364,13 @@ def load_workshops(df):
                             "score": avg_score,
                         })
         else:
-            # Rising Star: single-month benchmark at anchor
-            if has_anchor:
+            if status in ("past", "current") and has_anchor:
                 key = (sid, anchor)
                 if key in _score_lookup:
                     s, t, b = _score_lookup[key]
                     bench_score = s
                     bench_tier = t
                     bench_binding = b
-            # Post-scores: months after the workshop
             if status in ("past", "current"):
                 for pm in range(ws_month + 1, last_data_month + 1):
                     key = (sid, pm)
@@ -623,11 +619,14 @@ def compute_tier_flows(monthly_by_store):
         stayed = int((sub["tier_last"] == t).sum())
         up = int((sub["tier_last"] > t).sum()) if t < 3 else 0
         down = int((sub["tier_last"] < t).sum()) if t > 1 else 0
+        # avgEnd = average of stores CURRENTLY in this tier at end (not the Jan cohort)
+        end_sub = merged[merged["tier_last"] == t]
+        avg_end = round(float(end_sub["score_last"].mean()), 2) if len(end_sub) > 0 else 0
         tier_story.append({
             "t": t,
             "n": len(sub),
             "avgStart": round(float(sub["score_first"].mean()), 2),
-            "avgEnd": round(float(sub["score_last"].mean()), 2),
+            "avgEnd": avg_end,
             "stayed": stayed,
             "up": up,
             "down": down,

@@ -181,8 +181,8 @@ Status is recomputed from store data at render time (not from the CSV) using the
 **What it does:** Per-zone deep dive. Select a zone from the dropdown. Four tabs. Headline score updates to the selected zone's weighted average.
 
 ### Overview tab
-- **Goal Tracker** — T1 reduction, T3 growth, net upward movement pacing
-- **Tier Cards** — Tier 1/2/3 counts, averages, and movement
+- **Goal Tracker** — T1 reduction, T3 growth, and gross stores moved up (target: 75, not net). Progress bar shows pace toward the annual goal.
+- **Tier Cards** — "Right now" snapshot for each tier: current store count with directional change from January, current average score (2 decimal places) vs January, and where stores moved. Header shows "N stores now". Verdict sentence summarizes the story in one read.
 - **Sankey** — zone-level tier flow diagram
 - **Trend chart** — line chart with component overlays (x-axis labels adapt to available months)
 - **Binding chart** — per-tier binding percentages

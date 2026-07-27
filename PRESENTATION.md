@@ -51,7 +51,8 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 | Overview | FOP Summaries | Per-FOP 3-paragraph AI summaries (Past \| Present \| Future) showing portfolio shifts, risk counts, and recommended action |
 | Default Watch | Defaulting/At-Risk/T1 Watch tables | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual store level |
 | Workshops | Workshop Effectiveness | Control vs. variable analysis for Boot Camp **and** Rising Star — did attending stores improve more than similar stores that didn't? Validates the program investment |
-| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date and facilitator. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Drill down: Date → Area Coach → Individual stores |
+| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date and facilitator. Same-day workshops are grouped by Area Coach (FAREADESC), showing distinct blocks when multiple coaches host. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Drill down: Date → Area Coach → Individual stores |
+| Workshops | Franchisee Filter | Filter workshops by franchisee to isolate stores within a specific ownership group |
 | Workshops | Per-FOP Summaries | Same FOP summaries from Overview, surfaced in the Workshops context |
 
 **The leadership loop:**
@@ -84,11 +85,13 @@ Workshops      → shows whether training investments are paying off
 
 **Dynamic headline score:** The Average 5-star in the header updates as you drill down — national → director → FOP → franchisee — always showing the weighted average for your current selection. The Jan→Jun delta below it updates too.
 
-**Score mode toggle:** LM / LQ / YTD buttons change how scores are computed across all views.
+**Score mode toggle:** LM / LQ / YTD buttons change how scores are computed across all views. LQ mode computes a rolling 3-month average.
 
-**Trend arrows:** Gradient coloring — darker green = stronger improvement, darker red = steeper decline.
+**Trend arrows:** Gradient coloring — darker green = stronger improvement, darker red = steeper decline. Severity thresholds: >0.3 slope = strong, >0.15 = moderate.
 
 **The default framework:**
+
+Status is recomputed from store data at render time (not from the CSV), using the consecutive-months field from the data:
 
 | Status | Criteria | Action |
 |---|---|---|
@@ -105,7 +108,7 @@ Workshops      → shows whether training investments are paying off
 
 **Goal:** Raise low-tier stores, promote top-tier stores.
 
-**How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop.
+**How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop. Post-workshop, they compare each store's pre-score (rolling 3-month benchmark) against post-workshop scores at 30/60/90 days to measure whether the workshop moved the needle.
 
 **What the report gives them (4 tabs):**
 
@@ -117,7 +120,8 @@ Workshops      → shows whether training investments are paying off
 | Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |
 | Portfolio | Drill-down (OA → DMA → Area → Store) | Before a workshop, drill into a DMA and see every store with scores, status, and trends |
 | Portfolio | Store Detail | During a workshop, pull up a store's component scores |
-| Boot Camps | Workshop History (date-aggregated) | Past and upcoming Boot Camp workshops by distinct date, with sparkline trends and per-store drill-down. Workshop type tags (BC/RS) on each store row |
+| Boot Camps | Past Workshop History | Completed workshops grouped by date with benchmark score, post-score trend sparkline, and delta. Drill down to per-store Pre Score / Post Scores / Delta |
+| Boot Camps | Future Workshop List | Upcoming workshops with store count, Area Coach(s), and average benchmark score only — no post-scores until the workshop is past |
 | Targeting | Bootcamp Targeting | **Where to go** — which area/franchisee has the most Tier 1 stores by count and concentration, with binding focus bars |
 
 **Dynamic headline score:** The Average 5-star updates to the selected zone's weighted average. The Jan→Jun delta updates too.
@@ -134,6 +138,8 @@ Workshops      → shows whether training investments are paying off
 
 **The binding logic:** Whichever of the five components (Win Score, Speed, Brand, Hutbot, FSCC) has the lowest score determines what's holding the store back. That tells the OA what to coach on.
 
+**Benchmark logic (Boot Camp):** Each workshop entry carries a rolling 3-month benchmark score computed from the workshop date: after the 15th → benchmark uses scorecard from the month before; on/before 15th → two months before. The benchmark is the average of months N-2, N-1, and N. Only computed when all 3 months exist in available data and the workshop date is in the past. Future workshops show no benchmark or post-scores — the store hasn't attended yet. Post-scores are rolling 3-month averages at 30-day, 60-day, and 90-day offsets from the anchor.
+
 ---
 
 ### 4. `rising_star.html` — Rising Star Targeting (Cross-Zone)
@@ -146,7 +152,7 @@ Workshops      → shows whether training investments are paying off
 
 | Tab | Feature | Why it matters |
 |---|---|---|
-| Targeting | National map of Tier 2 stores | Every Tier 2 store plotted with binding-constraint coloring — see the national distribution at a glance |
+| Targeting | National map of Tier 2 stores | Every Tier 2 store plotted with binding-constraint coloring — see the national distribution at a glance. Click a legend item to filter to that binding only (click again to show all) |
 | Targeting | Top 30 DMA×Franchisee groups | Ranked by Tier 2 count with focus bars showing the dominant binding component — these are the best workshop targets |
 | Targeting | Concentration rate | What % of this franchisee's stores in this DMA are Tier 2 (high rate = better ROI per workshop) |
 | Targeting | Multi-zone flag | When a DMA×Franchisee group spans multiple OAs, flagged so scheduling gets the right coaches together |
@@ -170,6 +176,9 @@ Each role has a different entry point. Leadership doesn't care about DMA drill-d
 
 **5. Why the Store List is optional**
 The Store List was originally required for Area/LatLong/FOP fields. Now the 5-Star CSV carries those columns directly, so the Store List join only overrides values when present. Simpler pipeline, fewer dependencies.
+
+**6. Why the Rising Star map is filterable by binding**
+The map legend is clickable — clicking a component filters to stores bound by that component only, clicking again shows all. This lets leadership quickly answer "where is Win Score the biggest problem?" without scanning the full map.
 
 ---
 

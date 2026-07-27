@@ -327,64 +327,72 @@ def load_workshops(df):
         oa = row["OA_NAME"]
         ws_month = int(row["workshop_month"])
         ws_day = int(row["workshop_day"]) if pd.notna(row.get("workshop_day")) else 1
-        bm_month = ws_month if ws_day > 14 else ws_month - 1
         ws_type = str(row["WORKSHOP_TYPE"]).strip()
         date_str = str(row["WORKSHOP_DATE"].strftime("%Y-%m-%d")) if pd.notna(row["WORKSHOP_DATE"]) else ""
         is_bootcamp = "rising" not in ws_type.lower()
 
-        # Classify: future if workshop month > last data month
-        if ws_month > last_data_month:
+        # Classify: past if workshop date is behind us, even if data hasn't landed yet
+        ws_date = row["WORKSHOP_DATE"]
+        today = pd.Timestamp.now().normalize()
+        if pd.notna(ws_date) and ws_date.date() < today.date():
+            status = "past"
+        elif ws_month > last_data_month:
             status = "future"
         elif ws_month == last_data_month:
             status = "current"
         else:
             status = "past"
 
-        if is_bootcamp:
-            # Rolling 3-month benchmark ending at bm_month
-            bench_score, bench_tier, bench_binding = _rolling3(sid, bm_month, -2)
+        # Determine benchmark anchor from date:
+        # After 15th → scorecard from month before is latest; on/before 15th → two months before
+        anchor = ws_month - 1 if ws_day > 14 else ws_month - 2
+        has_anchor = anchor in PERIOD_MONTHS
 
-            # Post-workshop rolling windows: 30d (M-1,M,M+1), 60d (M,M+1,M+2), 90d (M+1,M+2,M+3)
-            post_scores = []
-            for offset, label in [(-1, "30d"), (0, "60d"), (1, "90d")]:
-                avg_score, _, _ = _rolling3(sid, bm_month, offset)
-                if avg_score is not None:
-                    post_scores.append({
-                        "month": bm_month + offset + 1,  # middle-ish month for sorting
-                        "label": label,
-                        "score": avg_score,
-                    })
+        bench_score = None
+        bench_tier = None
+        bench_binding = None
+        post_scores = []
+        if is_bootcamp:
+            if has_anchor:
+                # Rolling 3-month benchmark ending at anchor
+                bench_score, bench_tier, bench_binding = _rolling3(sid, anchor, -2)
+                # Post-workshop rolling windows
+                for offset, label in [(-1, "30d"), (0, "60d"), (1, "90d")]:
+                    avg_score, _, _ = _rolling3(sid, anchor, offset)
+                    if avg_score is not None:
+                        post_scores.append({
+                            "month": anchor + offset + 1,
+                            "label": label,
+                            "score": avg_score,
+                        })
         else:
-            # Rising Star: original single-month logic
-            bench_score = None
-            bench_tier = None
-            bench_binding = None
-            if bm_month >= 1 and bm_month <= 12:
-                key = (sid, bm_month)
+            # Rising Star: single-month benchmark at anchor
+            if has_anchor:
+                key = (sid, anchor)
                 if key in _score_lookup:
                     s, t, b = _score_lookup[key]
                     bench_score = s
                     bench_tier = t
                     bench_binding = b
-
-            post_scores = []
-            for pm in range(ws_month + 1, last_data_month + 1):
-                key = (sid, pm)
-                if key in _score_lookup:
-                    s, _, _ = _score_lookup[key]
-                    if s is not None:
-                        post_scores.append({
-                            "month": int(pm),
-                            "label": MONTH_LABELS[PERIOD_MONTHS.index(pm)] if pm in PERIOD_MONTHS else str(pm),
-                            "score": s,
-                        })
+            # Post-scores: months after the workshop
+            if status in ("past", "current"):
+                for pm in range(ws_month + 1, last_data_month + 1):
+                    key = (sid, pm)
+                    if key in _score_lookup:
+                        s, _, _ = _score_lookup[key]
+                        if s is not None:
+                            post_scores.append({
+                                "month": int(pm),
+                                "label": MONTH_LABELS[PERIOD_MONTHS.index(pm)] if pm in PERIOD_MONTHS else str(pm),
+                                "score": s,
+                            })
 
         entry = {
             "store": sid,
             "date": date_str,
             "type": ws_type,
             "workshop_month": ws_month,
-            "benchmark_month": bm_month,
+            "benchmark_month": anchor,
             "benchmark_score": bench_score,
             "benchmark_tier": bench_tier,
             "benchmark_binding": bench_binding,

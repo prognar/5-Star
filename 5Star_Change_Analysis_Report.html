@@ -6,48 +6,44 @@
 <title>5-Star Speed Change Analysis Report</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
 
-/* Header */
 .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: #fff; padding: 40px 30px; }
 .header h1 { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
 .header p { font-size: 14px; opacity: 0.8; }
 .header .subtitle { font-size: 15px; opacity: 0.9; margin-top: 4px; }
 
-/* Container */
 .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
-/* KPI Cards */
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .kpi-card { background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 .kpi-card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: #666; margin-bottom: 4px; }
 .kpi-card .value { font-size: 32px; font-weight: 700; }
-.kpi-card .suffix { font-size: 14px; color: #666; font-weight: 400; margin-left: 4px; }
 .kpi-card .note { font-size: 12px; color: #888; margin-top: 2px; }
 .kpi-card.accent1 { border-left: 4px solid #4361ee; }
 .kpi-card.accent2 { border-left: 4px solid #f72585; }
 .kpi-card.accent3 { border-left: 4px solid #4cc9f0; }
 .kpi-card.accent4 { border-left: 4px solid #7209b7; }
-.kpi-card .value.green { color: #2d6a4f; }
 .kpi-card .value.blue { color: #4361ee; }
 .kpi-card .value.purple { color: #7209b7; }
+.kpi-card .value.green { color: #2d6a4f; }
 .kpi-card .value.red { color: #e63946; }
 
-/* Section */
 .section { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-.section h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #f0f2f5; }
+.section h2 { font-size: 18px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #f0f2f5; }
+.section > p { font-size: 13px; color: #666; margin-bottom: 16px; }
 
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .chart-row.single { grid-template-columns: 1fr; }
-.chart-box { position: relative; min-height: 320px; }
+.chart-box { position: relative; min-height: 340px; }
 .chart-box h3 { font-size: 14px; font-weight: 600; color: #444; margin-bottom: 12px; text-align: center; }
-.chart-box canvas { max-height: 340px; }
+.chart-box canvas, .chart-box .sankey-wrap { width: 100%; height: 340px; }
 
-/* Tables */
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead th { background: #f8f9fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #444; border-bottom: 2px solid #dee2e6; }
+thead th { background: #f8f9fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #444; border-bottom: 2px solid #dee2e6; position: sticky; top: 0; z-index: 1; }
 tbody td { padding: 8px 12px; border-bottom: 1px solid #eee; }
 tbody tr:hover { background: #f8f9fa; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -58,15 +54,18 @@ tbody tr:hover { background: #f8f9fa; }
 .tag.t1 { background: #e0e7ff; color: #3730a3; }
 .tag.t2 { background: #fef3c7; color: #92400e; }
 .tag.t3 { background: #d1fae5; color: #065f46; }
+.up-text { color: #2b8a3e; font-weight: 600; }
 
-/* Notes / Methodology */
 .notes { background: #f8f9fa; border-radius: 8px; padding: 16px 20px; font-size: 13px; line-height: 1.6; color: #444; }
 .notes ul { list-style: none; padding: 0; }
 .notes li { margin-bottom: 6px; }
 .notes li::before { content: "> "; color: #4361ee; font-weight: 700; }
 
-/* Scrollable table wrapper */
-.table-wrap { overflow-x: auto; max-height: 500px; overflow-y: auto; }
+.table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; }
+.sticky-col { position: sticky; left: 0; background: inherit; }
+
+.sankey-box { min-height: 400px; }
+.sankey-box #sankey { width: 100%; height: 400px; }
 
 @media (max-width: 900px) {
     .chart-row { grid-template-columns: 1fr; }
@@ -88,36 +87,37 @@ tbody tr:hover { background: #f8f9fa; }
 <!-- ===== KPI CARDS ===== -->
 <div class="kpi-row">
     <div class="kpi-card accent1">
-        <div class="label">Stores Analyzed</div>
+        <div class="label">Unique Stores</div>
         <div class="value blue">4,590</div>
         <div class="note">across 6 months</div>
     </div>
     <div class="kpi-card accent2">
-        <div class="label">Store-Months</div>
+        <div class="label">Store&ndash;Months Analyzed</div>
         <div class="value purple">27,453</div>
-        <div class="note">with 5-Star data</div>
+        <div class="note">with 5-Star match</div>
     </div>
     <div class="kpi-card accent3">
         <div class="label">Speed Bucket Changes</div>
         <div class="value green">6,652</div>
-        <div class="suffix">(<span id="overallPct">24.2</span>%)</div>
+        <div class="note"><span id="overallPct">24.2</span>% of store&ndash;months</div>
     </div>
     <div class="kpi-card accent4">
         <div class="label">Tier Movements Up</div>
         <div class="value red">1,315</div>
-        <div class="note">stores moved to higher tier</div>
+        <div class="note">store&ndash;months that moved to higher tier</div>
     </div>
 </div>
 
-<!-- ===== MONTHLY TREND ===== -->
+<!-- ===== 1. MONTHLY CHANGE TREND ===== -->
 <div class="section">
     <h2>1. Monthly Change Trend</h2>
+    <p>Percentage of store&ndash;months where UPDT speed crossed into a higher bucket than CURR speed, with tier-move overlay.</p>
     <div class="chart-row single">
         <div class="chart-box">
             <canvas id="monthlyChart"></canvas>
         </div>
     </div>
-    <div class="table-wrap" style="margin-top:16px;">
+    <div class="table-wrap" style="margin-top:16px;max-height:auto;">
         <table>
             <thead>
                 <tr><th>Month</th><th class="num">Stores</th><th class="num">Changes</th><th class="num">% Change</th><th class="num">Tier Moves Up</th></tr>
@@ -134,71 +134,99 @@ tbody tr:hover { background: #f8f9fa; }
     </div>
 </div>
 
-<!-- ===== TIER MOVEMENT ===== -->
+<!-- ===== 2. TIER DISTRIBUTION BY MONTH ===== -->
 <div class="section">
-    <h2>2. Tier Movement Analysis</h2>
-    <p style="font-size:13px;color:#666;margin-bottom:16px;">The updated scenario uses UPDT speed values instead of CURR. Each bucket improvement adds 0.3 to the Overall Score.</p>
-    <div class="chart-row">
+    <h2>2. Current vs Updated Tier Distribution by Month</h2>
+    <p>Unique stores per month in each tier. &ldquo;Updated&rdquo; shows where stores would be if UPDT speed were used instead of CURR.</p>
+    <div class="chart-row single">
         <div class="chart-box">
-            <h3>Current vs Updated Tier Distribution</h3>
-            <canvas id="tierDistChart"></canvas>
-        </div>
-        <div class="chart-box">
-            <h3>Where Stores Moved (Flow)</h3>
-            <canvas id="tierFlowChart"></canvas>
+            <canvas id="tierMonthlyChart"></canvas>
         </div>
     </div>
     <div class="table-wrap" style="margin-top:16px;">
         <table>
             <thead>
-                <tr><th>Current Tier</th><th>Updated Tier</th><th class="num">Store-Months</th><th>Direction</th></tr>
+                <tr>
+                    <th rowspan="2">Month</th>
+                    <th colspan="3" style="text-align:center;border-bottom:none;">Current (CURR Speed)</th>
+                    <th colspan="3" style="text-align:center;border-bottom:none;">Updated (UPDT Speed)</th>
+                    <th rowspan="2" class="num">Tier Moves Up</th>
+                </tr>
+                <tr>
+                    <th class="num" style="font-weight:400;color:#3730a3;">Tier 1</th>
+                    <th class="num" style="font-weight:400;color:#92400e;">Tier 2</th>
+                    <th class="num" style="font-weight:400;color:#065f46;">Tier 3</th>
+                    <th class="num" style="font-weight:400;color:#3730a3;">Tier 1</th>
+                    <th class="num" style="font-weight:400;color:#92400e;">Tier 2</th>
+                    <th class="num" style="font-weight:400;color:#065f46;">Tier 3</th>
+                </tr>
             </thead>
             <tbody>
-                <tr><td><span class="tag t1">Tier 1</span></td><td><span class="tag t1">Tier 1</span></td><td class="num">4,907</td><td><span class="badge same">Same</span></td></tr>
-                <tr><td><span class="tag t1">Tier 1</span></td><td><span class="tag t2">Tier 2</span></td><td class="num" style="color:#2b8a3e;font-weight:600;">611</td><td><span class="badge up">Up</span></td></tr>
-                <tr><td><span class="tag t2">Tier 2</span></td><td><span class="tag t2">Tier 2</span></td><td class="num">15,431</td><td><span class="badge same">Same</span></td></tr>
-                <tr><td><span class="tag t2">Tier 2</span></td><td><span class="tag t3">Tier 3</span></td><td class="num" style="color:#2b8a3e;font-weight:600;">704</td><td><span class="badge up">Up</span></td></tr>
-                <tr><td><span class="tag t3">Tier 3</span></td><td><span class="tag t3">Tier 3</span></td><td class="num">5,325</td><td><span class="badge same">Same</span></td></tr>
-                <tr style="background:#f0fdf4;"><td colspan="2"><strong>Total moved up</strong></td><td class="num"><strong>1,315</strong></td><td><span class="badge up">Up</span></td></tr>
-                <tr><td colspan="4" style="font-size:12px;color:#888;padding-top:10px;">
-                    <em>Note: 4 anomalous cases (Tier 2&rarr;1 and Tier 3&rarr;2, where UPDT fell below CURR bucket) are excluded from the &ldquo;Up&rdquo; count.</em>
-                </td></tr>
+                <tr><td><strong>JAN</strong></td><td class="num">981</td><td class="num">2,684</td><td class="num">779</td><td class="num">882</td><td class="num">2,681</td><td class="num up-text">883</td><td class="num up-text">180</td></tr>
+                <tr><td><strong>FEB</strong></td><td class="num">1,046</td><td class="num">2,629</td><td class="num">775</td><td class="num">941</td><td class="num">2,661</td><td class="num up-text">853</td><td class="num up-text">164</td></tr>
+                <tr><td><strong>MAR</strong></td><td class="num">911</td><td class="num">2,664</td><td class="num">888</td><td class="num">798</td><td class="num">2,669</td><td class="num up-text">1,000</td><td class="num up-text">202</td></tr>
+                <tr><td><strong>APR</strong></td><td class="num">895</td><td class="num">2,725</td><td class="num">851</td><td class="num">785</td><td class="num">2,715</td><td class="num up-text">973</td><td class="num up-text">220</td></tr>
+                <tr><td><strong>MAY</strong></td><td class="num">857</td><td class="num">2,706</td><td class="num">910</td><td class="num">750</td><td class="num">2,694</td><td class="num up-text">1,030</td><td class="num up-text">211</td></tr>
+                <tr><td><strong>JUN</strong></td><td class="num">747</td><td class="num">2,688</td><td class="num">1,048</td><td class="num">679</td><td class="num">2,582</td><td class="num up-text">1,222</td><td class="num up-text">224</td></tr>
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- ===== TOP FRANCHISEES ===== -->
+<!-- ===== 3. SANKEY: TIER MOVEMENT ===== -->
 <div class="section">
-    <h2>3. Top Franchisees by % Change</h2>
-    <p style="font-size:13px;color:#666;margin-bottom:8px;">Franchisees with highest percentage of store-months showing a speed bucket improvement.</p>
+    <h2>3. Tier Movement Flow (All Months Combined)</h2>
+    <p>Flow of store&ndash;months from their current tier (CURR speed) to their updated tier (UPDT speed). Width proportional to count.</p>
     <div class="chart-row single">
-        <div class="chart-box" style="min-height:480px;">
-            <canvas id="franchiseeChart"></canvas>
+        <div class="chart-box sankey-box">
+            <div id="sankey"></div>
         </div>
     </div>
     <div class="table-wrap" style="margin-top:16px;">
         <table>
             <thead>
-                <tr><th>#</th><th>Franchisee</th><th class="num">Stores</th><th class="num">Total Changes</th><th class="num">Avg % Changed</th><th class="num">Tier Moves Up</th></tr>
+                <tr><th>From (Current Tier)</th><th>To (Updated Tier)</th><th class="num">Store&ndash;Months</th><th>Direction</th></tr>
             </thead>
-            <tbody id="franchiseeTableBody"></tbody>
+            <tbody>
+                <tr><td><span class="tag t1">Tier 1</span></td><td><span class="tag t1">Tier 1</span></td><td class="num">4,907</td><td><span class="badge same">Same</span></td></tr>
+                <tr style="background:#f0fdf4;"><td><span class="tag t1">Tier 1</span></td><td><span class="tag t2">Tier 2</span></td><td class="num up-text">611</td><td><span class="badge up">Up</span></td></tr>
+                <tr><td><span class="tag t2">Tier 2</span></td><td><span class="tag t2">Tier 2</span></td><td class="num">15,431</td><td><span class="badge same">Same</span></td></tr>
+                <tr style="background:#f0fdf4;"><td><span class="tag t2">Tier 2</span></td><td><span class="tag t3">Tier 3</span></td><td class="num up-text">704</td><td><span class="badge up">Up</span></td></tr>
+                <tr><td><span class="tag t3">Tier 3</span></td><td><span class="tag t3">Tier 3</span></td><td class="num">5,325</td><td><span class="badge same">Same</span></td></tr>
+                <tr style="background:#fef2f2;"><td><span class="tag t2">Tier 2</span></td><td><span class="tag t1">Tier 1</span></td><td class="num" style="color:#888;">2</td><td><span class="badge same" style="background:#fee2e2;color:#dc2626;">Anomaly</span></td></tr>
+                <tr style="background:#fef2f2;"><td><span class="tag t3">Tier 3</span></td><td><span class="tag t2">Tier 2</span></td><td class="num" style="color:#888;">2</td><td><span class="badge same" style="background:#fee2e2;color:#dc2626;">Anomaly</span></td></tr>
+            </tbody>
         </table>
     </div>
 </div>
 
-<!-- ===== METHODOLOGY ===== -->
+<!-- ===== 4. ALL FRANCHISEES ===== -->
 <div class="section">
-    <h2>4. Methodology &amp; Notes</h2>
+    <h2>4. All Franchisees &mdash; Impact Summary</h2>
+    <p>Sorted by % of store&ndash;months with speed bucket improvement (descending).</p>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>#</th><th>Franchisee</th><th class="num">Avg Monthly Stores</th><th class="num">Total Changes</th><th class="num">% Changed</th><th class="num">Tier Moves Up</th></tr>
+            </thead>
+            <tbody id="franchiseeBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===== 5. METHODOLOGY ===== -->
+<div class="section">
+    <h2>5. Methodology &amp; Notes</h2>
     <div class="notes">
         <ul>
-            <li><strong>Data Sources:</strong> OTD.csv (CURR/UPDT speed values per store-month), 5-Star.csv (overall scores, speed stars), Alignment.csv (store-to-franchisee mapping).</li>
-            <li><strong>Speed Star Buckets:</strong> 1 (0&ndash;34.99), 2 (35&ndash;43.99), 3 (44&ndash;52.99), 4 (53&ndash;69.99), 5 (70&ndash;100). CURR and UPDT values (stored as decimals in OTD) are multiplied by 100 for bucket assignment.</li>
+            <li><strong>Data Sources:</strong> OTD.csv (CURR/UPDT speed values per store&ndash;month), 5-Star.csv (overall scores, speed stars), Alignment.csv (store-to-franchisee mapping).</li>
+            <li><strong>Speed Star Buckets:</strong> 1 (0&ndash;34.99), 2 (35&ndash;43.99), 3 (44&ndash;52.99), 4 (53&ndash;69.99), 5 (70&ndash;100). CURR/UPDT values (decimals in OTD) are multiplied by 100 for bucket assignment.</li>
             <li><strong>5-Star Overall Score Formula:</strong> Win Score 35% + Speed Score 30% + HB Ontime 20% + FSCC 7.5% + Brand 7.5%.</li>
             <li><strong>Tier Boundaries:</strong> Tier 1 (1.0 &ndash; 2.5), Tier 2 (2.5 &ndash; 4.0), Tier 3 (4.0+).</li>
-            <li><strong>Improvement Impact:</strong> Moving up one speed star bucket adds 0.30 points to the Overall Score (30% weight &times; 1 star).</li>
-            <li><strong>&ldquo;Updated&rdquo; Scenario:</strong> Calculated as <code>UpdatedOverall = CurrentOverall + (UpdtBucket &minus; CurrBucket) &times; 0.3</code>. Only the speed component changes; all other component scores (win score, brand, etc.) remain as in the source 5-Star data.</li>
-            <li><strong>471 store-months</strong> (1.7%) had no matching 5-Star record and are excluded from tier analysis.</li>
+            <li><strong>Improvement Impact:</strong> Moving up one speed star bucket adds 0.30 points to the Overall Score (30% weight &times; 1 star). <code>UpdatedOverall = CurrentOverall + (UpdtBucket &minus; CurrBucket) &times; 0.3</code></li>
+            <li><strong>Scope:</strong> Only the speed component changes. Win Score, Brand, HB Ontime, and FSCC remain at their source values.</li>
+            <li><strong>471 store&ndash;months</strong> (1.7%) had no matching 5-Star record and are excluded from tier analysis.</li>
+            <li><strong>4 anomalous cases</strong> (Tier 2&rarr;1 and Tier 3&rarr;2) where UPDT fell into a lower bucket than CURR. These are included in the Sankey but excluded from the &ldquo;Tier Moves Up&rdquo; count.</li>
         </ul>
     </div>
 </div>
@@ -206,33 +234,19 @@ tbody tr:hover { background: #f8f9fa; }
 </div><!-- .container -->
 
 <script>
-// Register datalabels plugin
 Chart.register(ChartDataLabels);
 
-// ===== COLOR PALETTE =====
-const colors = {
-    blue: '#4361ee',
-    purple: '#7209b7',
-    green: '#2d6a4f',
-    red: '#e63946',
-    orange: '#f77f00',
-    teal: '#4cc9f0',
-    gray: '#adb5bd',
-    lightBlue: '#e0e7ff',
-    lightGreen: '#d3f9d8',
-    lightOrange: '#fff3bf'
-};
-
-// ===== CHART 1: Monthly Change % + Tier Moves =====
-const ctx1 = document.getElementById('monthlyChart').getContext('2d');
-new Chart(ctx1, {
+// =============================================================
+//  CHART 1: Monthly Change % + Tier Moves (dual axis)
+// =============================================================
+new Chart(document.getElementById('monthlyChart'), {
     type: 'bar',
     data: {
         labels: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN'],
         datasets: [{
             label: '% of Store-Months with Change',
             data: [22.9, 22.7, 24.3, 23.7, 25.1, 24.8],
-            backgroundColor: ['#4361ee', '#4361ee', '#4361ee', '#4361ee', '#4361ee', '#4361ee'],
+            backgroundColor: '#4361ee',
             borderRadius: 4,
             order: 2,
             yAxisID: 'y'
@@ -252,186 +266,201 @@ new Chart(ctx1, {
         }]
     },
     options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: {
             legend: { position: 'top' },
             datalabels: {
-                anchor: 'end',
-                align: 'end',
-                color: '#444',
+                anchor: 'end', align: 'end', color: '#444',
                 font: { weight: 'bold', size: 11 },
                 formatter: (v, ctx) => ctx.datasetIndex === 0 ? v + '%' : v
             }
         },
         scales: {
-            y: {
-                beginAtZero: true,
-                max: 35,
-                title: { display: true, text: '% of Store-Months' },
-                grid: { color: '#f0f0f0' }
-            },
-            y1: {
-                beginAtZero: true,
-                position: 'right',
-                title: { display: true, text: 'Tier Moves Up' },
-                grid: { display: false }
-            }
+            y: { beginAtZero: true, max: 35, title: { display: true, text: '% of Store-Months' }, grid: { color: '#f0f0f0' } },
+            y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Tier Moves Up' }, grid: { display: false } }
         }
     }
 });
 
-// ===== CHART 2: Tier Distribution (Before vs After) =====
-const ctx2 = document.getElementById('tierDistChart').getContext('2d');
-new Chart(ctx2, {
-    type: 'bar',
+// =============================================================
+//  CHART 2: Tier Distribution by Month (lines)
+// =============================================================
+new Chart(document.getElementById('tierMonthlyChart'), {
+    type: 'line',
     data: {
-        labels: ['Tier 1', 'Tier 2', 'Tier 3'],
-        datasets: [{
-            label: 'Current (CURR Speed)',
-            data: [5518, 16137, 5327],
-            backgroundColor: '#adb5bd',
-            borderRadius: 4
-        }, {
-            label: 'Updated (UPDT Speed)',
-            data: [4909, 16044, 6029],
-            backgroundColor: '#4361ee',
-            borderRadius: 4
-        }]
+        labels: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN'],
+        datasets: [
+            { label: 'Current Tier 1', data: [981,1046,911,895,857,747], borderColor: '#adb5bd', backgroundColor: 'transparent', borderWidth: 2, borderDash: [], pointStyle: 'circle', tension: 0.3 },
+            { label: 'Updated Tier 1', data: [882,941,798,785,750,679], borderColor: '#adb5bd', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,4], pointStyle: 'circle', tension: 0.3 },
+            { label: 'Current Tier 2', data: [2684,2629,2664,2725,2706,2688], borderColor: '#4361ee', backgroundColor: 'transparent', borderWidth: 2, borderDash: [], pointStyle: 'rect', tension: 0.3 },
+            { label: 'Updated Tier 2', data: [2681,2661,2669,2715,2694,2582], borderColor: '#4361ee', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,4], pointStyle: 'rect', tension: 0.3 },
+            { label: 'Current Tier 3', data: [779,775,888,851,910,1048], borderColor: '#2d6a4f', backgroundColor: 'transparent', borderWidth: 2, borderDash: [], pointStyle: 'triangle', tension: 0.3 },
+            { label: 'Updated Tier 3', data: [883,853,1000,973,1030,1222], borderColor: '#2d6a4f', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,4], pointStyle: 'triangle', tension: 0.3 }
+        ]
     },
     options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: {
-            legend: { position: 'top' },
-            datalabels: {
-                anchor: 'end',
-                align: 'end',
-                color: '#444',
-                font: { weight: 'bold', size: 11 }
-            }
+            legend: { position: 'top', labels: { font: { size: 11 }, usePointStyle: true } },
+            tooltip: { mode: 'index', intersect: false },
+            datalabels: { display: false }
         },
         scales: {
-            y: {
-                beginAtZero: true,
-                title: { display: true, text: 'Store-Months' },
-                grid: { color: '#f0f0f0' }
-            }
+            y: { beginAtZero: true, title: { display: true, text: 'Unique Stores' }, grid: { color: '#f0f0f0' } }
         }
     }
 });
 
-// ===== CHART 3: Tier Flow =====
-const ctx3 = document.getElementById('tierFlowChart').getContext('2d');
-new Chart(ctx3, {
-    type: 'bar',
-    data: {
-        labels: ['Started in Tier 1', 'Started in Tier 2', 'Started in Tier 3'],
-        datasets: [{
-            label: 'Ended in Tier 1',
-            data: [4907, 2, 0],
-            backgroundColor: '#adb5bd'
-        }, {
-            label: 'Ended in Tier 2',
-            data: [611, 15431, 2],
-            backgroundColor: '#4361ee'
-        }, {
-            label: 'Ended in Tier 3',
-            data: [0, 704, 5325],
-            backgroundColor: '#2d6a4f'
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { position: 'top' },
-            tooltip: {
-                callbacks: {
-                    label: function(ctx) {
-                        return ctx.dataset.label + ': ' + ctx.raw.toLocaleString() + ' (' + Math.round(ctx.raw / ctx.dataset.data.reduce((a,b) => a+b) * 1000) / 10 + '%)';
-                    }
-                }
+// =============================================================
+//  CHART 3: SANKEY (Google Charts)
+// =============================================================
+google.charts.load('current', { packages: ['sankey'] });
+google.charts.setOnLoadCallback(drawSankey);
+
+function drawSankey() {
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'From');
+    data.addColumn('string', 'To');
+    data.addColumn('number', 'Store-Months');
+    data.addRows([
+        ['Tier 1 (Current)',    'Tier 1 (Updated)',     4907],
+        ['Tier 1 (Current)',    'Tier 2 (Updated)',      611],
+        ['Tier 2 (Current)',    'Tier 2 (Updated)',    15431],
+        ['Tier 2 (Current)',    'Tier 3 (Updated)',      704],
+        ['Tier 2 (Current)',    'Tier 1 (Updated)',        2],
+        ['Tier 3 (Current)',    'Tier 3 (Updated)',     5325],
+        ['Tier 3 (Current)',    'Tier 2 (Updated)',        2]
+    ]);
+
+    var options = {
+        width: '100%',
+        height: 400,
+        sankey: {
+            node: {
+                label: { fontSize: 13, bold: true },
+                colors: ['#e0e7ff', '#fef3c7', '#d1fae5'],
+                nodePadding: 20,
+                width: 18
             },
-            datalabels: {
-                anchor: 'center',
-                align: 'center',
-                color: '#fff',
-                font: { weight: 'bold', size: 12 },
-                formatter: (v) => v > 0 ? v.toLocaleString() : ''
-            }
-        },
-        scales: {
-            x: { stacked: true },
-            y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Store-Months' }, grid: { color: '#f0f0f0' } }
+            link: {
+                colorMode: 'gradient',
+                colors: ['#e0e7ff', '#fef3c7', '#d1fae5', '#4361ee', '#2d6a4f', '#e63946']
+            },
+            iterations: 32
         }
-    }
-});
+    };
 
-// ===== CHART 4: Top Franchisees =====
-const franchisees = [
-    {name:'JAMES GRESSETT', pct:34.0, stores:77, changes:157, tierUp:31},
-    {name:'HENRY KUEHL', pct:33.3, stores:5, changes:10, tierUp:2},
-    {name:'ED HERRON', pct:32.7, stores:26, changes:51, tierUp:6},
-    {name:'CHARAN DHALIWAL', pct:31.5, stores:28, changes:53, tierUp:8},
-    {name:'TABBASSUM MUMTAZ', pct:31.3, stores:75, changes:141, tierUp:33},
-    {name:'BRIAN BAIRD', pct:30.6, stores:18, changes:33, tierUp:0},
-    {name:'JASON COCHRAN', pct:30.4, stores:179, changes:326, tierUp:74},
-    {name:'ADAM DIAMOND', pct:30.3, stores:105, changes:190, tierUp:30},
-    {name:'ANDREW ROSEN', pct:30.1, stores:82, changes:148, tierUp:41},
-    {name:'SCOTT DAVISON', pct:30.0, stores:27, changes:48, tierUp:7},
-    {name:'PHIL TERNES', pct:30.0, stores:5, changes:9, tierUp:0},
-    {name:'R CRAIG BITTNER', pct:28.8, stores:11, changes:19, tierUp:2},
-    {name:'WILLIAM WALSH', pct:28.1, stores:80, changes:135, tierUp:31},
-    {name:'JOHN MCGRATH', pct:27.3, stores:25, changes:41, tierUp:7},
-    {name:'MICHAEL CHERNEY', pct:27.1, stores:112, changes:182, tierUp:29}
+    var chart = new google.visualization.Sankey(document.getElementById('sankey'));
+    chart.draw(data, options);
+}
+
+// =============================================================
+//  TABLE: All Franchisees
+// =============================================================
+var franchisees = [
+    {f:"HEMANG CHAMPANERIA", s:0, c:2, p:100.0, u:0},
+    {f:"JAMES GRESSETT", s:77, c:157, p:34.0, u:31},
+    {f:"HENRY KUEHL", s:5, c:10, p:33.3, u:2},
+    {f:"ED HERRON", s:26, c:51, p:32.7, u:6},
+    {f:"CHARAN DHALIWAL", s:28, c:53, p:31.5, u:8},
+    {f:"TABBASSUM MUMTAZ", s:75, c:141, p:31.3, u:33},
+    {f:"BRIAN BAIRD", s:18, c:33, p:30.6, u:0},
+    {f:"JASON COCHRAN", s:179, c:326, p:30.4, u:74},
+    {f:"ADAM DIAMOND", s:105, c:190, p:30.3, u:30},
+    {f:"ANDREW ROSEN", s:82, c:148, p:30.1, u:41},
+    {f:"SCOTT DAVISON", s:27, c:48, p:30.0, u:7},
+    {f:"PHIL TERNES", s:5, c:9, p:30.0, u:0},
+    {f:"R CRAIG BITTNER", s:11, c:19, p:28.8, u:2},
+    {f:"WILLIAM WALSH", s:80, c:135, p:28.1, u:31},
+    {f:"JOHN MCGRATH", s:25, c:41, p:27.3, u:7},
+    {f:"MICHAEL CHERNEY", s:112, c:182, p:27.1, u:29},
+    {f:"KEVIN ATTKISSON", s:118, c:191, p:27.0, u:39},
+    {f:"RYAN WASINGER", s:105, c:169, p:26.9, u:38},
+    {f:"MIKE PATRANELLA", s:18, c:29, p:26.9, u:0},
+    {f:"THOMAS JORGENSEN", s:110, c:175, p:26.5, u:37},
+    {f:"THOMAS SCOTT", s:154, c:244, p:26.4, u:57},
+    {f:"JAMES SOUZA", s:19, c:30, p:26.3, u:2},
+    {f:"MATTHEW AILEY", s:125, c:197, p:26.3, u:49},
+    {f:"MICHAEL QUINN", s:36, c:56, p:25.9, u:6},
+    {f:"TERRY HOPKINS", s:86, c:133, p:25.8, u:21},
+    {f:"RICK SEAGROVES", s:27, c:41, p:25.3, u:9},
+    {f:"CHARLIE HUDSON", s:12, c:18, p:25.0, u:0},
+    {f:"MARK DILLON", s:39, c:58, p:24.8, u:6},
+    {f:"TYLER FREELAND", s:17, c:25, p:24.5, u:2},
+    {f:"MARK PETERSON", s:67, c:98, p:24.4, u:25},
+    {f:"JESSE ARNOLD", s:68, c:100, p:24.3, u:17},
+    {f:"AL SALAS", s:49, c:71, p:24.1, u:13},
+    {f:"LUIS IBARGUENGOYTIA", s:108, c:155, p:23.9, u:30},
+    {f:"GREG FLYNN", s:949, c:1348, p:23.7, u:271},
+    {f:"STEVE CHAMBERS", s:12, c:17, p:23.6, u:4},
+    {f:"BRYANT PETERSON", s:24, c:34, p:23.6, u:6},
+    {f:"ROGER GATES", s:10, c:14, p:23.3, u:0},
+    {f:"GARRETT MCGINN", s:46, c:64, p:23.2, u:14},
+    {f:"SEAN AMMORI", s:27, c:37, p:23.1, u:7},
+    {f:"ESTATE OF RICHARD FREELAND", s:64, c:88, p:22.9, u:17},
+    {f:"SHOUKAT DHANANI", s:346, c:471, p:22.7, u:103},
+    {f:"SANJAY GUPTA", s:33, c:45, p:22.7, u:8},
+    {f:"JOHN NGUYEN", s:41, c:55, p:22.4, u:9},
+    {f:"HAL W. MCCOY", s:111, c:148, p:22.2, u:18},
+    {f:"JOSEPH COMES", s:27, c:35, p:21.6, u:2},
+    {f:"KAMAL SINGH", s:67, c:87, p:21.6, u:15},
+    {f:"DARRIN CAMP", s:11, c:14, p:21.2, u:0},
+    {f:"ROHIT PATEL", s:35, c:44, p:21.2, u:6},
+    {f:"JIMMY SUTTON", s:69, c:87, p:21.0, u:17},
+    {f:"GREG SHELTON", s:42, c:53, p:20.9, u:6},
+    {f:"MOHAMMAD (FRANK) FAYYAZ", s:4, c:5, p:20.8, u:0},
+    {f:"GARY COOMER", s:12, c:15, p:20.8, u:0},
+    {f:"PIZZA HUT OF AMERICA, LLC. (PHI01-060010)", s:67, c:84, p:20.8, u:0},
+    {f:"JOYCE LUNSFORD", s:26, c:31, p:20.1, u:5},
+    {f:"STUART SEAGROVES", s:2, c:2, p:20.0, u:0},
+    {f:"MIKE ORACION", s:6, c:7, p:19.4, u:0},
+    {f:"LAWRENCE MARSHALL", s:41, c:46, p:18.7, u:2},
+    {f:"DAVID STAAB", s:80, c:89, p:18.5, u:22},
+    {f:"ROBERT CADWELL", s:21, c:23, p:18.3, u:0},
+    {f:"PREMILA VISHWANATH", s:11, c:12, p:18.2, u:2},
+    {f:"ADITYA PANNU", s:22, c:22, p:16.7, u:0},
+    {f:"JAMES DESNYDER", s:17, c:17, p:16.7, u:0},
+    {f:"JAMES CARTER", s:18, c:18, p:16.7, u:0},
+    {f:"KEVIN KURIHARA", s:33, c:33, p:16.7, u:0},
+    {f:"CRAIG ERIKSON", s:34, c:33, p:16.2, u:4},
+    {f:"NORMAN STAAB", s:20, c:19, p:15.8, u:2},
+    {f:"JESSICA BERGEN ELLIOTT", s:14, c:13, p:15.1, u:0},
+    {f:"DWAYNE REDMON", s:8, c:7, p:14.6, u:0},
+    {f:"DOUGLAS CLEVELAND", s:17, c:14, p:13.7, u:0},
+    {f:"SHANTILAL PATEL", s:5, c:4, p:13.3, u:0},
+    {f:"TANWEER AHMED", s:48, c:38, p:13.2, u:7},
+    {f:"KETANKUMAR PATEL", s:28, c:21, p:12.5, u:2},
+    {f:"SOUNDARARAJAN (RAJ) GOPAL", s:8, c:6, p:12.5, u:0},
+    {f:"JOHN ADDIS", s:14, c:10, p:12.2, u:0},
+    {f:"JAMES ATHERTON", s:7, c:5, p:11.9, u:0},
+    {f:"NEIL PATEL", s:16, c:11, p:11.8, u:0},
+    {f:"Unknown", s:3, c:2, p:11.1, u:0},
+    {f:"JOSEPH ZEIG", s:3, c:2, p:11.1, u:0},
+    {f:"MARK ACHENBACH", s:4, c:2, p:8.3, u:0},
+    {f:"HINA PATEL", s:6, c:2, p:5.6, u:0},
+    {f:"THOMAS LINEHAN", s:1, c:0, p:0.0, u:0},
+    {f:"JAKE RASOR", s:1, c:0, p:0.0, u:0},
+    {f:"THOMAS BROWN", s:3, c:0, p:0.0, u:0},
+    {f:"RUSS KLUG", s:2, c:0, p:0.0, u:0},
+    {f:"ROBERT CORONADO", s:1, c:0, p:0.0, u:0},
+    {f:"ASAD ADAM MITHA", s:7, c:0, p:0.0, u:0},
+    {f:"OMAIR NASIM", s:1, c:0, p:0.0, u:0},
+    {f:"PIYUSHKUMAR PATEL", s:4, c:0, p:0.0, u:0},
+    {f:"RICHARD VEST", s:3, c:0, p:0.0, u:0},
+    {f:"JASON STAAB", s:2, c:0, p:0.0, u:0},
+    {f:"AHMED (ED) UKANI", s:1, c:0, p:0.0, u:0},
+    {f:"LISA ALBERT", s:10, c:0, p:0.0, u:0},
+    {f:"MOHINDER SINGH", s:2, c:0, p:0.0, u:0},
+    {f:"JOHN 'JACK' KIRGIS", s:4, c:0, p:0.0, u:0},
+    {f:"REGINALD BOOTHE", s:1, c:0, p:0.0, u:0},
+    {f:"BOB YOUNG", s:12, c:0, p:0.0, u:0}
 ];
 
-const ctx4 = document.getElementById('franchiseeChart').getContext('2d');
-new Chart(ctx4, {
-    type: 'bar',
-    data: {
-        labels: franchisees.map(f => f.name).reverse(),
-        datasets: [{
-            label: 'Avg % of Store-Months with Change',
-            data: franchisees.map(f => f.pct).reverse(),
-            backgroundColor: '#4361ee',
-            borderRadius: 4
-        }]
-    },
-    options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { display: false },
-            datalabels: {
-                anchor: 'end',
-                align: 'end',
-                color: '#444',
-                font: { weight: 'bold', size: 10 },
-                formatter: (v) => v + '%'
-            }
-        },
-        scales: {
-            x: { beginAtZero: true, max: 45, title: { display: true, text: '% Changed' }, grid: { color: '#f0f0f0' } },
-            y: { grid: { display: false } }
-        }
-    }
-});
-
-// ===== FRANCHISEE TABLE =====
-const tbody = document.getElementById('franchiseeTableBody');
-franchisees.forEach((f, i) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-        <td>${i + 1}</td>
-        <td><strong>${f.name}</strong></td>
-        <td class="num">${f.stores}</td>
-        <td class="num">${f.changes}</td>
-        <td class="num" style="font-weight:600;">${f.pct}%</td>
-        <td class="num">${f.tierUp}</td>
-    `;
+var tbody = document.getElementById('franchiseeBody');
+franchisees.forEach(function(f, i) {
+    var tr = document.createElement('tr');
+    var storesDisplay = f.s > 0 ? f.s : '&ndash;';
+    tr.innerHTML = '<td>' + (i+1) + '</td><td><strong>' + f.f + '</strong></td><td class="num">' + storesDisplay + '</td><td class="num">' + f.c + '</td><td class="num" style="font-weight:600;">' + f.p + '%</td><td class="num">' + f.u + '</td>';
     tbody.appendChild(tr);
 });
 </script>

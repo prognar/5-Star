@@ -260,7 +260,7 @@ _OA_NAME_FIXES = {"Hellen Lobacarro": "Hellen Lobaccaro"}
 
 
 def load_workshops(df):
-    """Load Workshops.csv, parse dates, compute benchmark month, and join to main df for scores.
+    """Load Workshops.csv, parse dates, compute baseline month, and join to main df for scores.
     Returns a dict of workshop data grouped by OA_NAME."""
     if not WORKSHOPS_CSV.exists():
         print("  Workshops.csv not found, skipping workshop data")
@@ -343,7 +343,7 @@ def load_workshops(df):
         else:
             status = "past"
 
-        # Determine benchmark anchor from date:
+        # Determine baseline anchor from date:
         # After 15th → scorecard from month before is latest; on/before 15th → two months before
         anchor = ws_month - 1 if ws_day > 14 else ws_month - 2
         has_anchor = anchor in PERIOD_MONTHS
@@ -355,7 +355,7 @@ def load_workshops(df):
         pre_month = None
         post_scores = []
         if status in ("past", "current") and has_anchor:
-            # Benchmark = raw score at anchor month
+            # Baseline = raw score at anchor month
             key = (sid, anchor)
             if key in _score_lookup:
                 s, t, b = _score_lookup[key]
@@ -385,10 +385,10 @@ def load_workshops(df):
             "date": date_str,
             "type": ws_type,
             "workshop_month": ws_month,
-            "benchmark_month": anchor,
-            "benchmark_score": bench_score,
-            "benchmark_tier": bench_tier,
-            "benchmark_binding": bench_binding,
+            "baseline_month": anchor,
+            "baseline_score": bench_score,
+            "baseline_tier": bench_tier,
+            "baseline_binding": bench_binding,
             "pre_score": pre_score,
             "pre_month": pre_month,
             "post_scores": post_scores,
@@ -419,7 +419,7 @@ def load_workshops(df):
 def compute_workshop_effectiveness(df, workshops_by_oa):
     """Compute trajectory lift for workshop stores: each store serves as its own control.
     Compares the pre-workshop trend (change over 2 months before anchor)
-    to the post-workshop change (benchmark → latest available month).
+    to the post-workshop change (baseline → latest available month).
     Shows how workshops change store trajectories."""
     last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
     last_label = MONTH_LABELS[-1] if MONTH_LABELS else str(last_m)
@@ -442,12 +442,12 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
         for e in entries:
             if e["status"] != "past":
                 continue
-            if e.get("benchmark_tier") is not None and int(e["benchmark_tier"]) != control_tier:
+            if e.get("baseline_tier") is not None and int(e["baseline_tier"]) != control_tier:
                 continue
-            if e["benchmark_score"] is None or e["pre_score"] is None or not e["post_scores"]:
+            if e["baseline_score"] is None or e["pre_score"] is None or not e["post_scores"]:
                 continue
-            bm = e["benchmark_month"]
-            bm_score = e["benchmark_score"]
+            bm = e["baseline_month"]
+            bm_score = e["baseline_score"]
             pre_score = e["pre_score"]
             pre_month = e["pre_month"]
             latest_post = max(e["post_scores"], key=lambda x: x["month"])
@@ -477,7 +477,7 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
             return None
 
         avg_pre = round(sum(pre_scores) / n_stores, 2)
-        avg_bm = round(sum(bm_scores) / n_stores, 2)
+        avg_bl = round(sum(bm_scores) / n_stores, 2)
         avg_lt = round(sum(lt_scores) / n_stores, 2)
         avg_pre_ch = round(sum(pre_changes) / n_stores, 3)
         avg_post_ch = round(sum(post_changes) / n_stores, 3)
@@ -488,7 +488,7 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
         avg_lift = round(sum(lifts) / len(lifts), 3) if lifts else None
 
         # Reference control: tier-matched stores without workshops
-        valid_bms = [e["benchmark_month"] for e in entries if e["status"] == "past" and e["benchmark_month"] in PERIOD_MONTHS and e["benchmark_month"] >= 3]
+        valid_bms = [e["baseline_month"] for e in entries if e["status"] == "past" and e["baseline_month"] in PERIOD_MONTHS and e["baseline_month"] >= 3]
         ctrl_bm_month = min(valid_bms) if valid_bms else last_m - 1
         # Ensure pre-period (month-2) and post-period are valid
         if ctrl_bm_month < 3 or ctrl_bm_month >= last_m:
@@ -547,14 +547,14 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
         return {
             "n_workshops": len(entries),
             "n_stores": n_stores,
-            "total_stores_in_tier": len([e for e in entries if e["status"] == "past" and e.get("benchmark_tier") is not None and int(e["benchmark_tier"]) == control_tier]),
+            "total_stores_in_tier": len([e for e in entries if e["status"] == "past" and e.get("baseline_tier") is not None and int(e["baseline_tier"]) == control_tier]),
             "n_future": sum(1 for e in entries if e["status"] == "future"),
-            "benchmark_period": f"M{ctrl_bm_month}",
+            "baseline_period": f"M{ctrl_bm_month}",
             "latest_period": last_label,
             "trajectory": {
                 "n": n_stores,
                 "avg_pre_score": avg_pre,
-                "avg_benchmark": avg_bm,
+                "avg_baseline": avg_bl,
                 "avg_latest": avg_lt,
                 "avg_pre_change": avg_pre_ch,
                 "avg_pre_months": avg_pre_mos,

@@ -50,7 +50,7 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 | Overview | Binding chart | What's holding each tier back nationally — if Bootcamp stores are all bound on Win Score, that's strategic |
 | Overview | FOP Summaries | Per-FOP 3-paragraph AI summaries (Past \| Present \| Future) showing portfolio shifts, risk counts, and recommended action |
 | Default Watch | Defaulting/At-Risk/T1 Watch tables | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual store level |
-| Workshops | Workshop Effectiveness | Control vs. variable analysis for Boot Camp **and** Rising Star — did attending stores improve more than similar stores that didn't? Validates the program investment |
+| Workshops | Workshop Effectiveness | Control vs. variable analysis for Boot Camp **and** Rising Star — did attending stores improve more than tier-matched stores that didn't? Control group = T1 stores (bootcamp) or T2 stores (rising star) at baseline month minus attendees. Validates the program investment |
 | Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date and facilitator. Same-day workshops are grouped by Area Coach (FAREADESC), showing distinct blocks when multiple coaches host. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Drill down: Date → Area Coach → Individual stores |
 | Workshops | Franchisee Filter | Filter workshops by franchisee to isolate stores within a specific ownership group |
 | Workshops | Per-FOP Summaries | Same FOP summaries from Overview, surfaced in the Workshops context |
@@ -108,7 +108,7 @@ Status is recomputed from store data at render time (not from the CSV), using th
 
 **Goal:** Raise low-tier stores, promote top-tier stores.
 
-**How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop. Post-workshop, they compare each store's pre-score (rolling 3-month benchmark) against post-workshop scores at 30/60/90 days to measure whether the workshop moved the needle.
+**How OAs work:** They train shoulder-to-shoulder in markets that need the most help. They run Bootcamp workshops by DMA, focusing on an area coach and their restaurants per workshop. Post-workshop, they compare each store's pre-workshop trajectory against its post-workshop scores to measure whether the workshop moved the needle — each store serves as its own baseline.
 
 **What the report gives them (4 tabs):**
 
@@ -116,12 +116,12 @@ Status is recomputed from store data at render time (not from the CSV), using th
 |---|---|---|
 | Overview | Goal Tracker | Shows if they're on pace for T1 reduction, T3 growth, and gross stores moved up (target: 75) |
 | Overview | Area & Franchisee Spotlight | Tells them **where to go** — lowest/highest areas and best/worst franchisee |
-| Overview | Binding chart | Per-tier view of which component holds stores back |
+| Overview | Binding chart | Per-tier breakdown of what's holding stores back — each store's worst component is its binding constraint. If 54% of Tier 1 are bound on Speed, that's where to focus coaching, not Brand |
 | Overview | Default Watch | Quick check: any stores at risk of falling through the floor? |
 | Portfolio | Drill-down (OA → DMA → Area → Store) | Before a workshop, drill into a DMA and see every store with scores, status, and trends |
 | Portfolio | Store Detail | During a workshop, pull up a store's component scores |
-| Boot Camps | Past Workshop History | Completed workshops grouped by date with benchmark score, post-score trend sparkline, and delta. Drill down to per-store Pre Score / Post Scores / Delta |
-| Boot Camps | Future Workshop List | Upcoming workshops with store count, Area Coach(s), and average benchmark score only — no post-scores until the workshop is past |
+| Boot Camps | Past Workshop History | Completed workshops grouped by date with baseline score, post-score trend sparkline, and delta. Drill down to per-store Pre Score / Post Scores / Delta |
+| Boot Camps | Future Workshop List | Upcoming workshops with store count, Area Coach(s), and average baseline score only — no post-scores until the workshop is past |
 | Targeting | Bootcamp Targeting | **Where to go** — which area/franchisee has the most Tier 1 stores by count and concentration, with binding focus bars |
 
 **Dynamic headline score:** The Average 5-star updates to the selected zone's weighted average. The Jan→Jun delta updates too.
@@ -138,7 +138,7 @@ Status is recomputed from store data at render time (not from the CSV), using th
 
 **The binding logic:** Whichever of the five components (Win Score, Speed, Brand, Hutbot, FSCC) has the lowest score determines what's holding the store back. That tells the OA what to coach on.
 
-**Benchmark logic (Boot Camp):** Each workshop entry carries a rolling 3-month benchmark score computed from the workshop date: after the 15th → benchmark uses scorecard from the month before; on/before 15th → two months before. The benchmark is the average of months N-2, N-1, and N. Only computed when all 3 months exist in available data and the workshop date is in the past. Future workshops show no benchmark or post-scores — the store hasn't attended yet. Post-scores are rolling 3-month averages at 30-day, 60-day, and 90-day offsets from the anchor.
+**Baseline logic (Boot Camp):** Each workshop entry carries a baseline score computed from the workshop date: after the 15th → baseline uses the scorecard from the month before; on/before 15th → two months before. The baseline is the store's raw score in that anchor month, the pre-score is its raw score two months before the anchor, and post-scores are its raw single-month scores in every month after the anchor. Only computed when the required months exist in available data and the workshop date is in the past. Future workshops show no baseline or post-scores — the store hasn't attended yet.
 
 ---
 

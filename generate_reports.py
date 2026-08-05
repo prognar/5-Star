@@ -1593,6 +1593,52 @@ def generate_fallback_summary(nat_data):
     return summary
 
 
+def _extract_first_json(text):
+    """Return the first complete JSON object found in text, or None.
+
+    Handles responses that wrap JSON in prose or code fences, and responses
+    that contain multiple JSON objects (only the first is used).
+    """
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"\{", text):
+        try:
+            parsed, _ = decoder.raw_decode(text, m.start())
+            return parsed
+        except (json.JSONDecodeError, ValueError):
+            continue
+    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
+def _normalize_summary(value):
+    """Convert a summary to a single string.
+
+    The LLM may return a flat string or a nested object with PAST/PRESENT/FUTURE
+    (or past/present/future) paragraph keys; flatten dicts into paragraphs.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        parts = []
+        for key in ("PAST", "PRESENT", "FUTURE"):
+            if key in value and isinstance(value[key], str) and value[key].strip():
+                parts.append(f"{key}: {value[key].strip()}")
+        if not parts:
+            low = {k.lower(): v for k, v in value.items()}
+            for key in ("past", "present", "future"):
+                if key in low and isinstance(low[key], str) and low[key].strip():
+                    parts.append(f"{key.upper()}: {low[key].strip()}")
+        if parts:
+            return "\n\n".join(parts)
+        return json.dumps(value)
+    return str(value)
+
+
 def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
     """Send a prompt to the opencode server and return the text response."""
     if not OPENCODE_SERVER_PASS:
@@ -1649,22 +1695,10 @@ def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
         for part in result.get("parts", []):
             if part.get("type") == "text":
                 text = part["text"]
-                # Try to extract JSON from the text (```json ... ``` or bare {...})
-                json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group(1))
+                parsed = _extract_first_json(text)
+                if parsed is not None:
                     cleanup_session(session_id, headers)
                     return parsed
-                # Try bare JSON object — use raw_decode to handle trailing content
-                decoder = json.JSONDecoder()
-                for m in re.finditer(r"\{", text):
-                    try:
-                        parsed, idx = decoder.raw_decode(text, m.start())
-                        cleanup_session(session_id, headers)
-                        return parsed
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-                return None
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         print(f"    Could not parse LLM response: {e}")
     finally:
@@ -1758,16 +1792,21 @@ def summarize_zones(zones_data):
     cache = {}
     if SUMMARIES_CACHE.exists():
         try:
-            with open(SUMMARIES_CACHE, "r") as f:
+            with open(SUMMARIES_CACHE, "r", encoding="utf-8") as f:
                 cache = json.load(f)
         except (json.JSONDecodeError, IOError):
             cache = {}
+
+    # Normalize cached summaries (older LLM responses may be nested dicts)
+    for oa in oa_names:
+        if isinstance(cache.get(oa), dict):
+            cache[oa] = _normalize_summary(cache[oa])
 
     # Helper to apply cached summaries
     def _apply_cached():
         for oa in oa_names:
             if oa in cache:
-                zones_data[oa]["summary"] = cache[oa]
+                zones_data[oa]["summary"] = _normalize_summary(cache[oa])
 
     # Check if all OAs have cached summaries AND version matches
     if cache.get("_version") == version and all(oa in cache for oa in oa_names):
@@ -1858,35 +1897,50 @@ def summarize_zones(zones_data):
     )
 
     period_label = get_period_label()
-    user_prompt = (
-        f"Here is the {period_label} 5-Star data for all OAs:\n\n"
-        + json.dumps(oa_data, indent=2)
-        + "\n\nReturn a JSON object with a 'summaries' key mapping each OA name "
-        "to a 3-paragraph summary (PAST | PRESENT | FUTURE)."
-    )
 
-    result = call_opencode_server([user_prompt], system_prompt=system_prompt)
-    if result is None:
-        if has_any_cache:
-            print("  LLM call failed, falling back to cached summaries (stale)")
-            _apply_cached()
-            return
-        print("  LLM call failed, no cached summaries available")
-        return
-
-    summaries = result.get("summaries", {})
-    for oa in oa_names:
-        summary = summaries.get(oa, "")
-        if summary:
-            zones_data[oa]["summary"] = summary
-            cache[oa] = summary
+    # Split into batches to keep each LLM response within output/token limits
+    BATCH = 5
+    oa_batches = [oa_names[i:i + BATCH] for i in range(0, len(oa_names), BATCH)]
+    for batch in oa_batches:
+        batch_data = {oa: oa_data[oa] for oa in batch}
+        user_prompt = (
+            f"Here is the {period_label} 5-Star data for these OAs:\n\n"
+            + json.dumps(batch_data, indent=2)
+            + "\n\nReturn a JSON object with a 'summaries' key mapping each OA name "
+            "to a 3-paragraph summary (PAST | PRESENT | FUTURE)."
+        )
+        result = call_opencode_server([user_prompt], system_prompt=system_prompt)
+        summaries = {}
+        if isinstance(result, dict):
+            sval = result.get("summaries")
+            if isinstance(sval, dict):
+                summaries = sval
+            else:
+                summaries = result
+        if not summaries:
+            print(f"  LLM call failed for batch: {', '.join(batch)}")
+        norm = {k.strip().lower(): (k, v) for k, v in summaries.items()}
+        for oa in batch:
+            summary = summaries.get(oa, "")
+            if not summary:
+                match = norm.get(oa.strip().lower())
+                if match:
+                    summary = match[1]
+            if summary:
+                summary = _normalize_summary(summary)
+                zones_data[oa]["summary"] = summary
+                cache[oa] = summary
+            elif oa in cache:
+                zones_data[oa]["summary"] = _normalize_summary(cache[oa])
+            else:
+                zones_data[oa]["summary"] = generate_fallback_zone_summary(zones_data[oa])
 
     # Write cache
     cache["_version"] = version
     try:
-        with open(SUMMARIES_CACHE, "w") as f:
+        with open(SUMMARIES_CACHE, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
-        print(f"  Cached {len(summaries)} summaries to {SUMMARIES_CACHE.name}")
+        print(f"  Cached {len([k for k in cache if k in oa_names])} zone summaries to {SUMMARIES_CACHE.name}")
     except IOError as e:
         print(f"  Could not write cache: {e}")
 
@@ -1897,7 +1951,7 @@ def summarize_leadership(nat_data):
     cache = {}
     if SUMMARIES_CACHE.exists():
         try:
-            with open(SUMMARIES_CACHE, "r") as f:
+            with open(SUMMARIES_CACHE, "r", encoding="utf-8") as f:
                 cache = json.load(f)
         except (json.JSONDecodeError, IOError):
             cache = {}
@@ -1991,7 +2045,7 @@ def summarize_leadership(nat_data):
         cache[SUM_KEY] = summary
         cache[VER_KEY] = version
         try:
-            with open(SUMMARIES_CACHE, "w") as f:
+            with open(SUMMARIES_CACHE, "w", encoding="utf-8") as f:
                 json.dump(cache, f, indent=2)
             print(f"  Cached leadership summary")
         except IOError as e:
@@ -2008,7 +2062,7 @@ def summarize_fops(fop_data):
     cache = {}
     if SUMMARIES_CACHE.exists():
         try:
-            with open(SUMMARIES_CACHE, "r") as f:
+            with open(SUMMARIES_CACHE, "r", encoding="utf-8") as f:
                 cache = json.load(f)
         except (json.JSONDecodeError, IOError):
             cache = {}
@@ -2107,7 +2161,7 @@ def summarize_fops(fop_data):
 
     cache[fp_key] = version
     try:
-        with open(SUMMARIES_CACHE, "w") as f:
+        with open(SUMMARIES_CACHE, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2)
         print(f"  Cached {len(summaries)} FOP summaries")
     except IOError as e:

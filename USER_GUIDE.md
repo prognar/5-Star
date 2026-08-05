@@ -117,15 +117,15 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 - **Zone Ranking** — all zones sorted by current average with gradient trend indicators (green = improving, red = declining, darker = more severe)
 - **Tier Movement (Sankey)** — how stores flowed between tiers over the period
 - **National Trend (chart)** — 5-month line chart of overall average and each component
-- **Binding chart** — for each tier nationally, which component is the lowest score
+- **Binding chart** — for each tier nationally, which component is the lowest score. Each store's "binding constraint" is its worst-scoring component (Win Score, Speed, Brand, Hutbot, or FSCC). The chart shows what percentage of stores in each tier are held back by each component. If 54% of Tier 1 stores are bound on Speed, that's where to focus coaching — not Brand, not Win Score.
 - **FOP Summaries** — per-FOP 3-paragraph summaries (Past | Present | Future) showing portfolio shifts, risk distribution, and recommended actions
 
 ### Default Watch tab
 - Every defaulting, at-risk, and T1-watch store nationwide sorted by severity with OA, Franchisee, DMA, and consecutive months
 
 ### Workshops tab
-- **Workshop Effectiveness** — control vs. variable comparison for Boot Camp **and** Rising Star. Compares stores that attended a workshop against similar stores that did not, measuring whether scores improved more for attendees. Validates the program investment.
-- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date and facilitator. Each row shows store count, OA, type breakdown (BC/RS), and average trend. Drill down: Date → Area Coach → Individual stores. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Same-day workshops by different Area Coaches appear as separate blocks.
+- **Workshop Effectiveness** — control vs. variable comparison for Boot Camp **and** Rising Star. Control group = stores in the same tier (T1 for bootcamp, T2 for rising star) at the baseline month that did not attend a workshop of that type. Compares whether attending stores improved more than their tier peers who didn't attend. Validates the program investment.
+- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date and facilitator. Filter by type (All / Boot Camp / Rising Star) via toggle buttons, or by franchisee via dropdown. Each date card has a colored left border — blue for BC-only, purple for RS-only. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Same-day workshops by different Area Coaches appear as separate blocks.
 - **Franchisee Filter** — filter workshops by franchisee to isolate stores within a specific ownership group
 - **Area Coach Grouping** — same-day workshops are grouped by Area Coach (`FAREADESC`), showing distinct blocks when multiple Area Coaches host on the same date
 - **Per-FOP Summaries** — same FOP summaries from the Overview tab, surfaced here for context
@@ -185,7 +185,7 @@ Status is recomputed from store data at render time (not from the CSV) using the
 - **Tier Cards** — "Right now" snapshot for each tier: current store count with directional change from January, current average score (2 decimal places) vs January, and where stores moved. Header shows "N stores now". Verdict sentence summarizes the story in one read.
 - **Sankey** — zone-level tier flow diagram
 - **Trend chart** — line chart with component overlays (x-axis labels adapt to available months)
-- **Binding chart** — per-tier binding percentages
+- **Binding chart** — per-tier breakdown of what's holding stores back. Each store's worst component (Win Score, Speed, Brand, Hutbot, or FSCC) is its binding constraint. The stacked bar shows what % of stores in each tier are bound by each component — tells the OA where to focus coaching.
 - **Area & Franchisee Spotlight** — lowest/highest areas and best/worst franchisee
 - **Default Watch** — zone's defaulting/at-risk/T1-watch stores
 
@@ -196,9 +196,9 @@ Status is recomputed from store data at render time (not from the CSV) using the
 - Trend arrows use gradient coloring (green improving, red declining, darker = more severe)
 
 ### Boot Camps tab
-- **Past Workshops** — completed workshops grouped by date. Each date row shows store count, Area Coach(s), average benchmark score, monthly post-scores with sparkline trend, and net delta. Click to drill down to per-store Pre Score / Post Scores / Delta detail.
-- **Future Workshops** — upcoming workshops showing store count, Area Coach(s), and average benchmark score only. No post-scores or trend — the store hasn't attended yet.
-- **Benchmark logic** — derived from the workshop date (not the scorecard calendar). After the 15th → benchmark uses scorecard from the month before; on/before 15th → two months before. The benchmark is a rolling 3-month average (months N-2, N-1, N). Only computed when all 3 months exist in available data and the workshop date is in the past.
+- **Past Workshops** — completed workshops grouped by date. Each date row shows store count, Area Coach(s), average baseline score, monthly post-scores with sparkline trend, and net delta. Click to drill down to per-store Pre Score / Post Scores / Delta detail.
+- **Future Workshops** — upcoming workshops showing store count, Area Coach(s), and average baseline score only. No post-scores or trend — the store hasn't attended yet.
+- **Baseline logic** — derived from the workshop date (not the scorecard calendar). After the 15th → baseline uses the scorecard from the month before; on/before 15th → two months before. The baseline score is the store's raw score in that anchor month, the pre-score is its raw score two months before the anchor, and post-scores are its raw single-month scores in every month after the anchor. Only computed when the required months exist in available data and the workshop date is in the past.
 - **Status classification** — workshop is "past" if the date is before today, "future" otherwise (regardless of whether the month's data has landed yet)
 
 ### Targeting tab

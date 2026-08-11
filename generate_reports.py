@@ -3,6 +3,7 @@ import numpy as np
 import json
 import re
 import os
+import sys
 import hashlib
 import urllib.request
 import base64
@@ -17,7 +18,7 @@ except ImportError:
     HAS_SNOWFLAKE = False
 
 # ─── Config ────────────────────────────────────────────────────────────────
-BASE_DIR = Path("C:/Users/axc1195/OneDrive - Yum! Brands, Inc/Documents/5-Star/Reporting")
+BASE_DIR = Path(__file__).resolve().parent
 FIVESTAR_CSV = BASE_DIR / "5-Star.csv"
 STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
@@ -849,7 +850,8 @@ def compute_single_zone(zone_df, workshops=None):
         workshops = {}
     oa = zone_df["OPX_OA"].iloc[0]
 
-    may_df = zone_df[zone_df["MONTHNUM"] == 5]
+    last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 5
+    may_df = zone_df[zone_df["MONTHNUM"] == last_m]
     jan_df = zone_df[zone_df["MONTHNUM"] == 1]
 
     if len(may_df) == 0:
@@ -892,7 +894,7 @@ def compute_single_zone(zone_df, workshops=None):
     t1_reduction_pct = round((t1_start - t1_end) / t1_start * 100, 1) if t1_start > 0 else 0
     t3_growth_pct = round((t3_end - t3_start) / t3_start * 100, 1) if t3_start > 0 else 0
 
-    # Binding table by tier (May 2026)
+    # Binding table by tier (latest month)
     binding_tbl = {}
     for t in [1, 2, 3]:
         sub = may_df[may_df["_tier"] == t]
@@ -902,7 +904,7 @@ def compute_single_zone(zone_df, workshops=None):
             pct = round(cnt / len(sub) * 100, 1) if len(sub) > 0 else 0
             binding_tbl[str(t)][col] = pct
 
-    # Avg by tier (May 2026)
+    # Avg by tier (latest month)
     avg_by_tier = []
     for t in [1, 2, 3]:
         sub = may_df[may_df["_tier"] == t]
@@ -1293,6 +1295,11 @@ def generate_rising_star_html(rising_data, template_path, output_path):
 
     html = replace_data_block(html, "DATA", rising_data)
 
+    # Refresh the month label arrays (MONTHS / mLbl) and any hardcoded
+    # month references so the header reflects the latest period.
+    html = replace_data_block(html, "MONTHS", MONTH_LABELS)
+    html = _replace_month_refs(html)
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"  Written to {output_path}")
@@ -1317,6 +1324,9 @@ def compute_fop_data(df, zones_data):
     if not all_stores:
         print("  No stores found for FOP data")
         return {}
+
+    last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 5
+    lq_months = PERIOD_MONTHS[-3:] if len(PERIOD_MONTHS) >= 3 else PERIOD_MONTHS
 
     # Group by Director → FOP → Franchisee
     director_fops = {}  # director -> set of fops
@@ -1344,7 +1354,7 @@ def compute_fop_data(df, zones_data):
         dir_n_ar = sum(1 for s in dir_stores if s.get("st") == "ar")
         dir_n_tw = sum(1 for s in dir_stores if s.get("st") == "tw")
         dir_n_fran = len(set(s.get("f", "Unknown") for s in dir_stores))
-        _dir_avgs = [s.get("y") or s.get("m5") for s in dir_stores if s.get("y") is not None or s.get("m5") is not None]
+        _dir_avgs = [s.get("y") or s.get(f"m{last_m}") for s in dir_stores if s.get("y") is not None or s.get(f"m{last_m}") is not None]
         dir_headline = round(sum(_dir_avgs) / len(_dir_avgs), 2) if _dir_avgs else 0
         director_data[director] = {
             "director": director,
@@ -1369,14 +1379,14 @@ def compute_fop_data(df, zones_data):
 
         for fran in sorted(fop_groups[fop].keys()):
             stores = fop_groups[fop][fran]
-            fran_avg = sum(s.get("y") or s.get("m5") or 0 for s in stores) / len(stores)
-            # Latest month (m5) avg
-            _m5_scores = [s.get("m5") for s in stores if s.get("m5") is not None]
-            fran_m5 = round(sum(_m5_scores) / len(_m5_scores), 2) if _m5_scores else 0
-            # Latest quarter avg (m3,m4,m5)
+            fran_avg = sum(s.get("y") or s.get(f"m{last_m}") or 0 for s in stores) / len(stores)
+            # Latest month avg
+            _lm_scores = [s.get(f"m{last_m}") for s in stores if s.get(f"m{last_m}") is not None]
+            fran_lm = round(sum(_lm_scores) / len(_lm_scores), 2) if _lm_scores else 0
+            # Latest quarter avg
             _lq_vals = []
             for s in stores:
-                _q = [s.get(f"m{m}") for m in (3, 4, 5) if s.get(f"m{m}") is not None]
+                _q = [s.get(f"m{m}") for m in lq_months if s.get(f"m{m}") is not None]
                 if _q:
                     _lq_vals.append(sum(_q) / len(_q))
             fran_lq = round(sum(_lq_vals) / len(_lq_vals), 2) if _lq_vals else 0
@@ -1395,18 +1405,14 @@ def compute_fop_data(df, zones_data):
                 "fran": fran,
                 "n": len(stores),
                 "avg": round(fran_avg, 2),
-                "m5": fran_m5,
+                f"m{last_m}": fran_lm,
                 "lq": fran_lq,
                 "n_defaulting": fran_dl,
                 "n_at_risk": fran_ar,
                 "n_t1_watch": fran_tw,
                 "stores": [{
                     "s": s["s"],
-                    "m1": s.get("m1"),
-                    "m2": s.get("m2"),
-                    "m3": s.get("m3"),
-                    "m4": s.get("m4"),
-                    "m5": s.get("m5"),
+                    **{f"m{m}": s.get(f"m{m}") for m in PERIOD_MONTHS},
                     "y": s.get("y"),
                     "t": s.get("t", 0),
                     "st": s.get("st", "ok"),
@@ -1452,7 +1458,7 @@ def compute_fop_data(df, zones_data):
                 "director": fop["director"],
                 "n": fran["n"],
                 "avg": fran["avg"],
-                "m5": fran["m5"],
+                f"m{last_m}": fran[f"m{last_m}"],
                 "lq": fran["lq"],
                 "n_defaulting": fran["n_defaulting"],
                 "n_at_risk": fran["n_at_risk"],
@@ -1639,8 +1645,13 @@ def _normalize_summary(value):
     return str(value)
 
 
-def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
-    """Send a prompt to the opencode server and return the text response."""
+def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000, allow_plain_text=False):
+    """Send a prompt to the opencode server and return the text response.
+
+    Returns the parsed first JSON object when present. If allow_plain_text is
+    True and the response contains no parseable JSON, returns the raw text
+    instead (used for prompts that ask for a plain narrative, e.g. leadership).
+    """
     if not OPENCODE_SERVER_PASS:
         print("  WARNING: OPENCODE_SERVER_PASSWORD not set, skipping LLM summaries")
         return None
@@ -1691,10 +1702,13 @@ def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
         return None
 
     # Extract text response
+    raw_text = None
     try:
         for part in result.get("parts", []):
-            if part.get("type") == "text":
+            if part.get("type") == "text" and part.get("text"):
                 text = part["text"]
+                if raw_text is None:
+                    raw_text = text
                 parsed = _extract_first_json(text)
                 if parsed is not None:
                     cleanup_session(session_id, headers)
@@ -1703,6 +1717,8 @@ def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000):
         print(f"    Could not parse LLM response: {e}")
     finally:
         cleanup_session(session_id, headers)
+    if allow_plain_text and raw_text:
+        return raw_text
     return None
 
 
@@ -1783,7 +1799,7 @@ def generate_fallback_fop_summary(fop_compact):
     return f"{p1}\n\n{p2}\n\n{p3}"
 
 
-def summarize_zones(zones_data):
+def summarize_zones(zones_data, no_cache=False):
     """Generate LLM summaries for each OA zone using the opencode server."""
     oa_names = sorted(zones_data.keys())
     version = _summary_version()
@@ -1809,7 +1825,7 @@ def summarize_zones(zones_data):
                 zones_data[oa]["summary"] = _normalize_summary(cache[oa])
 
     # Check if all OAs have cached summaries AND version matches
-    if cache.get("_version") == version and all(oa in cache for oa in oa_names):
+    if not no_cache and cache.get("_version") == version and all(oa in cache for oa in oa_names):
         print("  Using cached LLM summaries")
         _apply_cached()
         return
@@ -1945,7 +1961,7 @@ def summarize_zones(zones_data):
         print(f"  Could not write cache: {e}")
 
 
-def summarize_leadership(nat_data):
+def summarize_leadership(nat_data, no_cache=False):
     """Generate a national leadership LLM summary using the opencode server."""
     version = _summary_version()
     cache = {}
@@ -1960,7 +1976,7 @@ def summarize_leadership(nat_data):
     VER_KEY = "_leadership_version"
     SUM_KEY = "_leadership_summary"
 
-    if cache.get(VER_KEY) == version and SUM_KEY in cache:
+    if not no_cache and cache.get(VER_KEY) == version and SUM_KEY in cache:
         print("  Using cached leadership summary")
         nat_data["summary"] = cache[SUM_KEY]
         return
@@ -2026,11 +2042,11 @@ def summarize_leadership(nat_data):
     user_prompt = (
         f"Here is the {period_label} national 5-Star data:\n\n"
         + json.dumps(leadership_data, indent=2)
-        + "\n\nReturn a JSON object with a single key 'summary' containing "
-        "a national leadership narrative (no section headings, just flowing text)."
+        + "\n\nWrite the national leadership narrative summary directly as flowing text. "
+        "No JSON wrapper, no headings, no section labels."
     )
 
-    result = call_opencode_server([user_prompt], system_prompt=system_prompt)
+    result = call_opencode_server([user_prompt], system_prompt=system_prompt, allow_plain_text=True)
     if result is None:
         if SUM_KEY in cache:
             print("  LLM call failed, falling back to cached leadership summary")
@@ -2039,7 +2055,10 @@ def summarize_leadership(nat_data):
         print("  LLM call failed, no cached leadership summary")
         return
 
-    summary = result.get("summary", "")
+    if isinstance(result, str):
+        summary = result.strip()
+    else:
+        summary = result.get("summary", "")
     if summary:
         nat_data["summary"] = summary
         cache[SUM_KEY] = summary
@@ -2054,7 +2073,7 @@ def summarize_leadership(nat_data):
         print("  Empty leadership summary returned")
 
 
-def summarize_fops(fop_data):
+def summarize_fops(fop_data, no_cache=False):
     """Generate LLM summaries for each FOP using the opencode server."""
     fop_names = sorted(fop_data.get("fops", {}).keys())
     version = _summary_version()
@@ -2074,7 +2093,7 @@ def summarize_fops(fop_data):
                 d["summary"] = cache[name]
 
     fp_key = f"_fop_version_{version}"
-    if cache.get(fp_key) == version and all(name in cache for name in fop_names):
+    if not no_cache and cache.get(fp_key) == version and all(name in cache for name in fop_names):
         print("  Using cached FOP summaries")
         _apply_cached()
         return
@@ -2335,30 +2354,89 @@ def replace_data_block(html, var_name, json_data, indent=0):
     return new_html
 
 
+_MONTH_NAME = (r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|'
+               r'Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|'
+               r'Nov(?:ember)?|Dec(?:ember)?)')
+# Matches both a real arrow/dash AND the literal "\u2192" escape sequence used
+# inside JS template literals (e.g. `Jan \u2192 May`).
+_ARROW_SEP = r'(?:[–—\-→>\u2192]+|\\u2192)'
+_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul",
+               "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _canon_month(tok):
+    """Reduce any month token (Jan, January, JAN, ...) to its 3-letter label."""
+    t = tok.lower()
+    for abbr in _MONTH_ABBR:
+        if t.startswith(abbr.lower()):
+            return abbr
+    return None
+
+
+def _case(lbl, upper):
+    return lbl.upper() if upper else lbl
+
+
 def _replace_month_refs(html):
-    """Replace all hardcoded month references with dynamic labels."""
+    """Replace all hardcoded month references with dynamic labels (idempotent).
+
+    Works whether the template still says "May" (pristine), already carries
+    labels from a previous run ("Jun", "Jul", ...), or uses the literal
+    "\\u2192" escape inside JS template literals.
+    """
     if not MONTH_LABELS:
         return html
-    period_label = get_period_label()
     first_lbl = MONTH_LABELS[0]
     last_lbl = MONTH_LABELS[-1]
-    arrow_label = f"{first_lbl} → {last_lbl} 2026"
-    # Handle various formatting of month ranges
-    html = re.sub(r'Jan[–\- ]+May 2026', period_label, html)
-    html = re.sub(r'Jan\s*[–\-→>\u2192]+\s*May\s+2026', arrow_label, html)
-    # Handle JS template literal patterns like `Jan \u2192 May` or `Jan → May` (no year)
-    html = re.sub(r'Jan\s*[–\-→>\u2192]+\s*May', f'{first_lbl} → {last_lbl}', html)
-    html = re.sub(r'JAN\s*[–\-→>\u2192]+\s*MAY', f'{first_lbl.upper()} → {last_lbl.upper()}', html)
-    # Replace standalone last-month references
-    html = re.sub(r'\bMay 2026\b', f'{last_lbl} 2026', html)
-    html = re.sub(r'\bMAY 2026\b', f'{last_lbl.upper()} 2026', html)
-    html = re.sub(r"\bMay '26\b", f"{last_lbl} '26", html)
-    html = re.sub(r"\bMAY '26\b", f"{last_lbl.upper()} '26", html)
-    html = re.sub(r"\bJan '26\b", f"{first_lbl} '26", html)
-    html = re.sub(r"\bJAN '26\b", f"{first_lbl.upper()} '26", html)
-    # Replace standalone "January" and "May" in non-date contexts (used in some templates)
-    html = re.sub(r'\bJanuary\b', first_lbl, html)
-    # Rebuild monthLbl object in JS
+
+    # 1) Date ranges: "Jan → May 2026", "Jan 2026 → Jun 2026",
+    #    "JAN '26 → MAY '26", "Jan-May 2026", JS "Jan \u2192 May".
+    def _range_repl(m):
+        up = m.group(1).isupper()
+        return (f"{_case(first_lbl, up)}{m.group(2) or ''}"
+                f"{m.group(3)}"
+                f"{_case(last_lbl, up)}{m.group(5) or ''}")
+
+    html = re.sub(
+        rf'({_MONTH_NAME})(\s*(?:2026|\'26))?(\s*{_ARROW_SEP}\s*)({_MONTH_NAME})(\s*(?:2026|\'26))?',
+        _range_repl, html, flags=re.IGNORECASE)
+
+    # 2) Standalone "May 2026" / "May '26" (or an already-advanced label)
+    #    → latest-period label. First-period references stay as-is.
+    def _suffix_repl(m):
+        up = m.group(1).isupper()
+        name = _canon_month(m.group(1))
+        lbl = first_lbl if name == first_lbl else last_lbl
+        return f"{_case(lbl, up)}{m.group(2)}"
+
+    html = re.sub(
+        rf'({_MONTH_NAME})(\s*(?:2026|\'26))(?![a-zA-Z0-9])',
+        _suffix_repl, html, flags=re.IGNORECASE)
+
+    # 3) "(May)" → "(Jul)" (e.g. the "Avg (May)" column header)
+    html = re.sub(
+        rf'\(({_MONTH_NAME})\)',
+        lambda m: f"({_case(last_lbl, m.group(1).isupper())})",
+        html, flags=re.IGNORECASE)
+
+    # 4) "by May" → "by Jul" (tier-card verdict strings)
+    html = re.sub(
+        rf'\bby\s+({_MONTH_NAME})\b',
+        lambda m: f"by {_case(last_lbl, m.group(1).isupper())}",
+        html, flags=re.IGNORECASE)
+
+    # 5) "stores in January" → "stores in Jan" (first period), and static
+    #    month column headers like <th>Jan</th><th>May</th>.
+    html = re.sub(r'\bJanuary\b', first_lbl, html, flags=re.IGNORECASE)
+
+    def _th_repl(m):
+        if _canon_month(m.group(1)) == first_lbl:
+            return f"<th>{first_lbl}</th>"
+        return f"<th>{last_lbl}</th>"
+
+    html = re.sub(rf'<th>({_MONTH_NAME})</th>', _th_repl, html, flags=re.IGNORECASE)
+
+    # 6) Rebuild month-label lookup objects used by the JS charts
     month_entries = ", ".join(
         f"2026{m:02d}:'{MONTH_LABELS[i]}'"
         for i, m in enumerate(PERIOD_MONTHS)
@@ -2366,6 +2444,11 @@ def _replace_month_refs(html):
     html = re.sub(
         r'const monthLbl = \{.*?\};',
         f'const monthLbl = {{{month_entries}}};',
+        html
+    )
+    html = re.sub(
+        r'const mLbl = \{.*?\};',
+        f'const mLbl = {{{month_entries}}};',
         html
     )
     return html
@@ -2460,9 +2543,11 @@ def generate_fop_html(fop_data, template_path, output_path):
 
 # ─── Main ──────────────────────────────────────────────────────────────────
 
-def main():
+def main(no_cache=False):
     print("=" * 60)
     print("5-Star Report Generator")
+    if no_cache:
+        print("  (--no-cache: forcing fresh LLM summaries)")
     print("=" * 60)
 
     # Load data
@@ -2547,7 +2632,7 @@ def main():
 
     # Compute FOP dashboard data (needed for summaries and rankings)
     fop_data = compute_fop_data(df, zones_data)
-    summarize_fops(fop_data)
+    summarize_fops(fop_data, no_cache=no_cache)
 
     # Attach per-FOP summaries to nat_data for leadership page
     fop_summaries = {}
@@ -2585,8 +2670,8 @@ def main():
     rising_data = convert_for_json(rising_data)
 
     # Generate LLM summaries (now with enriched nat_data)
-    summarize_zones(zones_data)
-    summarize_leadership(nat_data)
+    summarize_zones(zones_data, no_cache=no_cache)
+    summarize_leadership(nat_data, no_cache=no_cache)
 
     # Attach all workshops (national aggregate) for the Workshops tab
     all_workshops = []
@@ -2635,4 +2720,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(no_cache="--no-cache" in sys.argv)

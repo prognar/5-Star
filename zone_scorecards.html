@@ -356,9 +356,9 @@
 
 <section>
   <h2>Bootcamp Workshop Targeting</h2>
-  <p class="h2-sub">Tier 1 (Bootcamp) stores only, ranked by area. Concentration = share of that area's total stores that are Bootcamp-tier. Workshop Focus = what the session should cover.</p>
+  <p class="h2-sub">Tier 1 (Bootcamp) stores only, ranked by area. Concentration = share of that area's total stores that are Bootcamp-tier. Workshop Focus = what the session should cover. Boot Camp = workshops held (green) or scheduled (amber) in that area in this window.</p>
   <table>
-    <thead><tr><th>#</th><th>Area</th><th>DMA</th><th>Franchisee</th><th>Bootcamp/Total</th><th>Concentration</th><th>Workshop Focus</th></tr></thead>
+    <thead><tr><th>#</th><th>Area</th><th>DMA</th><th>Franchisee</th><th>Bootcamp/Total</th><th>Concentration</th><th>Boot Camp</th><th>Workshop Focus</th></tr></thead>
     <tbody id="bootcampAreaTable"></tbody>
   </table>
 </section>
@@ -1130,15 +1130,32 @@ function closeWorkshopDrill(){
   document.getElementById('wsDrillPanel2').style.display = 'none';
 }
 
+function bcAreaIndicator(d, a){
+  const bc = (d.workshops && d.workshops.boot_camp) || [];
+  const areaKey = String(a.FAREADESC).trim().toLowerCase();
+  let held = 0, scheduled = 0;
+  bc.forEach(e=>{
+    if(!e.area) return;
+    if(String(e.area).trim().toLowerCase() !== areaKey) return;
+    if(e.status === 'past') held++;
+    else if(e.status === 'future') scheduled++;
+  });
+  if(!held && !scheduled) return '<span style="color:var(--muted)">\u2014</span>';
+  const parts = [];
+  if(held) parts.push('<span class="rate-badge" style="background:#eaf3ee;color:#276b4d">'+held+' held</span>');
+  if(scheduled) parts.push('<span class="rate-badge" style="background:#fbf3e6;color:#c07f1f">'+scheduled+' scheduled</span>');
+  return parts.join(' ');
+}
+
 function renderTargeting(){
   const d = _curStoreData;
   if(!d) return;
   let baRows='';
   (d.bootcamp_areas||[]).forEach((a,i)=>{
     const rateColor = a.rate>=75?'#a3122a':a.rate>=50?'#c07f1f':'#6b6560';
-    baRows += `<tr><td>${i+1}</td><td class="name">${esc(a.FAREADESC)}</td><td>${esc(a.dma)}</td><td>${esc(a.fran)}</td><td>${a.n_t1} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${focusBarHTML(a)}</td></tr>`;
+    baRows += `<tr><td>${i+1}</td><td class="name">${esc(a.FAREADESC)}</td><td>${esc(a.dma)}</td><td>${esc(a.fran)}</td><td>${a.n_t1} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${bcAreaIndicator(d,a)}</td><td>${focusBarHTML(a)}</td></tr>`;
   });
-  document.getElementById('bootcampAreaTable').innerHTML = baRows || '<tr><td colspan="7" style="font-family:Inter;color:var(--muted)">No Bootcamp-tier stores this month.</td></tr>';
+  document.getElementById('bootcampAreaTable').innerHTML = baRows || '<tr><td colspan="8" style="font-family:Inter;color:var(--muted)">No Bootcamp-tier stores this month.</td></tr>';
 }
 
 function renderBootCamps(){

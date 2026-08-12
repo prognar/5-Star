@@ -207,7 +207,10 @@
 <div class="tab-content" id="tabWatch">
   <section>
     <h2>Default Watch — All Stores Needing Intervention</h2>
-    <p class="h2-sub" id="watchSubtitle">Nationally, <span id="watchDlCount"></span> stores defaulting, <span id="watchArCount"></span> at risk, <span id="watchTwCount"></span> in T1 watch. Sorted by severity then score.</p>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;">
+      <p class="h2-sub" id="watchSubtitle" style="margin:0 0 18px;">Nationally, <span id="watchDlCount"></span> stores defaulting, <span id="watchArCount"></span> at risk, <span id="watchTwCount"></span> in T1 watch. Sorted by severity then score.</p>
+      <button onclick="exportWatchCSV()" style="margin-bottom:18px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;border:1px solid var(--pine);background:var(--card);color:var(--pine);border-radius:3px;cursor:pointer;">Export CSV</button>
+    </div>
     <div id="watchBody">
       <div class="watch-grid" id="watchGrid">
         <div class="watch-row watch-header" id="watchHeader">
@@ -323,7 +326,10 @@ function sortWatch(col){
   if(arrow) arrow.textContent = _watchSort.dir==='asc'?'\u25B4':'\u25BE';
 }
 
+let _watchDisplay = [];
+
 function renderWatchRows(ws){
+  _watchDisplay = ws;
   let rows = '';
   ws.forEach(s=>{
     const statusBadge = s.st==='dl'?'<span class="badge-dl">DEFAULT</span>':s.st==='ar'?'<span class="badge-ar">AT RISK</span>':'<span class="badge-tw">WATCH</span>';
@@ -346,6 +352,40 @@ function renderWatchRows(ws){
     </div>`;
   });
   document.getElementById('watchRows').innerHTML = rows||'<div class="watch-row" style="cursor:default;justify-content:center;color:var(--muted);font-family:Inter;grid-column:1/-1;">No stores defaulting or at risk nationally.</div>';
+}
+
+function exportWatchCSV(){
+  const rows = _watchDisplay.length ? _watchDisplay : (NAT.watch_stores||[]);
+  const csvEscape = (v) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  const header = ['Store','OA','Franchisee','DMA','Score','Status','Cons','Fails','WS'];
+  const statusLabel = {dl:'Default', ar:'At Risk', tw:'Watch'};
+  const lines = [header.join(',')];
+  rows.forEach(s=>{
+    const consTxt = s.st==='tw' ? '' : s.cu+' mo';
+    const fails = [];
+    if(s.fscc>=3) fails.push('FSCC:'+s.fscc);
+    if(s.brand>=3) fails.push('Brand:'+s.brand);
+    const wsLabel = s.ws==='completed' ? 'Completed' : s.ws==='scheduled' ? 'Scheduled' : '';
+    lines.push([
+      String(s.s).padStart(6,'0'), s.oa, s.f, s.d,
+      s.sc!=null ? s.sc.toFixed(2) : '',
+      statusLabel[s.st]||s.st||'',
+      consTxt, fails.join('/'), wsLabel
+    ].map(csvEscape).join(','));
+  });
+  const blob = new Blob(['\uFEFF'+lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const today = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = 'default_watch_'+today+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 function sparkline(vals, w=60, h=20){
   const v = vals.filter(x=>x!=null);

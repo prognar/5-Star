@@ -103,7 +103,7 @@ Locations in the reports:
 - **Zone Scorecards**: 4 tabs — Overview (Goal Tracker, Tier Cards, Sankey, Trend, Binding, Spotlight, Default Watch, Best Improvers), Portfolio (DMA/Area/Store drill-down), Boot Camps (date-aggregated Boot Camp workshop history with sparkline trends and per-store drill-down), Targeting (Bootcamp-tier store areas by count and concentration with binding focus bars)
 - **Zone Scorecards → Boot Camps tab**: Workshop count is by distinct date (each date = one workshop), not per-store entries
 - **Leadership Summary (Workshops tab)**: Workshop Effectiveness comparing Boot Camp **and Rising Star** attendees vs. control group, plus date-aggregated national workshop list and per-FOP summaries
-- **Benchmark month**: For workshops, if the workshop date is after the 14th, the benchmark month is the workshop month itself rather than the prior month
+- **Benchmark month**: For workshops, the baseline is a rolling 3-month average of the latest available 5-star data before the workshop (workshop_month-3 through workshop_month-1). Follow-ups use fixed periods: 30-day (next month only), 60-day (next 2 months averaged), 90-day (next 3 months averaged)
 
 ---
 
@@ -197,7 +197,7 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 "00001","Danielle Hudson",2026-03-12,Boot Camp
 ```
 
-**Benchmark logic:** If the workshop date is after the 14th of the month, the benchmark month is the workshop month itself (the store had already received that month's score before the workshop). If on or before the 14th, the benchmark is the prior month.
+**Benchmark logic:** The baseline is a rolling 3-month average of the latest available 5-star data before the workshop (workshop_month-3 through workshop_month-1). Follow-ups use fixed periods: 30-day (next month only), 60-day (next 2 months averaged), 90-day (next 3 months averaged).
 
 ### 4. Generated Output Files (do not edit)
 

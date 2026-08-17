@@ -345,9 +345,12 @@ def load_workshops(df):
             status = "past"
 
         # Determine baseline anchor from date:
-        # Baseline = average of latest 3 months of 5-star data before the workshop
-        # anchor = last month of the baseline window (month before workshop)
-        anchor = ws_month - 1
+        # If workshop is on/after the 15th, prior month's 5-star is available → anchor = ws_month - 1
+        # If workshop is before the 15th, need to go back one more → anchor = ws_month - 2
+        if ws_day >= 15:
+            anchor = ws_month - 1
+        else:
+            anchor = ws_month - 2
         has_anchor = anchor in PERIOD_MONTHS
 
         bench_score = None
@@ -356,8 +359,9 @@ def load_workshops(df):
         pre_score = None
         pre_month = None
         post_scores = []
-        if status in ("past", "current") and has_anchor:
+        if has_anchor:
             # Baseline = rolling 3-month average of the 3 months ending at anchor
+            # Computed for ALL workshops (past, current, future) — shows starting position
             bl_months = [anchor - 2, anchor - 1, anchor]
             bl_scores = []
             for bm in bl_months:
@@ -379,7 +383,7 @@ def load_workshops(df):
                     pre_month = anchor - 5
         # Follow-up scores: 30-day (next month), 60-day (next 2 months avg), 90-day (next 3 months avg)
         if status in ("past", "current") and has_anchor:
-            followup_start = anchor + 1  # first month after baseline window
+            followup_start = ws_month + 1  # first month after the workshop
             for period_days, n_months in [(30, 1), (60, 2), (90, 3)]:
                 period_months = list(range(followup_start, followup_start + n_months))
                 period_scores = []

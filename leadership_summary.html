@@ -97,7 +97,7 @@
   .ws-area-head:hover{opacity:.85;}
   .ws-area-stores{display:none;padding:4px 0 4px 14px;}
   .ws-area-stores.open{display:block;}
-   .ws-date-block .ws-store-row{display:grid;grid-template-columns:65px 1fr 60px 60px 60px 60px 80px 60px;gap:8px;padding:5px 0;font-size:12px;border-bottom:1px dashed var(--line);align-items:center;}
+    .ws-date-block .ws-store-row{display:grid;grid-template-columns:65px 60px 60px 60px 60px 80px 60px;gap:8px;padding:5px 0;font-size:12px;border-bottom:1px dashed var(--line);align-items:center;}
    .ws-date-block .ws-store-row .delta-up{color:#276b4d;}
    .ws-date-block .ws-store-row .delta-down{color:#a3122a;}
   .ws-date-block .ws-store-row:last-child{border-bottom:none;}
@@ -720,48 +720,73 @@ function renderWorkshopsTab(){
           </div>
         </div>
         <div class="ws-stores">
-          <div class="ws-store-row" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:IBM Plex Mono;border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:4px;">
-            <div>Store</div>
-            <div>Area Coach</div>
-            <div style="text-align:right;">BL</div>
-            <div style="text-align:right;">30d</div>
-            <div style="text-align:right;">60d</div>
-            <div style="text-align:right;">90d</div>
-            <div style="text-align:center;">Trend</div>
-            <div style="text-align:right;">\u0394</div>
-          </div>
-          ${entries.map(e => {
-            const post = e.post_scores || [];
-            const blScore = e.baseline_score != null ? e.baseline_score : (() => {
-              const ps = post.filter(p => p.score != null);
-              return ps.length ? ps.slice(0,2).reduce((s,p) => s + p.score, 0) / Math.min(2, ps.length) : null;
-            })();
-            const allVals = [blScore, ...post.map(p=>p.score)].filter(x=>x!=null);
-            const spk = sparkline(allVals, 80, 22);
-            const _cell = (period) => {
-              const s = post.find(p=>p.period===period);
-              if(!s || s.score == null) return '<span style="color:var(--muted);">\u2014</span>';
-              const imp = blScore!=null ? (s.score - blScore) : null;
-              const pCls = imp!=null ? (imp>=0?'ws-post-up':'ws-post-down') : '';
-              const dStr = imp!=null ? (imp>=0?'+'+imp.toFixed(2):imp.toFixed(2)) : '';
-              const dCls = imp!=null ? (imp>=0?'delta-up':'delta-down') : '';
-              return '<span class="sc '+pCls+'">'+s.score.toFixed(2)+'</span>'+(dStr?' <span class="'+dCls+'" style="font-size:9px">'+dStr+'</span>':'');
-            };
-            const latestPost = post.length ? post[post.length-1].score : null;
-            const delta = latestPost!=null && blScore!=null ? (latestPost - blScore) : null;
-            const deltaStr = delta!=null ? (delta>=0?'+'+delta.toFixed(2):delta.toFixed(2)) : '\u2014';
-            const deltaStyle = delta!=null ? trendColor(delta)+';font-weight:600' : 'color:var(--muted)';
-            return `<div class="ws-store-row">
-              <div style="font-family:IBM Plex Mono;font-size:11px;">${esc(e.store||'\u2014')}</div>
-              <div style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.area||'\u2014')}</div>
-              <div style="font-family:IBM Plex Mono;font-size:11px;text-align:right;">${blScore!=null?'<span class="sc '+scoreClass(blScore)+'">'+blScore.toFixed(2)+'</span>':'\u2014'}</div>
-              <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(30)}</div>
-              <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(60)}</div>
-              <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(90)}</div>
-              <div style="text-align:center;">${spk}</div>
-              <div style="${deltaStyle};font-family:IBM Plex Mono;font-size:10px;text-align:right;">${deltaStr}</div>
-            </div>`;
-          }).join('')}
+          ${(() => {
+            const areaGroups = {};
+            const areaOrder = [];
+            entries.forEach(e => {
+              const a = e.area || 'Unknown';
+              if(!areaGroups[a]) { areaGroups[a] = []; areaOrder.push(a); }
+              areaGroups[a].push(e);
+            });
+            areaOrder.sort((a,b) => a.localeCompare(b));
+            return areaOrder.map(an => {
+              const ae = areaGroups[an];
+              const n = ae.length;
+              const safeAn = an.replace(/[^a-zA-Z0-9]/g,'_');
+              const areaId = 'area_'+safeAn+'_'+d.replace(/[^0-9]/g,'')+'_'+oaName.replace(/[^a-zA-Z0-9]/g,'_');
+              return `<div class="ws-area-block">
+                <div class="ws-area-head" onclick="document.getElementById('${esc(areaId)}').classList.toggle('open');this.querySelector('.ws-chevron').textContent=this.querySelector('.ws-chevron').textContent==='\u25B6'?'\u25BC':'\u25B6'">
+                  <div>
+                    <span class="ws-chevron" style="font-size:9px;margin-right:6px;">&#x25B6;</span>
+                    <span style="font-weight:600;font-family:Inter,sans-serif;">${esc(an)}</span>
+                    <span style="margin-left:8px;font-size:10px;color:var(--muted);font-family:IBM Plex Mono;">${n} stores</span>
+                  </div>
+                </div>
+                <div class="ws-area-stores" id="${esc(areaId)}">
+                  <div class="ws-store-row" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:IBM Plex Mono;border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:4px;">
+                    <div>Store</div>
+                    <div style="text-align:right;">BL</div>
+                    <div style="text-align:right;">30d</div>
+                    <div style="text-align:right;">60d</div>
+                    <div style="text-align:right;">90d</div>
+                    <div style="text-align:center;">Trend</div>
+                    <div style="text-align:right;">\u0394</div>
+                  </div>
+                  ${ae.map(e => {
+                    const post = e.post_scores || [];
+                    const blScore = e.baseline_score != null ? e.baseline_score : (() => {
+                      const ps = post.filter(p => p.score != null);
+                      return ps.length ? ps.slice(0,2).reduce((s,p) => s + p.score, 0) / Math.min(2, ps.length) : null;
+                    })();
+                    const allVals = [blScore, ...post.map(p=>p.score)].filter(x=>x!=null);
+                    const spk = sparkline(allVals, 80, 22);
+                    const _cell = (period) => {
+                      const s = post.find(p=>p.period===period);
+                      if(!s || s.score == null) return '<span style="color:var(--muted);">\u2014</span>';
+                      const imp = blScore!=null ? (s.score - blScore) : null;
+                      const pCls = imp!=null ? (imp>=0?'ws-post-up':'ws-post-down') : '';
+                      const dStr = imp!=null ? (imp>=0?'+'+imp.toFixed(2):imp.toFixed(2)) : '';
+                      const dCls = imp!=null ? (imp>=0?'delta-up':'delta-down') : '';
+                      return '<span class="sc '+pCls+'">'+s.score.toFixed(2)+'</span>'+(dStr?' <span class="'+dCls+'" style="font-size:9px">'+dStr+'</span>':'');
+                    };
+                    const latestPost = post.length ? post[post.length-1].score : null;
+                    const delta = latestPost!=null && blScore!=null ? (latestPost - blScore) : null;
+                    const deltaStr = delta!=null ? (delta>=0?'+'+delta.toFixed(2):delta.toFixed(2)) : '\u2014';
+                    const deltaStyle = delta!=null ? trendColor(delta)+';font-weight:600' : 'color:var(--muted)';
+                    return `<div class="ws-store-row">
+                      <div style="font-family:IBM Plex Mono;font-size:11px;">${esc(e.store||'\u2014')}</div>
+                      <div style="font-family:IBM Plex Mono;font-size:11px;text-align:right;">${blScore!=null?'<span class="sc '+scoreClass(blScore)+'">'+blScore.toFixed(2)+'</span>':'\u2014'}</div>
+                      <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(30)}</div>
+                      <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(60)}</div>
+                      <div style="font-family:IBM Plex Mono;font-size:10px;text-align:right;">${_cell(90)}</div>
+                      <div style="text-align:center;">${spk}</div>
+                      <div style="${deltaStyle};font-family:IBM Plex Mono;font-size:10px;text-align:right;">${deltaStr}</div>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`;
+            }).join('');
+          })()}
         </div>
       </div>`;
     });

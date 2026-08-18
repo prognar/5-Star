@@ -754,19 +754,16 @@ function renderWorkshopsTab(){
                   </div>
                   ${ae.map(e => {
                     const post = e.post_scores || [];
-                    const blScore = e.baseline_score != null ? e.baseline_score : (() => {
-                      const ps = post.filter(p => p.score != null);
-                      return ps.length ? ps.slice(0,2).reduce((s,p) => s + p.score, 0) / Math.min(2, ps.length) : null;
-                    })();
+                    const blScore = e.baseline_score;
                     const allVals = [blScore, ...post.map(p=>p.score)].filter(x=>x!=null);
                     const spk = sparkline(allVals, 80, 22);
                     const _cell = (period) => {
                       const s = post.find(p=>p.period===period);
-                      if(!s || s.score == null) return '<span style="color:var(--muted);">\u2014</span>';
-                      const imp = blScore!=null ? (s.score - blScore) : null;
-                      const pCls = imp!=null ? (imp>=0?'ws-post-up':'ws-post-down') : '';
-                      const dStr = imp!=null ? (imp>=0?'+'+imp.toFixed(2):imp.toFixed(2)) : '';
-                      const dCls = imp!=null ? (imp>=0?'delta-up':'delta-down') : '';
+                      if(!s || s.score == null || blScore == null) return '<span style="color:var(--muted);">\u2014</span>';
+                      const imp = s.score - blScore;
+                      const pCls = imp>=0?'ws-post-up':'ws-post-down';
+                      const dStr = imp>=0?'+'+imp.toFixed(2):imp.toFixed(2);
+                      const dCls = imp>=0?'delta-up':'delta-down';
                       return '<span class="sc '+pCls+'">'+s.score.toFixed(2)+'</span>'+(dStr?' <span class="'+dCls+'" style="font-size:9px">'+dStr+'</span>':'');
                     };
                     const latestPost = post.length ? post[post.length-1].score : null;

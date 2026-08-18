@@ -1110,17 +1110,14 @@ function drillWorkshopDate(dateStr){
   entries.forEach(e=>{
     const si = (d.stores||[]).find(s=>s.s===e.store)||{};
     const post = e.post_scores || [];
-    const blScore = e.baseline_score != null ? e.baseline_score : (()=>{
-      const ps = post.filter(p=>p.score!=null);
-      return ps.length ? ps.slice(0,2).reduce((s,p)=>s+p.score,0)/Math.min(2,ps.length) : null;
-    })();
+    const blScore = e.baseline_score;
     const periodCols = [30,60,90].map(per=>{
       const p = post.find(x=>x.period===per);
-      if(!p || p.score==null) return '<td style="color:var(--muted)">\u2014</td><td style="color:var(--muted)">\u2014</td>';
-      const dirClass = blScore!=null ? (p.score>=blScore?'post-up':'post-down') : '';
-      const dVal = blScore!=null ? (p.score - blScore) : null;
-      const dStr = dVal!=null ? (dVal>=0?'+'+dVal.toFixed(2):dVal.toFixed(2)) : '\u2014';
-      const dCls = dVal!=null ? (dVal>=0?'delta-up':'delta-down') : '';
+      if(!p || p.score==null || blScore==null) return '<td style="color:var(--muted)">\u2014</td><td style="color:var(--muted)">\u2014</td>';
+      const dirClass = p.score>=blScore?'post-up':'post-down';
+      const dVal = p.score - blScore;
+      const dStr = dVal>=0?'+'+dVal.toFixed(2):dVal.toFixed(2);
+      const dCls = dVal>=0?'delta-up':'delta-down';
       return '<td><span class="sc '+dirClass+'">'+fm(p.score)+'</span></td><td class="'+dCls+'" style="font-family:IBM Plex Mono;font-size:10.5px">'+dStr+'</td>';
     }).join('');
     bodyT += `<tr><td class="name">#${e.store}</td><td style="font-size:10.5px;color:var(--muted)">${esc(si.a||'\u2014')}</td><td style="font-size:10.5px;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis">${esc(si.f||'\u2014')}</td><td>${blScore!=null?'<span class="sc '+scoreClass(blScore)+'">'+fm(blScore)+'</span>':'\u2014'}</td>${periodCols}</tr>`;

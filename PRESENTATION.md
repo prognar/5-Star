@@ -138,7 +138,7 @@ Status is recomputed from store data at render time (not from the CSV), using th
 
 **The binding logic:** Whichever of the five components (Win Score, Speed, Brand, Hutbot, FSCC) has the lowest score determines what's holding the store back. That tells the OA what to coach on.
 
-**Baseline logic (Boot Camp):** Each workshop entry carries a baseline score computed as a rolling 3-month average of the latest available 5-star data before the workshop (months workshop_month-3, workshop_month-2, workshop_month-1). Follow-ups use fixed periods: 30-day (next month only), 60-day (next 2 months averaged), 90-day (next 3 months averaged). The pre-score is the store's raw score 5 months before the baseline end, providing the pre-workshop trajectory. Only computed when the required months exist in available data and the workshop date is in the past. Future workshops show no baseline or post-scores — the store hasn't attended yet.
+**Baseline logic (Boot Camp):** Each workshop entry carries a baseline score computed as a rolling 3-month average of the latest available 5-star data before the workshop. The anchor month depends on the workshop day: on/after the 15th → anchor = workshop_month - 1 (prior month's data is available); before the 15th → anchor = workshop_month - 2 (need to go back one more). Baseline = average of months (anchor-2, anchor-1, anchor). Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after). All 3 months in a period must have data for the score to appear. If the required baseline months aren't in the data, baseline is null and post-scores won't be calculated. Future workshops show baseline only (no follow-up data yet).
 
 ---
 

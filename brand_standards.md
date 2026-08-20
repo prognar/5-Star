@@ -103,7 +103,7 @@ Locations in the reports:
 - **Zone Scorecards**: 4 tabs — Overview (Goal Tracker, Tier Cards, Sankey, Trend, Binding, Spotlight, Default Watch, Best Improvers), Portfolio (DMA/Area/Store drill-down), Boot Camps (date-aggregated Boot Camp workshop history with sparkline trends and per-store drill-down), Targeting (Bootcamp-tier store areas by count and concentration with binding focus bars)
 - **Zone Scorecards → Boot Camps tab**: Workshop count is by distinct date (each date = one workshop), not per-store entries
 - **Leadership Summary (Workshops tab)**: Workshop Effectiveness comparing Boot Camp **and Rising Star** attendees vs. control group, plus date-aggregated national workshop list and per-FOP summaries
-- **Benchmark month**: For workshops, the baseline is a rolling 3-month average of the latest available 5-star data before the workshop (workshop_month-3 through workshop_month-1). Follow-ups use fixed periods: 30-day (next month only), 60-day (next 2 months averaged), 90-day (next 3 months averaged)
+- **Benchmark month**: For workshops, the baseline is a rolling 3-month average of the latest available 5-star data before the workshop. The anchor month depends on the workshop day: on/after the 15th → anchor = workshop_month - 1; before the 15th → anchor = workshop_month - 2. Baseline = average of months (anchor-2, anchor-1, anchor). Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after). All 3 months in a period must have data. No estimated baseline fallback — if required months aren't available, baseline is null and post-scores won't display.
 
 ---
 
@@ -188,7 +188,7 @@ Boot Camp and Rising Star workshop records. If this file is missing, workshop hi
 |---|---|---|---|
 | `STORE_NUMBER` | string | Yes | Store identifier (matches `CHAINED_STORE_ID` in 5-Star CSV) |
 | `OA_NAME` | string | Yes | OA who ran the workshop |
-| `WORKSHOP_DATE` | date (YYYY-MM-DD) | Yes | Workshop date; benchmark month is the workshop month if day > 14, otherwise the prior month |
+| `WORKSHOP_DATE` | date (YYYY-MM-DD) | Yes | Workshop date; anchor = workshop_month - 1 if day ≥ 15 (prior month's data available), workshop_month - 2 if day < 15 |
 | `WORKSHOP_TYPE` | string | Yes | "Boot Camp" or "Rising Star" — both types are tracked and analyzed |
 
 **Example row:**
@@ -197,7 +197,7 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 "00001","Danielle Hudson",2026-03-12,Boot Camp
 ```
 
-**Benchmark logic:** The baseline is a rolling 3-month average of the latest available 5-star data before the workshop (workshop_month-3 through workshop_month-1). Follow-ups use fixed periods: 30-day (next month only), 60-day (next 2 months averaged), 90-day (next 3 months averaged).
+**Benchmark logic:** The baseline is a rolling 3-month average of the latest available 5-star data before the workshop. The anchor month depends on the workshop day: on/after the 15th → anchor = workshop_month - 1; before the 15th → anchor = workshop_month - 2. Baseline = average of months (anchor-2, anchor-1, anchor). Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after). All 3 months in a period must have data. No estimated baseline fallback — if required months aren't available, baseline is null and post-scores won't display.
 
 ### 4. Generated Output Files (do not edit)
 

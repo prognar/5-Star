@@ -153,10 +153,10 @@ Status is recomputed from store data at render time (not from the CSV), using th
 | Tab | Feature | Why it matters |
 |---|---|---|
 | Targeting | National map of Tier 2 stores | Every Tier 2 store plotted with binding-constraint coloring — see the national distribution at a glance. Click a legend item to filter to that binding only (click again to show all) |
-| Targeting | Top 30 DMA×Franchisee groups | Ranked by Tier 2 count with focus bars showing the dominant binding component — these are the best workshop targets |
-| Targeting | Concentration rate | What % of this franchisee's stores in this DMA are Tier 2 (high rate = better ROI per workshop) |
+| Targeting | All DMA×Franchisee groups | Every DMA×Franchisee combination with Tier 2 stores, ranked by count with focus bars showing the dominant binding component and workshop status (Completed/Scheduled/None) |
+| Targeting | Concentration rate | What % of this franchisee's stores in this DMA are Tier 2 (high rate = better ROI per workshop) |
 | Targeting | Multi-zone flag | When a DMA×Franchisee group spans multiple OAs, flagged so scheduling gets the right coaches together |
-| Workshops | Workshop History | Past and upcoming Rising Star workshops with per-store pre/post scores to measure lift |
+| Workshops | Rising Star Workshops | Date-grouped cards matching Leadership Summary format — gold background, expand to Area Coach cards with store count, then drill to individual stores with baseline, 30/60/90 post scores, sparkline trend, and deltas |
 
 ---
 

@@ -214,8 +214,8 @@ Status is recomputed from store data at render time (not from the CSV) using the
 
 ### Sections
 - **Map** — every Tier 2 store plotted, colored by binding constraint. Click a legend item to filter to that binding only; click again to show all. Unselected items dim to 35% opacity.
-- **Top 30 DMA×Franchisee Targets** — sorted by Tier 2 count, with concentration rate, OA(s), and binding focus bars
-- **Rising Star Workshop History** — past and upcoming workshops with per-store pre/post scores and delta
+- **All DMA×Franchisee Targets** — every DMA×Franchisee combination with Tier 2 stores, sorted by count with concentration rate, OA(s), binding focus bars, and workshop status badge (Completed/Scheduled/None)
+- **Rising Star Workshops** — date-grouped cards matching Leadership Summary format (gold background), expandable to Area Coach cards with store count, then drill to individual stores with baseline, 30/60/90 post scores, sparkline trend, and deltas
 
 **Why zone-agnostic:** Rising Star targeting cuts across OA zone boundaries — it follows franchisee footprint within a DMA, so a row may span multiple OAs.
 

@@ -364,8 +364,8 @@ def load_workshops(df):
         pre_month = None
         post_scores = []
         if has_anchor:
-            # Baseline = rolling 3-month average of the 3 months ending at anchor
-            # Computed for ALL workshops (past, current, future) — shows starting position
+            # Baseline = average of available months ending at anchor
+            # Use whatever data we have (1, 2, or 3 months) — don't require all 3
             bl_months = [anchor - 2, anchor - 1, anchor]
             bl_scores = []
             for bm in bl_months:
@@ -374,10 +374,10 @@ def load_workshops(df):
                     s, t, b = _score_lookup[key]
                     if s is not None:
                         bl_scores.append((s, t, b))
-            if len(bl_scores) == 3:
-                bench_score = round(sum(x[0] for x in bl_scores) / 3, 2)
-                bench_tier = bl_scores[-1][1]   # tier from last month of window
-                bench_binding = bl_scores[-1][2] # binding from last month of window
+            if bl_scores:
+                bench_score = round(sum(x[0] for x in bl_scores) / len(bl_scores), 2)
+                bench_tier = bl_scores[-1][1]   # tier from last available month
+                bench_binding = bl_scores[-1][2] # binding from last available month
             # Pre-score: 3 months before baseline start (for pre-workshop trajectory)
             pre_key = (sid, anchor - 5)
             if pre_key in _score_lookup:
@@ -386,6 +386,7 @@ def load_workshops(df):
                     pre_score = ps
                     pre_month = anchor - 5
         # Follow-up scores: 30-day (next month), 60-day (next 2 months avg), 90-day (next 3 months avg)
+        # Use available months — don't require all months in the period
         if status in ("past", "current") and has_anchor:
             followup_start = ws_month + 1  # first month after the workshop
             for period_days, n_months in [(30, 1), (60, 2), (90, 3)]:
@@ -397,8 +398,8 @@ def load_workshops(df):
                         s, _, _ = _score_lookup[key]
                         if s is not None:
                             period_scores.append(s)
-                if len(period_scores) == n_months:
-                    avg_score = round(sum(period_scores) / n_months, 2)
+                if period_scores:
+                    avg_score = round(sum(period_scores) / len(period_scores), 2)
                     post_scores.append({
                         "period": period_days,
                         "label": f"{period_days}-day",
@@ -445,171 +446,188 @@ def load_workshops(df):
 
 def compute_workshop_effectiveness(df, workshops_by_oa):
     """Compute trajectory lift for workshop stores: each store serves as its own control.
-    Compares the pre-workshop trend (change over 3 months before baseline window)
-    to the post-workshop change (baseline → latest available follow-up period).
-    Shows how workshops change store trajectories."""
+    Compares the pre-workshop trend to the post-workshop change.
+    Shows how workshops change store trajectories vs tier-matched control stores."""
     last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
     last_label = MONTH_LABELS[-1] if MONTH_LABELS else str(last_m)
 
+    def _earliest_before(df_lookup, sid, month, max_back=5):
+        """Find the earliest available month going back from `month`, up to max_back months."""
+        for back in range(max_back, 0, -1):
+            key = (sid, month - back)
+            if key in df_lookup:
+                s, _, _ = df_lookup[key]
+                if s is not None:
+                    return s, month - back
+        return None, None
+
+    def _control_baseline(df_lookup, sid, anchor):
+        """Compute control baseline using available months (1-3) ending at anchor, same logic as workshop."""
+        bl_months = [anchor - 2, anchor - 1, anchor]
+        scores = []
+        for bm in bl_months:
+            key = (sid, bm)
+            if key in df_lookup:
+                s, _, _ = df_lookup[key]
+                if s is not None:
+                    scores.append(s)
+        if scores:
+            return round(sum(scores) / len(scores), 2), len(scores)
+        return None, 0
+
     def _effectiveness(entries, ws_type_label, control_tier):
-        """Compute trajectory lift for stores that attended workshops.
-        For each store: pre_trend (bm_score - pre_score) vs post_change (latest_period - bm_score).
-        Also computes reference control trajectory for context."""
-        pre_scores = []
-        bm_scores = []
-        lt_scores = []
-        pre_changes = []
-        post_changes = []
-        pre_monthlies = []
-        post_monthlies = []
-        lifts = []
-        pre_months_list = []
-        post_months_list = []
+        """Compute trajectory lift for stores that attended workshops."""
+        # Build lookup for workshop stores
+        ws_store_set = set(e["store"] for e in entries if e["status"] == "past")
+
+        # Build score lookup from df
+        df_lookup = {}
+        for _, row in df.iterrows():
+            sid = str(row["CHAINED_STORE_ID"])
+            mn = int(row["MONTHNUM"])
+            s = float(row["OVERALL_FIVESTAR"]) if pd.notna(row["OVERALL_FIVESTAR"]) else None
+            t = int(row["_tier"]) if pd.notna(row.get("_tier")) else None
+            b = str(row["_binding"]) if pd.notna(row.get("_binding")) else None
+            if s is not None:
+                df_lookup[(sid, mn)] = (s, t, b)
+
+        # ── Variable group: all workshopped stores ──
+        var_baselines = []
+        var_latests = []
+        var_deltas = []
+        var_pre_scores = []
+        var_pre_months_list = []
+        var_post_months_list = []
+        var_pre_monthlies = []
+        var_post_monthlies = []
+        var_lifts = []
 
         for e in entries:
             if e["status"] != "past":
                 continue
-            if e.get("baseline_tier") is not None and int(e["baseline_tier"]) != control_tier:
-                continue
-            if e["baseline_score"] is None or e["pre_score"] is None or not e["post_scores"]:
+            if e["baseline_score"] is None or not e["post_scores"]:
                 continue
             bm = e["baseline_month"]
             bm_score = e["baseline_score"]
-            pre_score = e["pre_score"]
-            pre_month = e["pre_month"]
             # Use latest available follow-up period (90 > 60 > 30)
             latest_post = max(e["post_scores"], key=lambda x: x["period"])
             lt_score = latest_post["score"]
             lt_period_months = len(latest_post.get("months", []))
 
-            pre_change = bm_score - pre_score
-            pre_months = bm - pre_month
-            post_change = lt_score - bm_score
-            post_months = lt_period_months  # months in follow-up period
+            delta = lt_score - bm_score
+            var_baselines.append(bm_score)
+            var_latests.append(lt_score)
+            var_deltas.append(delta)
 
-            pre_scores.append(pre_score)
-            bm_scores.append(bm_score)
-            lt_scores.append(lt_score)
-            pre_changes.append(pre_change)
-            post_changes.append(post_change)
-            pre_months_list.append(pre_months)
-            post_months_list.append(post_months)
-            if pre_months > 0:
-                pre_monthlies.append(pre_change / pre_months)
-            if post_months > 0:
-                post_monthlies.append(post_change / post_months)
-                lifts.append((post_change / post_months) - (pre_change / pre_months if pre_months > 0 else 0))
+            # Pre-score: earliest available month before baseline window
+            pre_score, pre_month = _earliest_before(df_lookup, e["store"], bm - 2, max_back=5)
+            if pre_score is not None and pre_month is not None:
+                pre_change = bm_score - pre_score
+                pre_months = bm - pre_month
+                post_change = lt_score - bm_score
+                post_months = lt_period_months
+                var_pre_scores.append(pre_score)
+                var_pre_months_list.append(pre_months)
+                var_post_months_list.append(post_months)
+                if pre_months > 0:
+                    var_pre_monthlies.append(pre_change / pre_months)
+                if post_months > 0:
+                    var_post_monthlies.append(post_change / post_months)
+                    var_lifts.append((post_change / post_months) - (pre_change / pre_months if pre_months > 0 else 0))
 
-        n_stores = len(bm_scores)
-        if n_stores == 0:
+        n_var = len(var_baselines)
+        if n_var == 0:
             return None
 
-        avg_pre = round(sum(pre_scores) / n_stores, 2)
-        avg_bl = round(sum(bm_scores) / n_stores, 2)
-        avg_lt = round(sum(lt_scores) / n_stores, 2)
-        avg_pre_ch = round(sum(pre_changes) / n_stores, 3)
-        avg_post_ch = round(sum(post_changes) / n_stores, 3)
-        avg_pre_mos = round(sum(pre_months_list) / n_stores, 1) if pre_months_list else 0
-        avg_post_mos = round(sum(post_months_list) / n_stores, 1) if post_months_list else 0
-        avg_pre_mo = round(sum(pre_monthlies) / len(pre_monthlies), 3) if pre_monthlies else None
-        avg_post_mo = round(sum(post_monthlies) / len(post_monthlies), 3) if post_monthlies else None
-        avg_lift = round(sum(lifts) / len(lifts), 3) if lifts else None
+        n_improved = sum(1 for d in var_deltas if d >= 0)
+        n_not_improved = n_var - n_improved
 
-        # Reference control: tier-matched stores without workshops
-        # Use 3-month baseline average for comparability with workshop baseline
-        valid_bms = [e["baseline_month"] for e in entries if e["status"] == "past" and e["baseline_month"] in PERIOD_MONTHS and e["baseline_month"] >= 3]
-        ctrl_bm_month = min(valid_bms) if valid_bms else last_m - 1
-        # Ensure pre-period (month-5) and post-period are valid
-        if ctrl_bm_month < 5 or ctrl_bm_month >= last_m:
-            ctrl_bm_month = last_m - 1
-        ctrl_pre_changes = []
-        ctrl_post_changes = []
+        # ── Control group: tier-matched stores without workshops ──
+        # Use the median baseline month from workshop stores for comparability
+        ctrl_anchors = [e["baseline_month"] for e in entries if e["status"] == "past" and e.get("baseline_month")]
+        ctrl_bm_month = int(sorted(ctrl_anchors)[len(ctrl_anchors) // 2]) if ctrl_anchors else last_m - 1
+
+        ctrl_baselines = []
+        ctrl_latests = []
+        ctrl_deltas = []
+        ctrl_pre_scores_list = []
         ctrl_pre_monthlies = []
         ctrl_post_monthlies = []
         ctrl_lifts = []
-        ws_store_set = set(e["store"] for e in entries if e["status"] == "past")
+
         for sid in df["CHAINED_STORE_ID"].unique():
             if sid in ws_store_set:
                 continue
-            # Control baseline = 3-month average (same window as workshop baseline)
-            ctrl_bl_scores = []
-            for cm in [ctrl_bm_month - 2, ctrl_bm_month - 1, ctrl_bm_month]:
-                r = df[(df["CHAINED_STORE_ID"] == sid) & (df["MONTHNUM"] == cm)]
-                if r.empty:
-                    break
-                s = float(r.iloc[0]["OVERALL_FIVESTAR"]) if pd.notna(r.iloc[0]["OVERALL_FIVESTAR"]) else None
-                if s is None:
-                    break
-                ctrl_bl_scores.append(s)
-            if len(ctrl_bl_scores) != 3:
+            # Control baseline: available months ending at same anchor as workshops
+            ctrl_bm_s, n_months = _control_baseline(df_lookup, sid, ctrl_bm_month)
+            if ctrl_bm_s is None:
                 continue
-            ctrl_bm_s = round(sum(ctrl_bl_scores) / 3, 2)
-            # Control pre = score 5 months before baseline start (matching workshop pre_score)
-            pre_r = df[(df["CHAINED_STORE_ID"] == sid) & (df["MONTHNUM"] == ctrl_bm_month - 5)]
-            if pre_r.empty:
+            # Control pre: earliest available month before baseline window
+            ctrl_pre_s, ctrl_pre_month = _earliest_before(df_lookup, sid, ctrl_bm_month - 2, max_back=5)
+            if ctrl_pre_s is None:
                 continue
-            pre_s = float(pre_r.iloc[0]["OVERALL_FIVESTAR"]) if pd.notna(pre_r.iloc[0]["OVERALL_FIVESTAR"]) else None
-            if pre_s is None:
+            # Control latest: same month as workshop latest
+            lt_r = df_lookup.get((sid, last_m))
+            if lt_r is None:
                 continue
-            # Control post = latest available month
-            lt_r = df[(df["CHAINED_STORE_ID"] == sid) & (df["MONTHNUM"] == last_m)]
-            if lt_r.empty:
+            lt_s = lt_r[0]
+            # Filter to correct tier (use tier at baseline month)
+            tier_val = lt_r[1]  # tier from latest month
+            if tier_val is None or tier_val != control_tier:
                 continue
-            lt_s = float(lt_r.iloc[0]["OVERALL_FIVESTAR"]) if pd.notna(lt_r.iloc[0]["OVERALL_FIVESTAR"]) else None
-            tier = df[(df["CHAINED_STORE_ID"] == sid) & (df["MONTHNUM"] == ctrl_bm_month)]
-            if tier.empty:
-                continue
-            tier_val = tier.iloc[0].get("_tier")
-            if lt_s is None:
-                continue
-            if tier_val is None or int(tier_val) != control_tier:
-                continue
-            pch = ctrl_bm_s - pre_s
-            poch = lt_s - ctrl_bm_s
-            pmos = 5  # pre is 5 months before baseline start
-            pemos = last_m - ctrl_bm_month
-            if pemos <= 0:
-                continue
-            ctrl_pre_changes.append(pch)
-            ctrl_post_changes.append(poch)
-            ctrl_pre_monthlies.append(pch / pmos)
-            ctrl_post_monthlies.append(poch / pemos if pemos > 0 else 0)
-            ctrl_lifts.append((poch / pemos if pemos > 0 else 0) - (pch / pmos))
+            ctrl_delta = lt_s - ctrl_bm_s
+            ctrl_baselines.append(ctrl_bm_s)
+            ctrl_latests.append(lt_s)
+            ctrl_deltas.append(ctrl_delta)
+            ctrl_pre_scores_list.append(ctrl_pre_s)
+            pre_change = ctrl_bm_s - ctrl_pre_s
+            pre_months = ctrl_bm_month - ctrl_pre_month
+            post_change = lt_s - ctrl_bm_s
+            post_months = last_m - ctrl_bm_month
+            if pre_months > 0:
+                ctrl_pre_monthlies.append(pre_change / pre_months)
+            if post_months > 0:
+                ctrl_post_monthlies.append(post_change / post_months)
+                ctrl_lifts.append((post_change / post_months) - (pre_change / pre_months if pre_months > 0 else 0))
 
-        ctrl_n = len(ctrl_pre_changes)
+        ctrl_n = len(ctrl_baselines)
         ctrl_data = None
         if ctrl_n > 0:
-            ctrl_pre_avg = round(sum(ctrl_pre_changes) / ctrl_n, 3)
-            ctrl_post_avg = round(sum(ctrl_post_changes) / ctrl_n, 3)
-            ctrl_pre_mo = round(sum(ctrl_pre_monthlies) / ctrl_n, 3)
-            ctrl_post_mo = round(sum(ctrl_post_monthlies) / ctrl_n, 3)
-            ctrl_lift = round(sum(ctrl_lifts) / ctrl_n, 3)
+            ctrl_n_improved = sum(1 for d in ctrl_deltas if d >= 0)
             ctrl_data = {
                 "n": ctrl_n,
-                "avg_pre_change": ctrl_pre_avg,
-                "avg_post_change": ctrl_post_avg,
-                "avg_pre_monthly": ctrl_pre_mo,
-                "avg_post_monthly": ctrl_post_mo,
-                "avg_lift": ctrl_lift,
+                "n_improved": ctrl_n_improved,
+                "n_not_improved": ctrl_n - ctrl_n_improved,
+                "avg_baseline": round(sum(ctrl_baselines) / ctrl_n, 2),
+                "avg_latest": round(sum(ctrl_latests) / ctrl_n, 2),
+                "avg_delta": round(sum(ctrl_deltas) / ctrl_n, 3),
+                "avg_pre_monthly": round(sum(ctrl_pre_monthlies) / len(ctrl_pre_monthlies), 3) if ctrl_pre_monthlies else None,
+                "avg_post_monthly": round(sum(ctrl_post_monthlies) / len(ctrl_post_monthlies), 3) if ctrl_post_monthlies else None,
+                "avg_lift": round(sum(ctrl_lifts) / len(ctrl_lifts), 3) if ctrl_lifts else None,
             }
 
+        n_workshops = len(entries)
+        n_past = len([e for e in entries if e["status"] == "past"])
+        n_future = sum(1 for e in entries if e["status"] == "future")
+        avg_pre_mo = round(sum(var_pre_monthlies) / len(var_pre_monthlies), 3) if var_pre_monthlies else None
+        avg_post_mo = round(sum(var_post_monthlies) / len(var_post_monthlies), 3) if var_post_monthlies else None
+        avg_lift = round(sum(var_lifts) / len(var_lifts), 3) if var_lifts else None
+
         return {
-            "n_workshops": len(entries),
-            "n_stores": n_stores,
-            "total_stores_in_tier": len([e for e in entries if e["status"] == "past" and e.get("baseline_tier") is not None and int(e["baseline_tier"]) == control_tier]),
-            "n_future": sum(1 for e in entries if e["status"] == "future"),
+            "n_workshops": n_workshops,
+            "n_stores": n_var,
+            "n_improved": n_improved,
+            "n_not_improved": n_not_improved,
+            "total_workshopped": n_past,
+            "n_future": n_future,
             "baseline_period": f"M{ctrl_bm_month}",
             "latest_period": last_label,
             "trajectory": {
-                "n": n_stores,
-                "avg_pre_score": avg_pre,
-                "avg_baseline": avg_bl,
-                "avg_latest": avg_lt,
-                "avg_pre_change": avg_pre_ch,
-                "avg_pre_months": avg_pre_mos,
+                "n": n_var,
+                "avg_baseline": round(sum(var_baselines) / n_var, 2),
+                "avg_latest": round(sum(var_latests) / n_var, 2),
+                "avg_delta": round(sum(var_deltas) / n_var, 3),
                 "avg_pre_monthly": avg_pre_mo,
-                "avg_post_change": avg_post_ch,
-                "avg_post_months": avg_post_mos,
                 "avg_post_monthly": avg_post_mo,
                 "avg_lift_monthly": avg_lift,
             },

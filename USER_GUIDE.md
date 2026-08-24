@@ -124,10 +124,12 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 - Every defaulting, at-risk, and T1-watch store nationwide sorted by severity with OA, Franchisee, DMA, and consecutive months
 
 ### Workshops tab
+- **Workshop Summary** — key metrics at a glance: workshops held, upcoming, stores improved, stores not improved — broken out by Boot Camp (red) and Rising Star (gold)
 - **Workshop Effectiveness** — control vs. variable comparison for Boot Camp **and** Rising Star. Control group = stores in the same tier (T1 for bootcamp, T2 for rising star) at the baseline month that did not attend a workshop of that type. Compares whether attending stores improved more than their tier peers who didn't attend. Validates the program investment.
-- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date and facilitator. Filter by type (All / Boot Camp / Rising Star) via toggle buttons, or by franchisee via dropdown. Each date card has a colored left border — blue for BC-only, purple for RS-only. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Same-day workshops by different Area Coaches appear as separate blocks.
+- **Date-Aggregated Workshop List** — all workshops across all zones, grouped by date and facilitator. Filter by type (All / Boot Camp / Rising Star) via toggle buttons, or by franchisee via dropdown. Each date card has a colored left border — red for BC, gold for RS. Each store row shows post-workshop scores with improvement deltas, and sparkline trend. Same-day workshops by different Area Coaches appear as separate blocks.
+- **Export CSV** — export all workshop data (filtered by type) with DATE, WORKSHOP_TYPE, AREA_COACH, STORE, BASELINE, 30d, 60d, 90d, CHANGE (latest check-in minus baseline)
 - **Franchisee Filter** — filter workshops by franchisee to isolate stores within a specific ownership group
-- **Area Coach Grouping** — same-day workshops are grouped by Area Coach (`FAREADESC`), showing distinct blocks when multiple Area Coaches host on the same date
+- **Area Coach Grouping** — same-day workshops are grouped by Area Coach (`FAREADESC`), showing distinct blocks when multiple Coaches host on the same date
 - **Per-FOP Summaries** — same FOP summaries from the Overview tab, surfaced here for context
 
 ---
@@ -198,7 +200,7 @@ Status is recomputed from store data at render time (not from the CSV) using the
 ### Boot Camps tab
 - **Past Workshops** — completed workshops grouped by date. Each date row shows store count, Area Coach(s), average baseline score, monthly post-scores with sparkline trend, and net delta. Click to drill down to per-store Pre Score / Post Scores / Delta detail.
 - **Future Workshops** — upcoming workshops showing store count, Area Coach(s), and average baseline score only. No post-scores or trend — the store hasn't attended yet.
-- **Baseline logic** — the baseline is a rolling 3-month average of the latest available 5-star data before the workshop. The 3 months used depend on the workshop day: if the workshop is on/after the 15th, the prior month's data is available (anchor = workshop_month - 1); if before the 15th, we go back one more (anchor = workshop_month - 2). Baseline = average of months (anchor-2, anchor-1, anchor). Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after). All 3 months in a period must have data for the score to appear. If the required baseline months aren't in the data, baseline is null and post-scores won't be calculated. Future workshops show baseline only (no follow-up data yet).
+- **Baseline logic** — the baseline is an average of available 5-star data before the workshop. The anchor month depends on the workshop day: on/after the 15th → anchor = workshop_month - 1; before the 15th → anchor = workshop_month - 2. Baseline = average of available months from (anchor-2, anchor-1, anchor) — uses whatever data exists (1, 2, or 3 months). Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after) — also uses available months. Export includes CHANGE column (latest check-in minus baseline).
 - **Status classification** — workshop is "past" if the date is before today, "future" otherwise (regardless of whether the month's data has landed yet)
 
 ### Targeting tab

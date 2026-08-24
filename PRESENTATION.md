@@ -50,8 +50,10 @@ The 5-Star program generates a huge volume of store-month data, but there was no
 | Overview | Binding chart | What's holding each tier back nationally — if Bootcamp stores are all bound on Win Score, that's strategic |
 | Overview | FOP Summaries | Per-FOP 3-paragraph AI summaries (Past \| Present \| Future) showing portfolio shifts, risk counts, and recommended action |
 | Default Watch | Defaulting/At-Risk/T1 Watch tables | Every store in trouble, sorted by severity, with OA and Franchisee — actionable to the individual store level |
+| Workshops | Workshop Summary | Key metrics at a glance: workshops held, upcoming, stores improved, stores not improved — broken out by Boot Camp and Rising Star |
 | Workshops | Workshop Effectiveness | Control vs. variable analysis for Boot Camp **and** Rising Star — did attending stores improve more than tier-matched stores that didn't? Control group = T1 stores (bootcamp) or T2 stores (rising star) at baseline month minus attendees. Validates the program investment |
-| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date and facilitator. Same-day workshops are grouped by Area Coach (FAREADESC), showing distinct blocks when multiple coaches host. Each store row shows a BC/RS type tag, post-workshop scores with improvement deltas, and sparkline trend. Drill down: Date → Area Coach → Individual stores |
+| Workshops | Workshop History (date-aggregated) | Every workshop nationally, grouped by date and facilitator. Same-day workshops are grouped by Area Coach (FAREADESC), showing distinct blocks when multiple coaches host. Each store row shows post-workshop scores with improvement deltas, and sparkline trend. Drill down: Date → Area Coach → Individual stores |
+| Workshops | Export CSV | Export all workshop data (filtered by type) with DATE, WORKSHOP_TYPE, AREA_COACH, STORE, BASELINE, 30d, 60d, 90d, CHANGE |
 | Workshops | Franchisee Filter | Filter workshops by franchisee to isolate stores within a specific ownership group |
 | Workshops | Per-FOP Summaries | Same FOP summaries from Overview, surfaced in the Workshops context |
 
@@ -138,7 +140,7 @@ Status is recomputed from store data at render time (not from the CSV), using th
 
 **The binding logic:** Whichever of the five components (Win Score, Speed, Brand, Hutbot, FSCC) has the lowest score determines what's holding the store back. That tells the OA what to coach on.
 
-**Baseline logic (Boot Camp):** Each workshop entry carries a baseline score computed as a rolling 3-month average of the latest available 5-star data before the workshop. The anchor month depends on the workshop day: on/after the 15th → anchor = workshop_month - 1 (prior month's data is available); before the 15th → anchor = workshop_month - 2 (need to go back one more). Baseline = average of months (anchor-2, anchor-1, anchor). Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after). All 3 months in a period must have data for the score to appear. If the required baseline months aren't in the data, baseline is null and post-scores won't be calculated. Future workshops show baseline only (no follow-up data yet).
+**Baseline logic (Boot Camp):** Each workshop entry carries a baseline score computed as an average of available 5-star data before the workshop. The anchor month depends on the workshop day: on/after the 15th → anchor = workshop_month - 1 (prior month's data is available); before the 15th → anchor = workshop_month - 2 (need to go back one more). Baseline = average of available months from (anchor-2, anchor-1, anchor) — uses whatever data exists (1, 2, or 3 months), don't require all 3. Follow-ups start the month after the workshop: 30-day (month 1 after), 60-day (average of months 1–2 after), 90-day (average of months 1–3 after) — also uses available months. Export includes CHANGE column (latest check-in minus baseline).
 
 ---
 

@@ -333,6 +333,7 @@ def load_workshops(df):
         ws_month = int(row["workshop_month"])
         ws_day = int(row["workshop_day"]) if pd.notna(row.get("workshop_day")) else 1
         ws_type = str(row["WORKSHOP_TYPE"]).strip()
+        ws_id = str(row.get("WORKSHOP_ID", "")).strip() if "WORKSHOP_ID" in row.index else ""
         date_str = str(row["WORKSHOP_DATE"].strftime("%Y-%m-%d")) if pd.notna(row["WORKSHOP_DATE"]) else ""
         is_bootcamp = "rising" not in ws_type.lower()
 
@@ -411,6 +412,7 @@ def load_workshops(df):
             "store": sid,
             "date": date_str,
             "type": ws_type,
+            "workshop_id": ws_id,
             "workshop_month": ws_month,
             "baseline_month": anchor,
             "baseline_score": bench_score,
@@ -431,16 +433,26 @@ def load_workshops(df):
             type_key = "boot_camp"
         results.setdefault(oa, {}).setdefault(type_key, []).append(entry)
 
-    # Add summary counts per OA for both types
+    # Add summary counts per OA for both types (count unique workshops, not store entries)
     for oa in results:
         for tk in ("boot_camp", "rising_star"):
             lst = results[oa].get(tk, [])
-            results[oa][f"n_{tk}_past"] = sum(1 for e in lst if e["status"] == "past")
-            results[oa][f"n_{tk}_future"] = sum(1 for e in lst if e["status"] == "future")
+            results[oa][f"n_{tk}_past"] = len({e.get("workshop_id") for e in lst if e["status"] == "past" and e.get("workshop_id")})
+            results[oa][f"n_{tk}_future"] = len({e.get("workshop_id") for e in lst if e["status"] == "future" and e.get("workshop_id")})
 
-    total_bc = sum(len(v.get("boot_camp", [])) for v in results.values())
-    total_rs = sum(len(v.get("rising_star", [])) for v in results.values())
-    print(f"  Loaded {len(w)} workshops ({total_bc} boot camp, {total_rs} rising star), {len(results)} OAs represented")
+    # Count unique workshops across all OAs for the print statement
+    all_bc_ids = set()
+    all_rs_ids = set()
+    for v in results.values():
+        for e in v.get("boot_camp", []):
+            wid = e.get("workshop_id", "")
+            if wid:
+                all_bc_ids.add(wid)
+        for e in v.get("rising_star", []):
+            wid = e.get("workshop_id", "")
+            if wid:
+                all_rs_ids.add(wid)
+    print(f"  Loaded {len(w)} store entries ({len(all_bc_ids)} boot camp workshops, {len(all_rs_ids)} rising star workshops), {len(results)} OAs represented")
     return results
 
 
@@ -606,9 +618,11 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
                 "avg_lift": round(sum(ctrl_lifts) / len(ctrl_lifts), 3) if ctrl_lifts else None,
             }
 
-        n_workshops = len(entries)
-        n_past = len([e for e in entries if e["status"] == "past"])
-        n_future = sum(1 for e in entries if e["status"] == "future")
+        n_workshops = len({e.get("workshop_id") for e in entries if e.get("workshop_id")}) or len(entries)
+        past_entries = [e for e in entries if e["status"] == "past"]
+        future_entries = [e for e in entries if e["status"] == "future"]
+        n_past = len(past_entries)
+        n_future = len(future_entries)
         avg_pre_mo = round(sum(var_pre_monthlies) / len(var_pre_monthlies), 3) if var_pre_monthlies else None
         avg_post_mo = round(sum(var_post_monthlies) / len(var_post_monthlies), 3) if var_post_monthlies else None
         avg_lift = round(sum(var_lifts) / len(var_lifts), 3) if var_lifts else None

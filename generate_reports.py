@@ -356,18 +356,17 @@ def load_workshops(df):
             anchor = ws_month - 1
         else:
             anchor = ws_month - 2
-        has_anchor = anchor in PERIOD_MONTHS
-
         bench_score = None
         bench_tier = None
         bench_binding = None
         pre_score = None
         pre_month = None
         post_scores = []
+        bl_months = [anchor - 2, anchor - 1, anchor]
+        has_anchor = any(m in PERIOD_MONTHS for m in bl_months)
         if has_anchor:
             # Baseline = average of available months ending at anchor
             # Use whatever data we have (1, 2, or 3 months) — don't require all 3
-            bl_months = [anchor - 2, anchor - 1, anchor]
             bl_scores = []
             for bm in bl_months:
                 key = (sid, bm)
@@ -386,8 +385,7 @@ def load_workshops(df):
                 if ps is not None:
                     pre_score = ps
                     pre_month = anchor - 5
-        # Follow-up scores: 30-day (next month), 60-day (next 2 months avg), 90-day (next 3 months avg)
-        # Use available months — don't require all months in the period
+        # Follow-up scores: only show when ALL months in the period have data
         if status in ("past", "current") and has_anchor:
             followup_start = ws_month + 1  # first month after the workshop
             for period_days, n_months in [(30, 1), (60, 2), (90, 3)]:
@@ -399,7 +397,7 @@ def load_workshops(df):
                         s, _, _ = _score_lookup[key]
                         if s is not None:
                             period_scores.append(s)
-                if period_scores:
+                if len(period_scores) == n_months:
                     avg_score = round(sum(period_scores) / len(period_scores), 2)
                     post_scores.append({
                         "period": period_days,
@@ -663,6 +661,128 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
         result["rising_star"] = rs
 
     return result
+
+
+def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
+    """Compute boot camp workshop effectiveness for a single zone.
+    Compares workshop stores vs tier-matched control stores within the zone."""
+    last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
+    last_label = MONTH_LABELS[-1] if MONTH_LABELS else str(last_m)
+
+    bc_entries = zone_workshops.get("boot_camp", [])
+    past_bc = [e for e in bc_entries if e["status"] == "past"]
+
+    if not past_bc:
+        return None
+
+    # Build score lookup for this zone only
+    df_lookup = {}
+    for _, row in zone_df.iterrows():
+        sid = str(row["CHAINED_STORE_ID"])
+        mn = int(row["MONTHNUM"])
+        s = float(row["OVERALL_FIVESTAR"]) if pd.notna(row["OVERALL_FIVESTAR"]) else None
+        t = int(row["_tier"]) if pd.notna(row.get("_tier")) else None
+        if s is not None:
+            df_lookup[(sid, mn)] = (s, t)
+
+    # Variable group: workshop stores with baseline + follow-up
+    ws_store_set = set(e["store"] for e in past_bc)
+    var_baselines = []
+    var_latests = []
+    var_deltas = []
+
+    for e in past_bc:
+        if e["baseline_score"] is None or not e["post_scores"]:
+            continue
+        bm = e["baseline_score"]
+        latest_post = max(e["post_scores"], key=lambda x: x["period"])
+        lt = latest_post["score"]
+        var_baselines.append(bm)
+        var_latests.append(lt)
+        var_deltas.append(lt - bm)
+
+    n_var = len(var_baselines)
+    if n_var == 0:
+        return None
+
+    n_improved = sum(1 for d in var_deltas if d >= 0)
+    n_not_improved = n_var - n_improved
+
+    # Control group: tier 1 stores in zone that did NOT attend a workshop
+    ctrl_baselines = []
+    ctrl_latests = []
+    ctrl_deltas = []
+
+    for sid in zone_df["CHAINED_STORE_ID"].unique():
+        if sid in ws_store_set:
+            continue
+        # Control baseline: available months
+        bl_scores = []
+        for bm in range(last_m - 2, last_m + 1):
+            key = (sid, bm)
+            if key in df_lookup:
+                s, t = df_lookup[key]
+                if s is not None:
+                    bl_scores.append((s, t))
+        if not bl_scores:
+            continue
+        # Must be tier 1 at baseline (boot camp target)
+        ctrl_bm = round(sum(x[0] for x in bl_scores) / len(bl_scores), 2)
+        ctrl_tier = bl_scores[-1][1]
+        if ctrl_tier != 1:
+            continue
+        # Control latest
+        lt_key = (sid, last_m)
+        if lt_key not in df_lookup:
+            continue
+        lt_s, _ = df_lookup[lt_key]
+        if lt_s is None:
+            continue
+        ctrl_baselines.append(ctrl_bm)
+        ctrl_latests.append(lt_s)
+        ctrl_deltas.append(lt_s - ctrl_bm)
+
+    ctrl_n = len(ctrl_baselines)
+    ctrl_data = None
+    if ctrl_n > 0:
+        ctrl_n_improved = sum(1 for d in ctrl_deltas if d >= 0)
+        ctrl_data = {
+            "n": ctrl_n,
+            "n_improved": ctrl_n_improved,
+            "n_not_improved": ctrl_n - ctrl_n_improved,
+            "avg_baseline": round(sum(ctrl_baselines) / ctrl_n, 2),
+            "avg_latest": round(sum(ctrl_latests) / ctrl_n, 2),
+            "avg_delta": round(sum(ctrl_deltas) / ctrl_n, 3),
+        }
+
+    # Unique workshop count
+    n_workshops = len({e.get("workshop_id") for e in past_bc if e.get("workshop_id")}) or len(past_bc)
+    future_bc = [e for e in bc_entries if e["status"] == "future"]
+    n_future = len({e.get("workshop_id") for e in future_bc if e.get("workshop_id")}) or len(future_bc)
+
+    avg_delta = round(sum(var_deltas) / n_var, 3)
+    lift = None
+    if ctrl_data and ctrl_data["n"] > 0:
+        lift = round(avg_delta - ctrl_data["avg_delta"], 3)
+
+    return {
+        "n_workshops": n_workshops,
+        "n_stores": n_var,
+        "n_improved": n_improved,
+        "n_not_improved": n_not_improved,
+        "total_workshopped": len(past_bc),
+        "n_future": n_future,
+        "trajectory": {
+            "n": n_var,
+            "avg_baseline": round(sum(var_baselines) / n_var, 2),
+            "avg_latest": round(sum(var_latests) / n_var, 2),
+            "avg_delta": avg_delta,
+        },
+        "control": ctrl_data,
+        "lift": lift,
+        "baseline_period": f"M{last_m - 1}",
+        "latest_period": last_label,
+    }
 
 
 def filter_analysis_data(df):
@@ -1271,6 +1391,7 @@ def compute_single_zone(zone_df, workshops=None):
         "n_at_risk": n_at_risk,
         "n_t1_watch": n_t1_watch,
         "workshops": workshops,
+        "workshop_effectiveness": compute_zone_workshop_effectiveness(zone_df, workshops),
     }
 
 

@@ -1207,8 +1207,10 @@ function renderBootCamps(){
     const mc = (label, value, sub, color) => `<div style="background:var(--card);border:1px solid var(--line);padding:14px 18px;border-radius:4px;"><div style="font-size:11px;color:var(--muted);font-family:IBM Plex Mono;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">${label}</div><div style="font-family:Oswald,sans-serif;font-size:28px;font-weight:600;color:${color||'var(--ink)'};">${value}</div>${sub?'<div style="font-size:11px;color:var(--muted);font-family:IBM Plex Mono;margin-top:2px;">'+sub+'</div>':''}</div>`;
 
     document.getElementById('wsEffSubtitle').textContent = `Baseline: ${eff.baseline_period}, latest: ${eff.latest_period}. ${eff.total_workshopped} stores attended, ${eff.n_future} upcoming.`;
+    const imprRate = eff.n_stores > 0 ? (eff.n_improved / eff.n_stores * 100).toFixed(0) : '0';
+    const imprColor = eff.n_stores > 0 && eff.n_improved / eff.n_stores >= 0.5 ? '#276b4d' : eff.n_improved / eff.n_stores >= 0.33 ? '#c07f1f' : '#a3122a';
     document.getElementById('wsEffMetrics').innerHTML =
-      mc('Workshops Held', eff.n_workshops, eff.total_workshopped + ' stores', '#A62932') +
+      mc('Improvement Rate', imprRate + '%', eff.n_improved + ' of ' + eff.n_stores + ' stores improved', imprColor) +
       mc('Stores Improved', eff.n_improved, eff.n_stores + ' with follow-up', '#276b4d') +
       mc('Stores Not Improved', eff.n_not_improved, eff.n_stores + ' with follow-up', '#a3122a') +
       mc('Lift vs Control', eff.lift != null ? fmtD(eff.lift) : '\u2014', c ? c.n + ' control stores' : '', eff.lift != null ? dCol(eff.lift) : '');

@@ -24,6 +24,27 @@ STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
 OUTPUT_DIR = BASE_DIR
 
+# Load .env credentials if present (used for the opencode serve LLM backend).
+# .env is the source of truth for the OPENCODE_SERVER_* connection settings so a
+# stray shell value (e.g. stale desktop-app port) never points at the wrong
+# server; other keys only fill in when unset.
+_ENV_FILE = BASE_DIR / ".env"
+if _ENV_FILE.exists():
+    try:
+        with open(_ENV_FILE, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith("#") and "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    _k = _k.strip()
+                    _v = _v.strip()
+                    if not _k:
+                        continue
+                    if _k.startswith("OPENCODE_SERVER_") or _k not in os.environ:
+                        os.environ[_k] = _v
+    except (OSError, ValueError):
+        pass
+
 TIER_THRESHOLD = 2.5  # T1 < 2.5, T2 >= 2.5 & < 4.0, T3 >= 4.0
 DEFAULT_THRESHOLD = 2.0  # < 2.0 is a "Failure to Satisfy" per brand standards
 PERIODS = []  # set dynamically from data
@@ -48,6 +69,10 @@ TIER_NAMES = {1: "Bootcamp", 2: "Rising Star", 3: "Top Tier"}
 _OC_URL = os.environ.get("OPENCODE_SERVER_URL", "")
 OPENCODE_SERVER_USER = os.environ.get("OPENCODE_SERVER_USERNAME", "opencode")
 OPENCODE_SERVER_PASS = os.environ.get("OPENCODE_SERVER_PASSWORD", "")
+# LLM model used for summaries. Explicit model avoids relying on the serve's
+# default (which can be a slow local model). Matches what worked previously.
+LLM_PROVIDER = os.environ.get("OPENCODE_LLM_PROVIDER", "opencode")
+LLM_MODEL = os.environ.get("OPENCODE_LLM_MODEL", "big-pickle")
 SUMMARIES_CACHE = BASE_DIR / "_summaries.json"
 
 
@@ -90,7 +115,7 @@ def _detect_opencode_url():
 
 OPENCODE_SERVER_URL = _detect_opencode_url()
 # Extend timeout for LLM calls (15 OA summaries is a lot of tokens)
-_LLM_TIMEOUT = 300  # seconds
+_LLM_TIMEOUT = 600  # seconds
 
 # Snowflake config (optional — set env vars to enable)
 SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT", "")
@@ -1509,6 +1534,121 @@ def generate_rising_star_html(rising_data, template_path, output_path):
 
 # ─── Franchisee Dashboard ──────────────────────────────────────────────────
 
+GROWTH_RATIO_BAND = (0.5, 2.0)  # plausible SSSG/SSTG band (-50%..+100%); outside = bad/entry data
+
+
+def _clip_growth(v):
+    """Winsorize implausible sales-growth ratios (e.g. 1536 from a bad LY baseline)."""
+    f = _num(v)
+    if f is None:
+        return None
+    lo, hi = GROWTH_RATIO_BAND
+    return max(lo, min(hi, f))
+
+
+def _avg_round(values):
+    vals = [v for v in values if v is not None and not (isinstance(v, float) and pd.isna(v))]
+    if not vals:
+        return 0
+    import statistics
+    return round(sum(vals) / len(vals), 2)
+
+def _avg_prec(values, nd=4):
+    vals = [v for v in values if v is not None and not (isinstance(v, float) and pd.isna(v))]
+    if not vals:
+        return 0
+    import statistics
+    return round(sum(vals) / len(vals), nd)
+
+
+def compute_quintiles_for(rows, with_assign=False):
+    """Split a list of store metric dicts into 5 performance quintiles.
+
+    Stores are ranked by OVERALL_FIVESTAR (windowed average), descending.
+    Quintile 1 = top / strongest, Quintile 5 = bottom / weakest. If fewer
+    than 5 stores, only existing groups are emitted. SSSG/SSTG are already
+    aggregate growth deltas per store; quintile values are simple means.
+    When with_assign is True, also returns a {store_id: quintile} map
+    (used for per-store system quintile assignments).
+    """
+    if not rows:
+        return ([], {}) if with_assign else []
+    rows = [r for r in rows if r.get("overall") is not None]
+    if not rows:
+        return ([], {}) if with_assign else []
+    rows = sorted(rows, key=lambda r: r.get("overall", 0), reverse=True)
+    n = len(rows)
+    buckets = [[] for _ in range(5)]
+    for i, r in enumerate(rows):
+        idx = min(4, int(i * 5 / n))
+        buckets[idx].append(r)
+    out = []
+    assign = {}
+    for qi, group in enumerate(buckets, start=1):
+        if not group:
+            continue
+        for r in group:
+            assign[r.get("sid")] = qi
+        out.append({
+            "q": qi,
+            "n": len(group),
+            "overall": _avg_round([r.get("overall") for r in group]),
+            "win": _avg_round([r.get("win") for r in group]),
+            "speed": _avg_round([r.get("speed") for r in group]),
+            "brand": _avg_round([r.get("brand") for r in group]),
+            "hutbot": _avg_round([r.get("hutbot") for r in group]),
+            "fscc": _avg_round([r.get("fscc") for r in group]),
+            "sssg": _avg_prec([r.get("sssg") for r in group]),
+            "sstg": _avg_prec([r.get("sstg") for r in group]),
+        })
+    if with_assign:
+        return out, assign
+    return out
+
+
+def compute_store_metrics(df, months):
+    """Return per-store rows with metrics averaged over the given months.
+
+    Each store row carries overall / win / speed / hutbot (5-star component)
+    plus SSSG / SSTG, each averaged across the requested month window, along
+    with its director / FOP mapping (from the store-list join columns).
+    """
+    sub = df[df["MONTHNUM"].isin(months)]
+    rows = []
+    for sid, store_g in sub.groupby("CHAINED_STORE_ID"):
+        latest = store_g.iloc[-1]
+        cy_sales = pd.to_numeric(store_g["CY_SS_SALES_TNS"], errors="coerce").sum()
+        ly_sales = pd.to_numeric(store_g["LY_SS_SALES_TNS"], errors="coerce").sum()
+        cy_trans = pd.to_numeric(store_g["CY_SS_TRANS"], errors="coerce").sum()
+        ly_trans = pd.to_numeric(store_g["LY_SS_TRANS"], errors="coerce").sum()
+        sssg = cy_sales / ly_sales - 1.0 if ly_sales else -1.0
+        sstg = cy_trans / ly_trans - 1.0 if ly_trans else -1.0
+        rows.append({
+            "sid": str(sid),
+            "overall": _avg_round(store_g["OVERALL_FIVESTAR"].tolist()),
+            "win": _avg_round(store_g["WIN_SCORE_STAR"].tolist()),
+            "speed": _avg_round(store_g["SPEED_STAR"].tolist()),
+            "brand": _avg_round(store_g["BRAND_STAR"].tolist()),
+            "hutbot": _avg_round(store_g["HB_ONTIME_STAR"].tolist()),
+            "fscc": _avg_round(store_g["FSCC_STAR"].tolist()),
+            "sssg": sssg,
+            "sstg": sstg,
+            "director": str(latest.get("DIRECTOR", "Unknown")) if pd.notna(latest.get("DIRECTOR")) else "Unknown",
+            "fop": str(latest.get("FOP", "Unknown")) if pd.notna(latest.get("FOP")) else "Unknown",
+        })
+    return rows
+
+
+def _num(v):
+    try:
+        f = float(v)
+        if pd.isna(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
 def compute_fop_data(df, zones_data):
     """Compute FOP-level data aggregated from zones_data stores.
 
@@ -1684,10 +1824,44 @@ def compute_fop_data(df, zones_data):
         "franchisees": all_franchisees,
     }
 
+    # ── Restaurant Performance Quintiles (ranked by 5-Star, per time window) ──
+    windows = {
+        "lm": {"label": "Last Month", "months": [last_m]},
+        "lq": {"label": "Last 3 Months", "months": PERIOD_MONTHS[-3:]},
+        "ytd": {"label": "Year To Date", "months": list(PERIOD_MONTHS)},
+    }
+
+    def _window_quintiles(months):
+        metric_rows = compute_store_metrics(df, months)
+        all_buckets, assign = compute_quintiles_for(metric_rows, with_assign=True)
+        growth = {r["sid"]: {"sssg": r["sssg"], "sstg": r["sstg"]} for r in metric_rows}
+        q = {"all": all_buckets, "directors": {}, "fops": {}}
+        for d in sorted(director_data.keys()):
+            q["directors"][d] = compute_quintiles_for(
+                [r for r in metric_rows if r["director"] == d]
+            )
+        for fop_name in sorted(fop_data.keys()):
+            q["fops"][fop_name] = compute_quintiles_for(
+                [r for r in metric_rows if r["fop"] == fop_name]
+            )
+        return q, assign, growth
+
+    quintiles = {}
+    store_quintiles = {}
+    store_growth = {}
+    for key, w in windows.items():
+        q, assign, growth = _window_quintiles(w["months"])
+        quintiles[key] = q
+        store_quintiles[key] = assign
+        store_growth[key] = growth
+    quintiles["_meta"] = {key: {"label": w["label"], "months": w["months"]} for key, w in windows.items()}
+
     print(f"  {len(fop_data)} FOPs across {len(director_data)} directors, "
           f"{len(all_franchisees)} franchisees")
     return {"fops": fop_data, "directors": sorted(director_data.keys()),
-            "directorData": director_data, "overviewData": overview_data}
+            "directorData": director_data, "overviewData": overview_data,
+            "quintiles": quintiles, "store_quintiles": store_quintiles,
+            "store_growth": store_growth}
 
 
 # ─── LLM Summaries ─────────────────────────────────────────────────────────
@@ -1847,12 +2021,13 @@ def _normalize_summary(value):
     return str(value)
 
 
-def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000, allow_plain_text=False):
+def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000, allow_plain_text=False, attempts=3):
     """Send a prompt to the opencode server and return the text response.
 
     Returns the parsed first JSON object when present. If allow_plain_text is
     True and the response contains no parseable JSON, returns the raw text
     instead (used for prompts that ask for a plain narrative, e.g. leadership).
+    Transient failures are retried with a fresh session (attempts).
     """
     if not OPENCODE_SERVER_PASS:
         print("  WARNING: OPENCODE_SERVER_PASSWORD not set, skipping LLM summaries")
@@ -1866,61 +2041,72 @@ def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000, allo
 
     full_prompt = "\n".join(prompt_parts)
 
-    # Create session
-    req = urllib.request.Request(
-        f"{OPENCODE_SERVER_URL}/session",
-        data=json.dumps({"title": "5-Star OA Summaries"}).encode(),
-        headers=headers,
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT) as resp:
-            session = json.loads(resp.read())
-    except Exception as e:
-        print(f"    Could not create session: {e}")
-        return None
+    for attempt in range(attempts):
+        if attempt:
+            print(f"    Retrying LLM call (attempt {attempt + 1}/{attempts})...")
 
-    session_id = session["id"]
+        # Create session
+        try:
+            req = urllib.request.Request(
+                f"{OPENCODE_SERVER_URL}/session",
+                data=json.dumps({"title": "5-Star OA Summaries"}).encode(),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT) as resp:
+                session = json.loads(resp.read())
+        except Exception as e:
+            if attempt == attempts - 1:
+                print(f"    Could not create session: {e}")
+            continue
 
-    # Build message body — let the model use its default
-    body = {
-        "parts": [{"type": "text", "text": full_prompt}],
-    }
-    if system_prompt:
-        body["system"] = system_prompt
+        session_id = session["id"]
 
-    req2 = urllib.request.Request(
-        f"{OPENCODE_SERVER_URL}/session/{session_id}/message",
-        data=json.dumps(body).encode(),
-        headers=headers,
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req2, timeout=_LLM_TIMEOUT) as resp:
-            result = json.loads(resp.read())
-    except Exception as e:
-        print(f"    LLM request failed: {e}")
-        cleanup_session(session_id, headers)
-        return None
+        # Build message body — pin the model explicitly (works regardless of the
+        # serve instance's configured default).
+        body = {
+            "model": {"providerID": LLM_PROVIDER, "modelID": LLM_MODEL},
+            "parts": [{"type": "text", "text": full_prompt}],
+        }
+        if system_prompt:
+            body["system"] = system_prompt
 
-    # Extract text response
-    raw_text = None
-    try:
-        for part in result.get("parts", []):
-            if part.get("type") == "text" and part.get("text"):
-                text = part["text"]
-                if raw_text is None:
-                    raw_text = text
-                parsed = _extract_first_json(text)
-                if parsed is not None:
-                    cleanup_session(session_id, headers)
-                    return parsed
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        print(f"    Could not parse LLM response: {e}")
-    finally:
-        cleanup_session(session_id, headers)
-    if allow_plain_text and raw_text:
-        return raw_text
+        req2 = urllib.request.Request(
+            f"{OPENCODE_SERVER_URL}/session/{session_id}/message",
+            data=json.dumps(body).encode(),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req2, timeout=_LLM_TIMEOUT) as resp:
+                result = json.loads(resp.read())
+        except Exception as e:
+            if attempt == attempts - 1:
+                print(f"    LLM request failed: {e}")
+            cleanup_session(session_id, headers)
+            continue
+
+        # Extract text response
+        raw_text = None
+        try:
+            for part in result.get("parts", []):
+                if part.get("type") == "text" and part.get("text"):
+                    text = part["text"]
+                    if raw_text is None:
+                        raw_text = text
+                    parsed = _extract_first_json(text)
+                    if parsed is not None:
+                        cleanup_session(session_id, headers)
+                        return parsed
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            if attempt == attempts - 1:
+                print(f"    Could not parse LLM response: {e}")
+            continue
+        finally:
+            cleanup_session(session_id, headers)
+        if allow_plain_text and raw_text:
+            return raw_text
+        # No usable content this attempt — fall through to retry.
     return None
 
 
@@ -2117,7 +2303,7 @@ def summarize_zones(zones_data, no_cache=False):
     period_label = get_period_label()
 
     # Split into batches to keep each LLM response within output/token limits
-    BATCH = 5
+    BATCH = 4
     oa_batches = [oa_names[i:i + BATCH] for i in range(0, len(oa_names), BATCH)]
     for batch in oa_batches:
         batch_data = {oa: oa_data[oa] for oa in batch}
@@ -2743,13 +2929,460 @@ def generate_fop_html(fop_data, template_path, output_path):
     print(f"  Written to {output_path}")
 
 
+def _e_month(e):
+    """Return the (year, month) of a workshop entry, best-effort."""
+    d = str(e.get("date") or "")
+    if len(d) >= 7 and d[:4].isdigit() and d[5:7].isdigit():
+        return int(d[:4]), int(d[5:7])
+    return int(e.get("year", 2026) or 2026), int(e.get("workshop_month") or 1)
+
+
+def _e_day(e):
+    d = str(e.get("date") or "")
+    if len(d) >= 10 and d[8:10].isdigit():
+        return int(d[8:10])
+    return int(e.get("workshop_day") or 1)
+
+
+def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date=None):
+    """Assemble the Leadership Brief data object (private page).
+    Combines national, per-OA, boot camp, and franchisee signals into the
+    structures consumed by leadership_brief.html.
+
+    Temporal model driven by a monthly mid-month run:
+      - run_date  : the simulated/actual run date (default: today).
+      - prior month => the month BEFORE the run month (who hustled).
+      - YTD        => months first_data..prior_month.
+      - upcoming   => remainder of the run month (day >= run day) + the
+                      following calendar month.
+    """
+    last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
+    first_m = PERIOD_MONTHS[0] if PERIOD_MONTHS else 1
+    last_label = MONTH_LABELS[-1] if MONTH_LABELS else str(last_m)
+
+    period = get_period_label()
+
+    # ── National headline ──
+    monthly = nat_data.get("monthly", [])
+
+    # Run date (simulation override or today)
+    if run_date is None:
+        run_date = pd.Timestamp.now().normalize()
+    else:
+        run_date = pd.Timestamp(run_date).normalize()
+    run_year = run_date.year
+    run_month = run_date.month
+    run_day = run_date.day
+
+    def _mk(ym):
+        return ym[0] * 100 + ym[1]
+
+    # Prior month: the month before the run month
+    prior_ym = (run_year, run_month - 1) if run_month > 1 else (run_year - 1, 12)
+    # Next month
+    next_ym = (run_year, run_month + 1) if run_month < 12 else (run_year + 1, 1)
+    upcoming_months = [_mk((run_year, run_month)), _mk(next_ym)]
+    prior_key = _mk(prior_ym)
+
+    # Month-name labels (run month, prior month, next month)
+    MONTH_NAMES = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",7:"Jul",
+                   8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+    run_label = MONTH_NAMES.get(run_month, str(run_month))
+    prior_label = MONTH_NAMES.get(prior_ym[1], str(prior_ym[1]))
+    next_label = MONTH_NAMES.get(next_ym[1], str(next_ym[1]))
+
+    # Collect all boot camp entries with OA + stable year
+    bc_all = []
+    for oa, odata in workshops_by_oa.items():
+        for entry in odata.get("boot_camp", []) or []:
+            e = dict(entry)
+            e["oa"] = oa
+            if "year" not in e:
+                y, _ = _e_month(e)
+                e["year"] = y
+            bc_all.append(e)
+
+    def _held(month_key):
+        return [e for e in bc_all if _mk(_e_month(e)) == month_key]
+
+    def _future_list():
+        out = []
+        for e in bc_all:
+            y, m = _e_month(e)
+            k = _mk((y, m))
+            if k == upcoming_months[0]:
+                # remainder of run month: only day >= run_day
+                if _e_day(e) >= run_day:
+                    out.append(e)
+            elif k == upcoming_months[1]:
+                out.append(e)
+        return out
+
+    def _counts(entries):
+        ws = len({e.get("workshop_id") for e in entries if e.get("workshop_id")}) or len(entries)
+        stores = len({e.get("store") for e in entries})
+        return ws, stores
+
+    prior_entries = _held(prior_key)
+    # YTD = months from first_data month to prior month (all workshops already held)
+    ytd_entries = [e for e in bc_all if _mk(_e_month(e)) <= prior_key]
+    future_entries = _future_list()
+
+    n_held_last, n_stores_last = _counts(prior_entries)
+    n_held_ytd, n_stores_ytd = _counts(ytd_entries)
+    n_future, n_future_stores = _counts(future_entries)
+
+    # Who hustled the prior month (stores coached, then workshops)
+    who_did = {}
+    for e in prior_entries:
+        rec = who_did.setdefault(e["oa"], {"oa": e["oa"], "ws_held": set(), "stores_coached": set()})
+        if e.get("workshop_id"):
+            rec["ws_held"].add(e["workshop_id"])
+        if e.get("store"):
+            rec["stores_coached"].add(e["store"])
+    who_list = [{"oa": k, "ws_held": len(v["ws_held"]), "stores_coached": len(v["stores_coached"])}
+                for k, v in who_did.items()]
+    who_list.sort(key=lambda x: (-x["stores_coached"], -x["ws_held"]))
+
+    # YTD who-did (for the overall view)
+    who_did_ytd = {}
+    for e in ytd_entries:
+        rec = who_did_ytd.setdefault(e["oa"], {"oa": e["oa"], "ws_held": set(), "stores_coached": set()})
+        if e.get("workshop_id"):
+            rec["ws_held"].add(e["workshop_id"])
+        if e.get("store"):
+            rec["stores_coached"].add(e["store"])
+    who_list_ytd = [{"oa": k, "ws_held": len(v["ws_held"]), "stores_coached": len(v["stores_coached"])}
+                    for k, v in who_did_ytd.items()]
+    who_list_ytd.sort(key=lambda x: (-x["stores_coached"], -x["ws_held"]))
+
+    # Upcoming breakdown by month (rest of run month vs next month)
+    future_breakdown = []
+    for mk, lbl in [(upcoming_months[0], f"Rest of {run_label}"), (upcoming_months[1], next_label)]:
+        entries = [e for e in future_entries if _mk(_e_month(e)) == mk]
+        nws, nst = _counts(entries)
+        if nws > 0:
+            future_breakdown.append({"label": lbl, "workshops": nws, "stores": nst})
+
+    # ── OA front: merge zone_rank with per-zone workshop counts ──
+    oa_front = []
+    zone_rank = {z["oa"]: z for z in nat_data.get("zone_rank", [])}
+    for oa, z in zones_data.items():
+        if str(oa).startswith("_"):
+            continue
+        rank = zone_rank.get(oa, {})
+        ws = z.get("workshops", {}) or {}
+        zbc = ws.get("boot_camp", []) or []
+        # Reuse the same temporal windows per OA
+        oa_prior = [e for e in zbc if _mk(_e_month(e)) == prior_key and e.get("oa") in (oa, None)]
+        # NOTE: zone data entries historically keyed by OA; recompute windows from bc_all for accuracy
+        oa_prior = [e for e in prior_entries if e["oa"] == oa]
+        oa_ytd = [e for e in ytd_entries if e["oa"] == oa]
+        oa_future = [e for e in future_entries if e["oa"] == oa]
+        ws_last, ws_stores_last = _counts(oa_prior)
+        ws_ytd, ws_stores_ytd = _counts(oa_ytd)
+        ws_future, ws_future_stores = _counts(oa_future)
+        eff = z.get("workshop_effectiveness")
+        oa_front.append({
+            "oa": oa,
+            "n": rank.get("n", z.get("n_stores", 0)),
+            "avg_base": rank.get("avg_base"),
+            "avg_latest": rank.get("avg_latest"),
+            "delta": rank.get("delta"),
+            "t1_base": rank.get("t1_base", 0),
+            "t1_latest": rank.get("t1_latest", 0),
+            "t3_base": rank.get("t3_base", 0),
+            "t3_latest": rank.get("t3_latest", 0),
+            # Workshops
+            "ws_last": ws_last,
+            "ws_stores_last": ws_stores_last,
+            "ws_ytd": ws_ytd,
+            "ws_stores_ytd": ws_stores_ytd,
+            "ws_future": ws_future,
+            "ws_future_stores": ws_future_stores,
+            # Effectiveness summary used for LLM recognition / boot camp narrative
+            "bc_eff": (eff or {}).get("trajectory") or {},
+            "bc_lift": (eff or {}).get("lift"),
+            "bc_n_improved": (eff or {}).get("n_improved", 0),
+            "bc_n_stores": (eff or {}).get("n_stores", 0),
+            "bc_stores_coached": len({e.get("store") for e in zbc if e.get("status") == "past"}),
+        })
+    oa_front.sort(key=lambda x: (x["delta"] is None, -(x["delta"] or -9)))
+
+    # ── Boot camp deep-dive ──
+    nat_bc = (nat_data.get("workshop_effectiveness") or {}).get("boot_camp") or {}
+    bootcamp = {
+        "run_label": run_label,
+        "prior_label": prior_label,
+        "next_label": next_label,
+        "run_day": run_day,
+        "latest_month": last_label,
+        # Prior month (who hustled)
+        "n_held_last": n_held_last,
+        "n_stores_last": n_stores_last,
+        "who_did": who_list,
+        # YTD
+        "n_held_ytd": n_held_ytd,
+        "n_stores_ytd": n_stores_ytd,
+        "who_did_ytd": who_list_ytd,
+        # Upcoming (rest of run month + next month)
+        "n_future": n_future,
+        "n_future_stores": n_future_stores,
+        "future_breakdown": future_breakdown,
+        # Effectiveness (national, from the past batch that has follow-up data)
+        "n_improved": nat_bc.get("n_improved", 0),
+        "n_not_improved": nat_bc.get("n_not_improved", 0),
+        "n_stores": nat_bc.get("n_stores", 0),
+        "avg_baseline": (nat_bc.get("trajectory") or {}).get("avg_baseline"),
+        "avg_latest": (nat_bc.get("trajectory") or {}).get("avg_latest"),
+        "avg_delta": (nat_bc.get("trajectory") or {}).get("avg_delta"),
+        "lift": None,
+    }
+    ctrl = nat_bc.get("control") or {}
+    if ctrl and ctrl.get("avg_delta") is not None and bootcamp["avg_delta"] is not None:
+        bootcamp["lift"] = round(bootcamp["avg_delta"] - ctrl["avg_delta"], 3)
+
+    # ── Per-zone effectiveness table (for BC table) ──
+    bc_effectiveness = []
+    for oa, z in zones_data.items():
+        if str(oa).startswith("_"):
+            continue
+        eff = z.get("workshop_effectiveness")
+        if not eff or not eff.get("trajectory"):
+            continue
+        t = eff["trajectory"]
+        bc_effectiveness.append({
+            "oa": oa,
+            "n_workshops": eff.get("n_workshops", 0),
+            "n_stores": eff.get("n_stores", 0),
+            "n_improved": eff.get("n_improved", 0),
+            "n_not_improved": eff.get("n_not_improved", 0),
+            "avg_baseline": t.get("avg_baseline"),
+            "avg_latest": t.get("avg_latest"),
+            "avg_delta": t.get("avg_delta"),
+            "lift": eff.get("lift"),
+        })
+    bc_effectiveness.sort(key=lambda x: (x["lift"] is None, -(x["lift"] or -9)))
+
+    # ── Franchisee level ──
+    all_frans = []
+    for fop_name, fop in (fop_data.get("fops") or {}).items():
+        for fran in fop.get("franchisees", []) or []:
+            all_frans.append({
+                "fran": fran["fran"],
+                "fop": fop_name,
+                "n": fran["n"],
+                "avg": fran["avg"],
+                "lq": fran.get("lq"),
+                "n_defaulting": fran.get("n_defaulting", 0),
+                "n_at_risk": fran.get("n_at_risk", 0),
+                "n_t1_watch": fran.get("n_t1_watch", 0),
+            })
+    # Franchisees on the rise: highest LQ->latest improvement with size
+    for f in all_frans:
+        if f["lq"] is not None:
+            f["rise"] = round(f["avg"] - f["lq"], 2)
+    rise = sorted([f for f in all_frans if f.get("rise") is not None and f["n"] >= 3],
+                  key=lambda x: -x["rise"])
+    watch = sorted(all_frans, key=lambda x: (-x["n_defaulting"], -x["n_at_risk"], -x["n_t1_watch"]))
+
+    brief = {
+        "period": period,
+        "run_date": run_date.strftime("%Y-%m-%d"),
+        "run_label": run_label,
+        "prior_label": prior_label,
+        "next_label": next_label,
+        "prior_month": prior_key,
+        "monthly": monthly,
+        "oa_front": oa_front,
+        "bootcamp": bootcamp,
+        "bc_effectiveness": bc_effectiveness,
+        "franchisees": {"rise": rise, "watch": watch},
+        "fop_names": sorted((fop_data.get("fops") or {}).keys()),
+    }
+    return brief
+
+
+def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
+    """Generate the LLM narrative for the Leadership Brief (private page).
+    Produces national high-level summary, recognition spotlight (1-2 named OAs),
+    and a boot camp narrative. Cached on the period version + run date."""
+    run_date = brief_data.get("run_date", "")
+    version = f"{_summary_version()}@{run_date}"
+    cache = {}
+    if SUMMARIES_CACHE.exists():
+        try:
+            with open(SUMMARIES_CACHE, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            cache = {}
+
+    VER_KEY = "_brief_version"
+
+    # Only consider the cache valid if it has a real (non-empty) narrative summary.
+    cached = cache.get("_brief")
+    _cache_ok = bool(
+        cached
+        and not no_cache
+        and cache.get(VER_KEY) == version
+        and (cached.get("summary") or cached.get("bootcamp", {}).get("narrative"))
+    )
+
+    if _cache_ok:
+        print("  Using cached leadership brief")
+        brief_data.update(cached)
+        return
+
+    print("  Generating leadership brief...")
+
+    period_label = get_period_label()
+    last_label = MONTH_LABELS[-1] if MONTH_LABELS else "latest"
+
+    # Compact OA data for recognition + boot camp narrative
+    oa_compact = []
+    for o in brief_data["oa_front"]:
+        eff = o["bc_eff"] or {}
+        oa_compact.append({
+            "oa": o["oa"],
+            "stores": o["n"],
+            "avg_from": o.get("avg_base"),
+            "avg_to": o.get("avg_latest"),
+            "delta_avg": o.get("delta"),
+            "t1_from": o.get("t1_base"),
+            "t1_to": o.get("t1_latest"),
+            "t3_from": o.get("t3_base"),
+            "t3_to": o.get("t3_latest"),
+            "ws_last": o.get("ws_last", 0),
+            "ws_stores_last": o.get("ws_stores_last", 0),
+            "ws_ytd": o.get("ws_ytd", 0),
+            "ws_stores_ytd": o.get("ws_stores_ytd", 0),
+            "ws_future": o.get("ws_future", 0),
+            "ws_future_stores": o.get("ws_future_stores", 0),
+            "bc_improved": o.get("bc_n_improved"),
+            "bc_followup": o.get("bc_n_stores"),
+            "bc_lift": o.get("bc_lift"),
+        })
+
+    nat_monthly = [{"period": m.get("period"), "avg": m.get("avg"),
+                    "t1": m.get("t1"), "t2": m.get("t2"), "t3": m.get("t3")}
+                   for m in (brief_data["monthly"] or [])]
+    nat_bc = brief_data["bootcamp"]
+
+    # Compact franchisee data
+    fran_compact = {
+        "rise": brief_data["franchisees"]["rise"][:12],
+        "watch": brief_data["franchisees"]["watch"][:12],
+    }
+
+    # ── 1) National summary ──
+    sys_lead = (
+        "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
+        "You write crisp, leadership-ready highlights. Be specific with numbers, "
+        "name names where warranted, and separate 'what's working' from 'where the "
+        "opportunities are'. Tone: confident, direct, recognition-forward."
+    )
+    lead_prompt = (
+        f"Here is the {period_label} national 5-Star picture.\n\n"
+        f"National monthly averages (avg overall, T1/T2/T3 counts):\n{json.dumps(nat_monthly)}\n\n"
+        f"National Boot Camp pulse:\n{json.dumps(nat_bc)}\n\n"
+        f"Per-OA detail:\n{json.dumps(oa_compact, indent=2)}\n\n"
+        "Write a concise executive highlight (no more than ~180 words) covering:\n"
+        "1) WHAT'S WORKING WELL — the standout national and OA-level wins this period.\n"
+        "2) WHERE THE OPPORTUNITIES ARE — the most important gaps or risks to act on.\n"
+        "Keep it paragraph form, three short paragraphs, each starting with 'What's working', "
+        "'Opportunities'. Return plain text only."
+    )
+    lead_narr = call_opencode_server([lead_prompt], system_prompt=sys_lead, max_tokens=1200, allow_plain_text=True)
+    brief_data["summary"] = _normalize_summary(lead_narr) if lead_narr else (cached or {}).get("summary", "")
+
+    # ── 2) Recognition spotlight ──
+    rec_prompt = (
+        "Based on the national and per-OA data below, identify the ONE or TWO OA peers "
+        "whose impact this period 'swung hard' and deserves public recognition. "
+        "Prioritize whoever owns the most significant, data-backed improvement — whether that "
+        "is average score movement, Tier 1 reduction / stores moved up, or Boot Camp impact "
+        "(most workshops run / most stores coached + strong effectiveness). The standout can "
+        "change each month; pick whoever has the strongest story.\n\n"
+        f"{json.dumps(oa_compact, indent=2)}\n\n"
+        "Return a JSON object with key 'recognition' = array of 1-2 objects, each with keys: "
+        "'name' (full OA name), 'role' (e.g. 'Area Coach — <region>'), and 'why' "
+        "(2-3 sentences naming the specific numbers that make this person's impact stand out). "
+        "Only include people with a genuinely notable result."
+    )
+    rec_result = call_opencode_server([rec_prompt], system_prompt=sys_lead, max_tokens=1200)
+    rec = []
+    if isinstance(rec_result, dict):
+        r = rec_result.get("recognition")
+        if isinstance(r, list):
+            rec = r
+        elif isinstance(r, dict):
+            rec = [r]
+    if not rec:
+        rec = (cached or {}).get("recognition") or []
+    brief_data["recognition"] = rec
+
+    # ── 3) Boot camp narrative ──
+    prior_lbl = nat_bc.get("prior_label") or last_label
+    run_lbl = nat_bc.get("run_label") or last_label
+    nxt_lbl = nat_bc.get("next_label") or ""
+    who_top = nat_bc.get("who_did") or []
+    who_str = ", ".join(f"{w['oa']} ({w['ws_held']} ws / {w['stores_coached']} stores)"
+                        for w in who_top[:3]) or "none"
+    bc_prompt = (
+        f"Boot Camp leadership narrative for the run of {run_lbl} {run_lbl and ''} (data through {last_label}). "
+        "Cover (~120 words):\n"
+        f"- Who hustled {prior_lbl}: best OA performers by workshops run and stores coached. "
+        f"Top: {who_str}.\n"
+        f"- YTD volume: {nat_bc.get('n_held_ytd',0)} workshops held across "
+        f"{nat_bc.get('n_stores_ytd',0)} stores this year.\n"
+        f"- Upcoming ({nxt_lbl} focus): {nat_bc.get('n_future_stores',0)} stores scheduled across "
+        f"{nat_bc.get('n_future',0)} workshops ({nat_bc.get('future_breakdown')}).\n"
+        f"- Effectiveness so far: improvement rate ({nat_bc.get('n_improved',0)} improved of "
+        f"{nat_bc.get('n_stores',0)} with follow-up) and lift vs control "
+        f"({nat_bc.get('lift')}).\n\n"
+        f"Data:\n{json.dumps({'bootcamp': nat_bc, 'oa_level': oa_compact}, indent=2)}\n\n"
+        "Return plain text."
+    )
+    bc_narr = call_opencode_server([bc_prompt], system_prompt=sys_lead, max_tokens=1000, allow_plain_text=True)
+    brief_data["bootcamp"]["narrative"] = _normalize_summary(bc_narr) if bc_narr else ((cached or {}).get("bootcamp") or {}).get("narrative", "")
+
+    # Cache (only persist when we actually produced a narrative; otherwise the
+    # refresh already fell back to prior cache and there's nothing new to save)
+    if brief_data.get("summary") or brief_data.get("bootcamp", {}).get("narrative"):
+        cache["_brief"] = brief_data
+        cache[VER_KEY] = version
+        try:
+            with open(SUMMARIES_CACHE, "w", encoding="utf-8") as f:
+                json.dump(cache, f, indent=2)
+            print(f"  Cached leadership brief to {SUMMARIES_CACHE.name}")
+        except IOError as e:
+            print(f"  Could not write brief cache: {e}")
+
+
+def generate_brief_html(brief_data, template_path, output_path):
+    """Generate leadership_brief.html (private page) from template."""
+    print(f"Generating {output_path.name}...")
+    with open(template_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    html = replace_data_block(html, "BRIEF", brief_data)
+    html = replace_data_block(html, "MONTHS", MONTH_LABELS)
+    html = _replace_month_refs(html)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"  Written to {output_path}")
+
+
 # ─── Main ──────────────────────────────────────────────────────────────────
 
-def main(no_cache=False):
+def main(no_cache=False, run_date=None):
     print("=" * 60)
     print("5-Star Report Generator")
     if no_cache:
         print("  (--no-cache: forcing fresh LLM summaries)")
+    if run_date:
+        print(f"  (--run-date {run_date}: simulating Leadership Brief run)")
     print("=" * 60)
 
     # Load data
@@ -2875,6 +3508,11 @@ def main(no_cache=False):
     summarize_zones(zones_data, no_cache=no_cache)
     summarize_leadership(nat_data, no_cache=no_cache)
 
+    # Build + summarize the private Leadership Brief page
+    brief_data = compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date=run_date)
+    summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=no_cache)
+    brief_data = convert_for_json(brief_data)
+
     # Attach all workshops (national aggregate) for the Workshops tab
     all_workshops = []
     for oa, odata in workshops_by_oa.items():
@@ -2918,8 +3556,20 @@ def main(no_cache=False):
         OUTPUT_DIR / "rising_star.html"
     )
 
-    print("\nAll 4 reports generated successfully!")
+    generate_brief_html(
+        brief_data,
+        template_dir / "leadership_brief.html",
+        OUTPUT_DIR / "leadership_brief.html"
+    )
+
+    print("\nAll 5 reports generated successfully!")
 
 
 if __name__ == "__main__":
-    main(no_cache="--no-cache" in sys.argv)
+    _argv = sys.argv
+    _run_date = None
+    if "--run-date" in _argv:
+        _i = _argv.index("--run-date")
+        if _i + 1 < len(_argv):
+            _run_date = _argv[_i + 1]
+    main(no_cache="--no-cache" in _argv, run_date=_run_date)

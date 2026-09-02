@@ -24,7 +24,7 @@
   "_leadership_version": "months_7_1-2-3-4-5-6-7",
   "_brief": {
     "period": "Jan \u2013 Jul 2026",
-    "run_date": "2026-09-01",
+    "run_date": "2026-09-02",
     "run_label": "Sep",
     "prior_label": "Aug",
     "next_label": "Oct",
@@ -137,18 +137,18 @@
         "ws_stores_last": 34,
         "ws_ytd": 12,
         "ws_stores_ytd": 145,
-        "ws_future": 11,
-        "ws_future_stores": 72,
+        "ws_future": 10,
+        "ws_future_stores": 65,
         "bc_eff": {
           "n": 74,
           "avg_baseline": 3.2,
           "avg_latest": 3.55,
           "avg_delta": 0.351
         },
-        "bc_lift": 0.632,
+        "bc_lift": 0.626,
         "bc_n_improved": 53,
         "bc_n_stores": 74,
-        "bc_stores_coached": 145
+        "bc_stores_coached": 152
       },
       {
         "oa": "AKM Shaju",
@@ -164,13 +164,13 @@
         "ws_stores_last": 25,
         "ws_ytd": 8,
         "ws_stores_ytd": 50,
-        "ws_future": 6,
-        "ws_future_stores": 44,
+        "ws_future": 5,
+        "ws_future_stores": 37,
         "bc_eff": {},
         "bc_lift": null,
         "bc_n_improved": 0,
         "bc_n_stores": 0,
-        "bc_stores_coached": 50
+        "bc_stores_coached": 57
       },
       {
         "oa": "Sergio Villasenor",
@@ -208,13 +208,13 @@
         "ws_stores_last": 80,
         "ws_ytd": 13,
         "ws_stores_ytd": 101,
-        "ws_future": 9,
-        "ws_future_stores": 92,
+        "ws_future": 8,
+        "ws_future_stores": 77,
         "bc_eff": {},
         "bc_lift": null,
         "bc_n_improved": 0,
         "bc_n_stores": 0,
-        "bc_stores_coached": 101
+        "bc_stores_coached": 116
       },
       {
         "oa": "Cellesha Steel",
@@ -443,18 +443,18 @@
         "ws_stores_last": 76,
         "ws_ytd": 11,
         "ws_stores_ytd": 105,
-        "ws_future": 14,
-        "ws_future_stores": 124,
+        "ws_future": 13,
+        "ws_future_stores": 114,
         "bc_eff": {
           "n": 7,
           "avg_baseline": 3.11,
           "avg_latest": 3.77,
           "avg_delta": 0.666
         },
-        "bc_lift": 1.034,
+        "bc_lift": 1.04,
         "bc_n_improved": 5,
         "bc_n_stores": 7,
-        "bc_stores_coached": 105
+        "bc_stores_coached": 115
       },
       {
         "oa": "Paul Inacio",
@@ -483,7 +483,7 @@
       "run_label": "Sep",
       "prior_label": "Aug",
       "next_label": "Oct",
-      "run_day": 1,
+      "run_day": 2,
       "latest_month": "Jul",
       "n_held_last": 58,
       "n_stores_last": 449,
@@ -628,13 +628,13 @@
           "stores_coached": 8
         }
       ],
-      "n_future": 76,
-      "n_future_stores": 580,
+      "n_future": 72,
+      "n_future_stores": 541,
       "future_breakdown": [
         {
           "label": "Rest of Sep",
-          "workshops": 64,
-          "stores": 492
+          "workshops": 60,
+          "stores": 453
         },
         {
           "label": "Oct",
@@ -648,31 +648,31 @@
       "avg_baseline": 2.89,
       "avg_latest": 3.19,
       "avg_delta": 0.301,
-      "lift": 0.693,
-      "narrative": "**Boot Camp \u2013 Sep Run Highlights**\n\nAugust was a high-output month: Dustin Patton led all OAs with 10 workshops across 80 stores, followed by Derron Spencer (7 ws / 76 stores) and Jiselle Medina (5 ws / 46 stores). Across all thirteen OAs, 58 workshops touched 449 stores\u2014strong execution heading into the close of quarter.\n\nYear-to-date, Boot Camp has delivered 101 workshops across 836 stores, building meaningful scale.\n\nThe pipeline stays full: 76 workshops covering 580 stores are scheduled through October (64 in the rest of Sep; 12 in Oct). Momentum is real\u201499 of 142 coached stores with follow-up data improved, a 70% success rate. Boot Camp\u2013coached stores lifted 0.693 points above control, reinforcing the model works when we execute at pace."
+      "lift": 0.697,
+      "narrative": "**Boot Camp \u2013 Sep Run Recap (data through Jul)**\n\n**August Hustle Shout-Out.** Dustin Patton led the charge with 10 workshops / 80 stores coached. Derron Spencer close behind at 7 ws / 76 stores, and Jiselle Medina rounded out the top three at 5 ws / 46 stores.\n\n**YTD Momentum.** 101 workshops held across 836 stores this year \u2013 the team is maintaining strong pace.\n\n**Effectiveness.** Of 142 stores with follow-up data, 99 improved (70%). Lift vs control: 0.697.\n\n**Looking Ahead.** 72 workshops / 541 stores scheduled through Oct \u2013 60 ws / 453 stores in the rest of Sep, plus 12 ws / 88 stores already on the Oct calendar. Let's keep the energy rolling into fall."
     },
     "bc_effectiveness": [
       {
         "oa": "Derron Spencer",
-        "n_workshops": 11,
+        "n_workshops": 12,
         "n_stores": 7,
         "n_improved": 5,
         "n_not_improved": 2,
         "avg_baseline": 3.11,
         "avg_latest": 3.77,
         "avg_delta": 0.666,
-        "lift": 1.034
+        "lift": 1.04
       },
       {
         "oa": "Danielle Hudson",
-        "n_workshops": 12,
+        "n_workshops": 13,
         "n_stores": 74,
         "n_improved": 53,
         "n_not_improved": 21,
         "avg_baseline": 3.2,
         "avg_latest": 3.55,
         "avg_delta": 0.351,
-        "lift": 0.632
+        "lift": 0.626
       },
       {
         "oa": "Finley Klement",
@@ -2678,19 +2678,19 @@
       "Kelly Sharpe",
       "Noel Pelayo"
     ],
-    "summary": "**5-Star National Executive Highlights \u2014 Jan\u2013Jul 2026**\n\nWhat's working well: National average climbed from 3.19 in January to 3.32 in July, peaking at 3.36 in June\u2014a meaningful +13-point improvement in the overall score. T3 counts surged from 851 to 1,069 while T1s dropped from 1,015 to 845, showing we're moving guests from the bottom to the top. Boot Camp impact is real: 142 stores improved with a +0.30-point average lift, and 836 stores coached YTD across 101 workshops. Danielle Hudson leads with a +0.32-point lift across 421 stores, and Derron Spencer delivered an impressive 1.03-point lift on Boot Camp stores\u2014proving the model works when executed. Dustin Patton continues to be a volume engine with 80 stores coached in August alone and a portfolio sitting at 3.72.\n\nWhere the opportunities are: Paul Inacio's portfolio is essentially flat (+0.01) despite 5 workshops held, signaling a coaching effectiveness gap that needs immediate attention. Kathleen Basbagill's Boot Camp lift is just +0.14\u2014the lowest among OAs running sessions\u2014suggesting follow-through or targeting issues. Several OAs\u2014Sergio Villasenor, Jesse White, Tim King\u2014show single-digit deltas despite meaningful store counts, indicating they may need re-engagement or different playbooks. Cellesha Steel and Michael Grant have zero workshops held YTD, leaving 422 stores without Boot Camp exposure. The July dip from June's peak warrants monitoring to ensure momentum doesn't stall heading into fall.",
+    "summary": "What's Working\n\nNational 5-Star average climbed from 3.19 in Jan to 3.36 in Jun before settling at 3.32 in Jul \u2014 a clear upward trajectory driven by T3 volume nearly doubling (851 to 1,069) while T1 complaints dropped 17% (1,015 to 845). Danielle Hudson leads OA-level impact with a +0.32 avg lift across 421 stores and the strongest Boot Camp program \u2014 12 YTD workshops, 145 stores coached, and a 0.63 lift. Derron Spencer posted the highest Boot Camp lift at 1.04, converting 5 of 7 followed-up stores to improved. Dustin Patton maintains the highest absolute avg (3.72) and delivered 10 August workshops across 80 stores \u2014 the highest monthly output. National Boot Camp is on pace with 101 YTD workshops across 836 stores, 99 improved vs. 43 not improved.\n\nOpportunities\n\nEight OAs still show no Boot Camp measured lift \u2014 notably AKM Shaju (394 stores, 3.57 avg) and Sergio Villasenor (272 stores, 2.88 baseline), where workshop reach is thin relative to book size. Kathleen Basbagill's 0.14 lift on only 6 improved stores signals coaching effectiveness needs attention. The overall Boot Camp improvement rate is 70% (99 of 142), leaving 43 stores unimproved \u2014 follow-through execution is the unlock. Paul Inacio and Cellesha Steel had zero August workshops; with only 2 and 2 future sessions booked respectively, pipeline coverage looks thin.",
     "recognition": [
       {
         "name": "Danielle Hudson",
         "role": "Area Coach",
-        "why": "Danielle delivered the most impactful month in the entire OA cohort \u2014 her 421-store portfolio posted a +0.32 avg score improvement (3.07\u21923.39), moved 33 stores out of Tier 1 (100\u219267), and promoted 40 stores into Tier 3 (52\u219292). She also led with 12 workshops YTD reaching 145 stores, and her Boot Camp program produced 53 improved stores with a +0.632 effectiveness lift. No OA touched more levers or moved them harder this period."
+        "why": "Danielle delivered the largest average score improvement in the network at +0.32 (3.07 \u2192 3.39), pulled 33 stores out of Tier 1 (100 \u2192 67), and moved 40 stores into Tier 3 \u2014 all across a 421-store portfolio. She backed it up on the ground too: 5 Boot Camp workshops this period drove a 62.6% follow-up improvement rate across 74 stores, proving the coaching is landing and sticking."
       },
       {
         "name": "AKM Shaju",
         "role": "Area Coach",
-        "why": "Shaju posted the second-highest avg score improvement in the cohort (+0.24, 3.33\u21923.57) across 394 stores, while moving 23 stores out of Tier 1 (82\u219259) and 51 stores into Tier 3 (96\u2192147) \u2014 the most Tier 3 additions of any OA. That's broad, meaningful movement on a large portfolio."
+        "why": "AKM posted the second-highest average score gain at +0.24 (3.33 \u2192 3.57) while shifting a network-leading 51 stores up into Tier 3 (96 \u2192 147) and cutting Tier 1 by 23 stores. Across 394 stores, that is the broadest Tier 3 momentum of any OA this period \u2014 a clear sign the portfolio is trending right."
       }
     ]
   },
-  "_brief_version": "months_7_1-2-3-4-5-6-7@2026-09-01"
+  "_brief_version": "months_7_1-2-3-4-5-6-7@2026-09-02"
 }

@@ -49,6 +49,13 @@
 
   .fran-row{cursor:pointer;transition:background .1s;}
   .fran-row:hover td{background:#faf8f4;}
+  .sortable{cursor:pointer;user-select:none;}
+  .sortable:hover{color:var(--ink);}
+  th.sort-on .sortable{color:var(--cardinal);font-weight:700;}
+  .pctd{font-size:9.5px;}
+  .pf-toolbar{display:flex;align-items:center;}
+  .pf-export{font-family:'IBM Plex Mono',monospace;font-size:10.5px;cursor:pointer;border:1px solid #276b4d;color:#276b4d;background:transparent;padding:5px 12px;border-radius:2px;}
+  .pf-export:hover{background:#276b4d;color:#fff;}
   .fran-row .fran-name{font-weight:600;font-family:'Inter',sans-serif;font-size:13px;}
   .fran-row .fran-name .fran-id{font-weight:400;color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace;}
   .fran-row .fran-score{font-weight:600;font-size:14px;text-align:center;}
@@ -237,6 +244,9 @@
     <div id="fopInsightText" style="font-size:13px;line-height:1.55;color:var(--ink);"></div>
   </div>
   <div id="fopSummary"></div>
+  <div class="pf-toolbar" id="pfToolbar" style="display:none;justify-content:flex-end;margin-bottom:8px;">
+    <button class="pf-export" onclick="exportFranchiseesCSV()">&#8595; Export CSV</button>
+  </div>
   <div id="franchiseeList"></div>
 </section>
 
@@ -347,6 +357,7 @@ function sparkline(vals, w=60, h=20){
 let _state = {level:'overview', director:null, fop:null, fran:null};
 let _scoreMode = 'ytd'; // 'lm' | 'lq' | 'ytd'
 let _quintWindow = 'lq';   // 'lm' | 'lq' | 'ytd'
+let _franSort = {key:'dlp', dir:'desc'};
 
 // ─── Helpers (data access) ────────────────────────────────────────────────
 function getFOPData(fopName){
@@ -480,26 +491,135 @@ function renderOverview(){
     return;
   }
 
-  let html = '<table><thead><tr><th>Franchisee</th><th>FOP</th><th>Director</th><th style="text-align:center">Stores</th><th style="text-align:center">Avg</th><th style="text-align:center">Dl <span class="badge-dl" style="font-size:8px">DL</span></th><th style="text-align:center">AR <span class="badge-ar" style="font-size:8px">AR</span></th><th style="text-align:center">TW <span class="badge-tw" style="font-size:8px">TW</span></th></tr></thead><tbody>';
-  fran.forEach(f => {
-    const fa = getFranAvg(f);
-    html += '<tr class="fran-row" onclick="overviewClickFranchisee(\'' + esc(f.fran) + '\')">' +
-      '<td class="fran-name">' + esc(f.fran) + '</td>' +
-      '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.fop) + '</td>' +
-      '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.director) + '</td>' +
-      '<td class="fran-n">' + f.n + '</td>' +
-      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
-      '<td style="text-align:center"><span class="badge-dl">' + f.n_defaulting + '</span></td>' +
-      '<td style="text-align:center"><span class="badge-ar">' + f.n_at_risk + '</span></td>' +
-      '<td style="text-align:center"><span class="badge-tw">' + f.n_t1_watch + '</span></td>' +
-    '</tr>';
-  });
-  html += '</tbody></table>';
-  document.getElementById('franchiseeList').innerHTML = html;
+  document.getElementById('pfToolbar').style.display = 'flex';
+  renderFranTable(fran, true);
   renderQuintiles();
 }
 
-function overviewClickFranchisee(franName){
+function sortHead(label, key, center){
+  const cur = _franSort && _franSort.key === key;
+  const dir = cur && _franSort.dir === 'desc' ? '\u25be' : '\u25b4';
+  const cls = cur ? ' class="sort-on"' : '';
+  return '<th' + cls + (center?' style="text-align:center"':'') + '><span class="sortable" onclick="sortFranTable(\'' + key + '\')">' + label + ' ' + (cur ? dir : '\u2195') + '</span></th>';
+}
+
+function sortFranTable(key){
+  if(_franSort.key === key) _franSort.dir = _franSort.dir === 'desc' ? 'asc' : 'desc';
+  else _franSort = {key:key, dir:'desc'};
+  if(_state.level === 'fop'){
+    const d = getFOPData(_state.fop);
+    if(d) renderFranchiseeList(d.franchisees);
+  } else {
+    const ov = FOP_DATA.overviewData;
+    if(ov && ov.franchisees) renderFranTable(ov.franchisees, true, true);
+  }
+}
+
+function renderFranTable(franchisees, isOverview, preserveSort){
+  const container = document.getElementById('franchiseeList');
+  const defSort = (_franSort && _franSort.key) ? {key:_franSort.key, dir:_franSort.dir} : {key:'dlp', dir:'desc'};
+  const sorted = franchisees.slice().sort((a,b) => {
+    const s = defSort;
+    let r = s.dir === 'desc'
+      ? franSortVal(b, s.key) - franSortVal(a, s.key)
+      : franSortVal(a, s.key) - franSortVal(b, s.key);
+    if(r === 0) r = (b.n_defaulting - a.n_defaulting) || (b.n_at_risk - a.n_at_risk) || (b.n_t1_watch - a.n_t1_watch);
+    return r;
+  });
+
+  const qlbl = quintWindowLabel();
+  let head;
+  if(isOverview){
+    head = '<tr><th>Franchisee</th><th>FOP</th><th>Director</th>' +
+      sortHead('Stores','stores',1) + sortHead('Avg','avg',1) +
+      sortHead('Dl','dl',1) + sortHead('% DL','dlp',1) +
+      sortHead('AR','ar',1) + sortHead('% AR','arp',1) +
+      sortHead('TW','tw',1) + sortHead('% TW','twp',1) +
+      '<th style="text-align:center">Sys Q mix <span class="muted" style="font-size:9px">(' + qlbl + ')</span></th></tr>';
+  } else {
+    head = '<tr><th>Franchisee</th><th>FOP</th>' +
+      sortHead('Stores','stores',1) + sortHead('Avg','avg',1) +
+      sortHead('Dl','dl',1) + sortHead('% DL','dlp',1) +
+      sortHead('AR','ar',1) + sortHead('% AR','arp',1) +
+      sortHead('TW','tw',1) + sortHead('% TW','twp',1) +
+      '<th style="text-align:center">Sys Q mix <span class="muted" style="font-size:9px">(' + qlbl + ')</span></th></tr>';
+  }
+
+  let html = '<table><thead>' + head + '</thead><tbody>';
+  sorted.forEach(f => {
+    const fa = getFranAvg(f);
+    const {qc, qn} = franQMix(f);
+    const mix = franMixChips(qc, qn);
+    const onClick = isOverview ? 'overviewClickFranchisee(\'' + esc(f.fran) + '\')' : 'showFranchisee(\'' + esc(f.fran) + '\')';
+    html += '<tr class="fran-row" onclick="' + onClick + '">' +
+      '<td class="fran-name">' + esc(f.fran) + '</td>' +
+      '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.fop || '') + '</td>' +
+      (isOverview
+        ? '<td style="font-family:IBM Plex Mono;font-size:11px;color:var(--muted)">' + esc(f.director || '') + '</td>'
+        : '') +
+      '<td class="fran-n">' + f.n + '</td>' +
+      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
+      '<td style="text-align:center"><span class="badge-dl">' + f.n_defaulting + '</span></td>' +
+      '<td style="text-align:center"><span class="muted pctd">' + pctCell(f.n_defaulting, f.n) + '</span></td>' +
+      '<td style="text-align:center"><span class="badge-ar">' + f.n_at_risk + '</span></td>' +
+      '<td style="text-align:center"><span class="muted pctd">' + pctCell(f.n_at_risk, f.n) + '</span></td>' +
+      '<td style="text-align:center"><span class="badge-tw">' + f.n_t1_watch + '</span></td>' +
+      '<td style="text-align:center"><span class="muted pctd">' + pctCell(f.n_t1_watch, f.n) + '</span></td>' +
+      '<td class="fran-qmix">' + mix + '</td>' +
+    '</tr>';
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function exportFranchiseesCSV(){
+  let rows = [];
+  const row = (cells) => rows.push(cells.map(c => {
+    if(c == null) return '';
+    const s = String(c);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(','));
+
+  row(['Franchisee','FOP','Director','Stores','Avg','DL','% DL','AR','% AR','TW','% TW','Sys Q1','Sys Q2','Sys Q3','Sys Q4','Sys Q5']);
+  const allFops = getAllFOPs();
+  Object.keys(allFops).forEach(fopName => {
+    const d = allFops[fopName];
+    (d.franchisees || []).forEach(f => {
+      const fa = getFranAvg(f);
+      const {qc} = franQMix(f);
+      row([f.fran, fopName, d.director || '', f.n, fa != null ? fa.toFixed(2) : '',
+        f.n_defaulting || 0, pctOf(f.n_defaulting, f.n), f.n_at_risk || 0, pctOf(f.n_at_risk, f.n),
+        f.n_t1_watch || 0, pctOf(f.n_t1_watch, f.n),
+        qc[1]||0, qc[2]||0, qc[3]||0, qc[4]||0, qc[5]||0]);
+    });
+  });
+
+  row([]);
+  row(['Store','Franchisee','FOP','Sys Q','5-Star YTD','Status','SSSG','SSTG','FSCC','Brand','Trend']);
+  Object.keys(allFops).forEach(fopName => {
+    const d = allFops[fopName];
+    (d.franchisees || []).forEach(f => {
+      (f.stores || []).forEach(s => {
+        const q = storeQuint(s.s);
+        const g = storeGrowth(s.s);
+        const st = computeStoreStatus(s);
+        row([s.s, f.fran, fopName, q || '', s.y != null ? s.y : (sLatest(s) != null ? sLatest(s) : ''),
+          st, g ? (g.sssg!=null ? (g.sssg*100).toFixed(1) : '') : '', g ? (g.sstg!=null ? (g.sstg*100).toFixed(1) : '') : '',
+          s.fscc, s.brand, s.t]);
+      });
+    });
+  });
+
+  const csv = '\ufeff' + rows.join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = 'Franchisee_Portfolio_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function overviewClickFranchisee(franName){
@@ -604,6 +724,7 @@ function renderDirector(dirName){
     document.getElementById('franchiseeList').innerHTML = '<div class="empty-state">No franchisees under this director.</div>';
     return;
   }
+  document.getElementById('pfToolbar').style.display = 'none';
 
   let html = '<table><thead><tr><th>Franchisee</th><th>FOP</th><th style="text-align:center">Stores</th><th style="text-align:center">Avg</th><th style="text-align:center">Dl <span class="badge-dl" style="font-size:8px">DL</span></th><th style="text-align:center">AR <span class="badge-ar" style="font-size:8px">AR</span></th><th style="text-align:center">TW <span class="badge-tw" style="font-size:8px">TW</span></th></tr></thead><tbody>';
   allFran.forEach(f => {
@@ -706,33 +827,11 @@ function renderFranchiseeList(franchisees){
     container.innerHTML = '<div class="empty-state">No franchisees assigned to this FOP.</div>';
     return;
   }
-
-  let html = '<table><thead><tr><th>Franchisee</th><th style="text-align:center">Stores</th><th style="text-align:center">Avg</th><th style="text-align:center">Dl <span class="badge-dl" style="font-size:8px">DL</span></th><th style="text-align:center">AR <span class="badge-ar" style="font-size:8px">AR</span></th><th style="text-align:center">TW <span class="badge-tw" style="font-size:8px">TW</span></th><th style="text-align:center">Sys Q mix <span class="muted" style="font-size:9px">(' + quintWindowLabel() + ')</span></th></tr></thead><tbody>';
-  franchisees.forEach(f => {
-    const fa = getFranAvg(f);
-    const qc = {1:0, 2:0, 3:0, 4:0, 5:0}; let qn = 0;
-    (f.stores||[]).forEach(s => { const q = storeQuint(s.s); if(q){ qc[q] = (qc[q]||0) + 1; qn++; } });
-    let mix = '';
-    if(qn){
-      for(let qi = 1; qi <= 5; qi++){
-        const p = Math.round(qc[qi] / qn * 100);
-        mix += '<span class="qm-chip q' + qi + '" title="Q' + qi + ': ' + qc[qi] + ' of ' + qn + ' stores">Q' + qi + ' ' + p + '%</span>';
-      }
-    } else {
-      mix = '<span class="muted" style="font-size:11px">\u2014</span>';
-    }
-    html += '<tr class="fran-row" onclick="showFranchisee(\'' + esc(f.fran) + '\')">' +
-      '<td class="fran-name">' + esc(f.fran) + '</td>' +
-      '<td class="fran-n">' + f.n + '</td>' +
-      '<td class="fran-score" style="color:' + (fa>=5?'#00B050':fa>=4?'#A9D18E':fa>=3?'#70AD47':fa>=2?'#F15B73':'#C90F2D') + '">' + fa.toFixed(2) + '</td>' +
-      '<td style="text-align:center"><span class="badge-dl">' + f.n_defaulting + '</span></td>' +
-      '<td style="text-align:center"><span class="badge-ar">' + f.n_at_risk + '</span></td>' +
-      '<td style="text-align:center"><span class="badge-tw">' + f.n_t1_watch + '</span></td>' +
-      '<td class="fran-qmix">' + mix + '</td>' +
-    '</tr>';
-  });
-  html += '</tbody></table>';
-  container.innerHTML = html;
+  document.getElementById('pfToolbar').style.display = 'flex';
+  const d = getFOPData(_state.fop);
+  const fpop = _state.fop, fdir = (d && d.director) || '';
+  const rows = franchisees.map(f => Object.assign({}, f, {fop: fpop, director: fdir}));
+  renderFranTable(rows, false);
 }
 
 // ─── Franchisee store drill-down ──────────────────────────────────────────
@@ -774,6 +873,7 @@ function showFranchisee(franName){
 
 function renderStoreList(fran){
   const container = document.getElementById('franchiseeList');
+  document.getElementById('pfToolbar').style.display = 'none';
   let html = '<button class="pf-back" onclick="backToFranchisees()">\u2190 Back to ' + esc(_state.fop) + ' franchisees</button>';
   html += '<div class="pf-fran-title">Franchisee: <b>' + esc(_state.fran) + '</b> <span class="muted" style="font-size:11px;font-weight:400">\u00b7 ' + fran.stores.length + ' stores</span></div>';
   html += '<div class="pf-search-container" style="margin-bottom:10px">' +
@@ -858,6 +958,7 @@ function showStoreDetail(storeId){
   if(!s) return;
 
   const container = document.getElementById('franchiseeList');
+  document.getElementById('pfToolbar').style.display = 'none';
   let html = '<button class="pf-back" onclick="showFranchisee(\'' + esc(_state.fran) + '\')">\u2190 Back to ' + esc(_state.fran) + '</button>';
 
   const st = computeStoreStatus(s);
@@ -979,6 +1080,57 @@ function storeGrowthCell(g, key){
 function quintWindowLabel(){
   const m = (FOP_DATA.quintiles && FOP_DATA.quintiles._meta && FOP_DATA.quintiles._meta[_quintWindow]);
   return (m && m.label) || _quintWindow.toUpperCase();
+}
+
+// Resolve the full franchisee record (with .stores) for any franchisee object.
+// Overview rows only carry counts, so look up the source FOP record when present.
+function franPortfolio(f){
+  if(f && f.stores) return f;
+  try{
+    const fop = FOP_DATA.fops && FOP_DATA.fops[f.fop];
+    if(fop && Array.isArray(fop.franchisees)){
+      const full = fop.franchisees.find(x => x.fran === f.fran);
+      if(full) return full;
+    }
+  }catch(e){}
+  return f || null;
+}
+function franQMix(f){
+  const p = franPortfolio(f);
+  const qc = {1:0, 2:0, 3:0, 4:0, 5:0}; let qn = 0;
+  (p && p.stores || []).forEach(s => { const q = storeQuint(s.s); if(q){ qc[q] = (qc[q]||0) + 1; qn++; } });
+  return {qc, qn};
+}
+function franMixChips(qc, qn){
+  if(!qn) return '<span class="muted" style="font-size:11px">\u2014</span>';
+  let mix = '';
+  for(let qi = 1; qi <= 5; qi++){
+    const p = Math.round(qc[qi] / qn * 100);
+    mix += '<span class="qm-chip q' + qi + '" title="Q' + qi + ': ' + qc[qi] + ' of ' + qn + ' stores">Q' + qi + ' ' + p + '%</span>';
+  }
+  return mix;
+}
+function pctOf(n, total){
+  if(!total) return 0;
+  return Math.round(n / total * 1000) / 10;  // one decimal
+}
+function pctCell(n, total){
+  const p = pctOf(n, total);
+  if(p === 0 && n === 0) return '<span class="muted" style="font-size:11px">0%</span>';
+  return p + '%';
+}
+function franSortVal(f, key){
+  switch(key){
+    case 'dlp': return pctOf(f.n_defaulting, f.n || 1);
+    case 'arp': return pctOf(f.n_at_risk, f.n || 1);
+    case 'twp': return pctOf(f.n_t1_watch, f.n || 1);
+    case 'stores': return f.n || 0;
+    case 'avg': return getFranAvg(f) || 0;
+    case 'dl': return f.n_defaulting || 0;
+    case 'ar': return f.n_at_risk || 0;
+    case 'tw': return f.n_t1_watch || 0;
+    default: return 0;
+  }
 }
 function setQuintWindow(w){
   _quintWindow = w;

@@ -359,6 +359,8 @@ def load_workshops(df):
         ws_day = int(row["workshop_day"]) if pd.notna(row.get("workshop_day")) else 1
         ws_type = str(row["WORKSHOP_TYPE"]).strip()
         ws_id = str(row.get("WORKSHOP_ID", "")).strip() if "WORKSHOP_ID" in row.index else ""
+        host_raw = row.get("HOST_STORE", "")
+        host_store = (str(host_raw).strip() if pd.notna(host_raw) and str(host_raw).strip().upper() not in ("NA", "NAN", "NONE", "") else "")
         date_str = str(row["WORKSHOP_DATE"].strftime("%Y-%m-%d")) if pd.notna(row["WORKSHOP_DATE"]) else ""
         is_bootcamp = "rising" not in ws_type.lower()
 
@@ -437,6 +439,7 @@ def load_workshops(df):
             "type": ws_type,
             "workshop_id": ws_id,
             "workshop_month": ws_month,
+            "host_store": host_store,
             "baseline_month": anchor,
             "baseline_score": bench_score,
             "baseline_tier": bench_tier,

@@ -230,7 +230,7 @@ function sparkline(vals, w=60, h=20){
 })();
 
 const map = L.map('map', {scrollWheelZoom:false}).setView([39.5,-98.35], 4);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:12}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'&copy; OpenStreetMap contributors', maxZoom:12}).addTo(map);
 const _rsLayers = {};
 points.forEach(p=>{
   const bind = codeMap[p.binding];

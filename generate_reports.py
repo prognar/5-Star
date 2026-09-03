@@ -1075,6 +1075,16 @@ def compute_single_zone(zone_df, workshops=None):
         workshops = {}
     oa = zone_df["OPX_OA"].iloc[0]
 
+    # 3-month baseline tier for Bootcamp targeting.
+    # A store's baseline tier uses the MEAN of its OVERALL_FIVESTAR over the last 3
+    # available months (not just the latest month). Tier 1 = 3-month avg < threshold.
+    base_months = PERIOD_MONTHS[-3:] if len(PERIOD_MONTHS) >= 3 else PERIOD_MONTHS
+    zone_df = zone_df.copy()
+    _bl_avg = zone_df[zone_df["MONTHNUM"].isin(base_months)].groupby("CHAINED_STORE_ID")["OVERALL_FIVESTAR"].mean()
+    zone_df["_tier_base"] = zone_df["CHAINED_STORE_ID"].map(
+        lambda sid: classify_tier(_bl_avg.get(sid))
+    )
+
     last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 5
     may_df = zone_df[zone_df["MONTHNUM"] == last_m]
     jan_df = zone_df[zone_df["MONTHNUM"] == 1]
@@ -1140,18 +1150,21 @@ def compute_single_zone(zone_df, workshops=None):
                 "n": len(sub),
             })
 
-    # Bootcamp areas (Tier 1 areas for targeting - all areas in zone with Tier 1 stores)
+    # Bootcamp areas (Tier 1 areas for targeting - all Area Coaches in zone with Tier 1 stores).
+    # Targeting is at the AREA level (one row per Area Coach). DMAs and franchisees are kept
+    # for reference (where the OA goes / which organization). Counts are coach-wide so that
+    # attendance (also coach-wide) aligns with Bootcamp/Total.
     bootcamp_data = []
     if len(may_df) > 0:
-        area_groups = may_df.groupby(["FAREADESC", "NIELSENDMADESC", "CURR_FRAN_OWNER_NM"])
-        for (area, dma, fran), grp in area_groups:
-            n_t1 = int((grp["_tier"] == 1).sum())
+        area_groups = may_df.groupby("FAREADESC")
+        for area, grp in area_groups:
+            n_t1 = int((grp["_tier_base"] == 1).sum())
             if n_t1 == 0:
                 continue
             total = len(grp)
             rate = round(n_t1 / total * 100, 0) if total > 0 else 0
-            # Compute binding breakdown for this group's Tier 1 stores
-            t1_sub = grp[grp["_tier"] == 1]
+            # Binding breakdown across this Area Coach's Tier 1 stores (all DMAs/franchisees)
+            t1_sub = grp[grp["_tier_base"] == 1]
             n_t1_total = len(t1_sub)
             win_pct = round((t1_sub["_binding"] == "WIN_SCORE_STAR").sum() / n_t1_total * 100) if n_t1_total > 0 else 0
             speed_pct = round((t1_sub["_binding"] == "SPEED_STAR").sum() / n_t1_total * 100) if n_t1_total > 0 else 0
@@ -1159,10 +1172,13 @@ def compute_single_zone(zone_df, workshops=None):
             brand_pct = round((t1_sub["_binding"] == "BRAND_STAR").sum() / n_t1_total * 100) if n_t1_total > 0 else 0
             fscc_pct = round((t1_sub["_binding"] == "FSCC_STAR").sum() / n_t1_total * 100) if n_t1_total > 0 else 0
 
+            dmas = sorted({d for d in grp["NIELSENDMADESC"].dropna().unique()})
+            frans = sorted({f for f in grp["CURR_FRAN_OWNER_NM"].dropna().unique()})
+
             bootcamp_data.append({
                 "FAREADESC": area if pd.notna(area) else "Unknown",
-                "dma": dma if pd.notna(dma) else "Unknown",
-                "fran": fran if pd.notna(fran) else "Unknown",
+                "dma": ", ".join(dmas) if dmas else "Unknown",
+                "fran": ", ".join(frans) if frans else "Unknown",
                 "n_t1": n_t1,
                 "total": total,
                 "rate": int(rate),
@@ -1270,6 +1286,24 @@ def compute_single_zone(zone_df, workshops=None):
                     vals.append(None)
             comps[comp] = vals
 
+        # Growth metrics per month (SSSG / SSTG)
+        growth_sssg = []
+        growth_sstg = []
+        for m in PERIOD_MONTHS:
+            sub = store_months[store_months["MONTHNUM"] == m]
+            if len(sub) > 0:
+                cy_s = pd.to_numeric(sub["CY_SS_SALES_TNS"].iloc[0], errors="coerce")
+                ly_s = pd.to_numeric(sub["LY_SS_SALES_TNS"].iloc[0], errors="coerce")
+                cy_t = pd.to_numeric(sub["CY_SS_TRANS"].iloc[0], errors="coerce")
+                ly_t = pd.to_numeric(sub["LY_SS_TRANS"].iloc[0], errors="coerce")
+                s_val = (cy_s / ly_s - 1.0) if ly_s and pd.notna(cy_s) and pd.notna(ly_s) and ly_s != 0 else None
+                t_val = (cy_t / ly_t - 1.0) if ly_t and pd.notna(cy_t) and pd.notna(ly_t) and ly_t != 0 else None
+                growth_sssg.append(round(float(s_val), 4) if s_val is not None else None)
+                growth_sstg.append(round(float(t_val), 4) if t_val is not None else None)
+            else:
+                growth_sssg.append(None)
+                growth_sstg.append(None)
+
         # Format store ID: pad to 5 digits
         sid_str = str(int(sid)) if isinstance(sid, float) else str(sid)
         if len(sid_str) < 5 and sid_str.isdigit():
@@ -1323,6 +1357,8 @@ def compute_single_zone(zone_df, workshops=None):
             "cb": comps["BRAND_STAR"],
             "ch": comps["HB_ONTIME_STAR"],
             "cf": comps["FSCC_STAR"],
+            "sssg": growth_sssg,
+            "sstg": growth_sstg,
             "st": st,
             "cu": cons_under,
             "fscc": fscc_fails,
@@ -1770,6 +1806,8 @@ def compute_fop_data(df, zones_data):
                     "cb": s.get("cb", []),
                     "ch": s.get("ch", []),
                     "cf": s.get("cf", []),
+                    "sssg": s.get("sssg", []),
+                    "sstg": s.get("sstg", []),
                 } for s in stores]
             })
 

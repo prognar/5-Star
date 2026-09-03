@@ -383,10 +383,10 @@
 
 <section>
   <h2>Bootcamp Workshop Targeting</h2>
-  <p class="h2-sub">Tier 1 (Bootcamp) stores only, ranked by area. A store is Bootcamp-tier when its <strong>3-month average</strong> 5-Star score (&lt;2.5) is below threshold — i.e. the baseline, not just the latest month. Concentration = share of that area's total stores that are Bootcamp-tier. Workshop Focus = what the session should cover. Boot Camp Attendance = restaurants completed (green) or scheduled (amber) in that area in this window. <strong>Click an area row to expand its stores</strong> with baseline score and attendance.</p>
+  <p class="h2-sub">Tier 1 (Bootcamp) stores only, ranked by area. A store is Bootcamp-tier when its <strong>3-month average</strong> 5-Star score (&lt;2.5) is below threshold — i.e. the baseline, not just the latest month. Concentration = share of that area's total stores that are Bootcamp-tier. Workshop Focus = what the session should cover. Boot Camp Attendance = restaurants completed (green) or scheduled (amber) in that area in this window. The <strong># is a priority rank to target first</strong>: 40% Bootcamp count + 40% concentration + 20% lower baseline score. Click a column header to re-sort rows (the # stays fixed). <strong>Click an area row to expand its stores</strong> with baseline score and attendance.</p>
   <table>
     <thead><tr>
-      <th>#</th>
+      <th class="sortable" onclick="tgtSort('rank')" title="Priority ranking">#</th>
       <th class="sortable" onclick="tgtSort('area')">Area</th>
       <th class="sortable" onclick="tgtSort('dma')">DMA</th>
       <th class="sortable" onclick="tgtSort('fran')">Franchisee</th>
@@ -1195,6 +1195,13 @@ function classifyScoreTier(score){
   return 3;
 }
 
+function areaBaseAvg(d, a){
+  // Mean 3-month baseline of this Area Coach's bootcamp-tier (Tier 1) stores.
+  const grp=(d.stores||[]).filter(s=>s.a===a.FAREADESC);
+  const bls=[]; grp.forEach(s=>{ const bl=baselineScore(s); if(bl!=null && classifyScoreTier(bl)===1) bls.push(bl); });
+  return bls.length?bls.reduce((a,b)=>a+b,0)/bls.length:null;
+}
+
 function storeAttStatus(d, storeId){
   const bc=(d.workshops&&d.workshops.boot_camp)||[];
   let att=false, sched=false;
@@ -1234,32 +1241,52 @@ function targetDrillRow(a, d){
 function renderTargeting(){
   const d = _curStoreData;
   if(!d) return;
-  const rows=(d.bootcamp_areas||[]).map((a,i)=>{
+  let rows=(d.bootcamp_areas||[]).map((a,i)=>{
     const st=bcAreaStats(d,a);
-    return {a:i, area:a, ...st};
+    return {a:i, area:a, baseAvg:areaBaseAvg(d,a), ...st};
   });
-  rows.forEach(r=>{ r.att = r.attended + r.scheduled; r.attPct=(r.total&&(r.attended||r.scheduled))?Math.min(100,Math.round(Math.max(r.attended,r.scheduled)/r.total*100)):0; });
-  if(_tgtSort){
-    const k=_tgtSort.key, dir=_tgtSort.dir;
-    rows.sort((x,y)=>{
-      const vx = k==='area'?x.area.FAREADESC:k==='dma'?x.area.dma:k==='fran'?x.area.fran:k==='n_t1'?x.area.n_t1:k==='rate'?x.area.rate:k==='attPct'?x.attPct:k==='win_pct'?x.area.win_pct:x.att;
-      const vy = k==='area'?y.area.FAREADESC:k==='dma'?y.area.dma:k==='fran'?y.area.fran:k==='n_t1'?y.area.n_t1:k==='rate'?y.area.rate:k==='attPct'?y.attPct:k==='win_pct'?y.area.win_pct:y.att;
-      if(k==='area'||k==='dma'||k==='fran'){ const c=(String(vx)).localeCompare(String(vy)); return dir==='asc'?c:-c; }
-      const c=(vx||0)-(vy||0); return dir==='asc'?c:-c;
-    });
-  }
-  const baRows=rows.map((r,i)=>{
+  rows.forEach(r=>{
+    r.att = r.attended + r.scheduled;
+    r.attPct=(r.total&&(r.attended||r.scheduled))?Math.min(100,Math.round(Math.max(r.attended,r.scheduled)/r.total*100)):0;
+  });
+  // ── Priority rank (the # column): 40% bootcamp count + 40% concentration + 20% lower baseline
+  const maxN = Math.max.apply(null, rows.map(r=>r.area.n_t1||0).concat([1]));
+  const bases = rows.map(r=>r.baseAvg).filter(x=>x!=null);
+  const minBase = bases.length?Math.min.apply(null,bases):0;
+  const maxBase = bases.length?Math.max.apply(null,bases):0;
+  const baseRng = (maxBase-minBase)||1;
+  rows.forEach(r=>{
+    const nc = (r.area.n_t1||0)/maxN*100;                 // count 0-100
+    const cc = r.area.rate||0;                             // concentration 0-100
+    const bc = r.baseAvg==null ? 50 : (maxBase-r.baseAvg)/baseRng*100; // lower baseline = higher
+    r.priority = Math.round(0.40*nc + 0.40*cc + 0.20*bc);
+  });
+  // rank 1..N by priority desc (ties keep original area order)
+  const byPri = rows.slice().sort((x,y)=> y.priority-x.priority || x.a-y.a);
+  byPri.forEach((r,idx)=>{ r.rank = idx+1; });
+
+  // ── Sorting (default: by priority rank asc so # = 1,2,3...)
+  if(!_tgtSort){ _tgtSort = {key:'rank', dir:'asc'}; }
+  const k=_tgtSort.key, dir=_tgtSort.dir;
+  rows.sort((x,y)=>{
+    const vx = k==='area'?x.area.FAREADESC:k==='dma'?x.area.dma:k==='fran'?x.area.fran:k==='n_t1'?x.area.n_t1:k==='rate'?x.area.rate:k==='attPct'?x.attPct:k==='win_pct'?x.area.win_pct:k==='rank'?x.rank:x.att;
+    const vy = k==='area'?y.area.FAREADESC:k==='dma'?y.area.dma:k==='fran'?y.area.fran:k==='n_t1'?y.area.n_t1:k==='rate'?y.area.rate:k==='attPct'?y.attPct:k==='win_pct'?y.area.win_pct:k==='rank'?y.rank:y.att;
+    if(k==='area'||k==='dma'||k==='fran'){ const c=(String(vx)).localeCompare(String(vy)); return dir==='asc'?c:-c; }
+    const c=(vx||0)-(vy||0); return dir==='asc'?c:-c;
+  });
+  const baRows=rows.map(r=>{
     const a=r.area, rateColor = a.rate>=75?'#a3122a':a.rate>=50?'#c07f1f':'#6b6560';
     const aid='tgt_'+a.FAREADESC.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<tr class="tgt-area-row" style="cursor:pointer;" onclick="toggleAreaDrill('${aid}')">
-      <td><span id="${aid}-caret" style="font-size:8px;color:var(--muted);margin-right:4px;">\u25B6</span>${i+1}</td>
+    const rankCls = r.rank<=3?'background:#a3122a1a;':r.rank<=10?'background:#c07f1f14;':'';
+    return `<tr class="tgt-area-row" style="cursor:pointer;${rankCls}" onclick="toggleAreaDrill('${aid}')">
+      <td style="font-weight:600;"><span id="${aid}-caret" style="font-size:8px;color:var(--muted);margin-right:4px;">\u25B6</span>${r.rank}</td>
       <td class="name">${esc(a.FAREADESC)}</td><td>${esc(a.dma)}</td><td>${esc(a.fran)}</td><td>${a.n_t1} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${bcAreaIndicator(d,a)}</td><td>${bcAttended(d,a)}</td><td>${focusBarHTML(a)}</td></tr>`;
   }).join('');
   document.getElementById('bootcampAreaTable').innerHTML = baRows || '<tr><td colspan="9" style="font-family:Inter;color:var(--muted)">No Bootcamp-tier stores this month.</td></tr>';
 }
 
 function tgtSort(key){
-  if(!_tgtSort || _tgtSort.key!==key){ _tgtSort={key:key,dir:'desc'}; }
+  if(!_tgtSort || _tgtSort.key!==key){ _tgtSort={key:key,dir:(key==='rank'||key==='area'||key==='dma'||key==='fran')?'asc':'desc'}; }
   else { _tgtSort.dir = _tgtSort.dir==='desc'?'asc':'desc'; }
   renderTargeting();
 }

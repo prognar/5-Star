@@ -19,7 +19,7 @@ except ImportError:
 
 # ─── Config ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-FIVESTAR_CSV = BASE_DIR / "5-Star.csv"
+FIVESTAR_CSV = BASE_DIR / "5-Star with Taste Scores.csv"
 STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
 OUTPUT_DIR = BASE_DIR
@@ -47,11 +47,20 @@ if _ENV_FILE.exists():
 
 TIER_THRESHOLD = 2.5  # T1 < 2.5, T2 >= 2.5 & < 4.0, T3 >= 4.0
 DEFAULT_THRESHOLD = 2.0  # < 2.0 is a "Failure to Satisfy" per brand standards
+MAX_INCLUDE_MONTH = 7  # 5-Star + taste data is only considered valid through July; ignore Aug/Sep placeholders
 PERIODS = []  # set dynamically from data
 MONTH_LABELS = []  # set dynamically from data
 PERIOD_MONTHS = []  # month numbers [1..N] detected from data
 
 STAR_COLS = ["WIN_SCORE_STAR", "SPEED_STAR", "BRAND_STAR", "HB_ONTIME_STAR", "FSCC_STAR"]
+ACTUAL_COLS = {
+    "WIN": "WIN_SCORE_ACTUAL",
+    "SPEED": "SPEED_ACTUAL",
+    "BRAND": "BRAND_ACTUAL",
+    "HB": "HB_ONTIME_ACTUAL",
+    "FSCC": "FSCC_ACTUAL",
+}
+NUMERIC_ACTUALS = ["WIN_SCORE_ACTUAL", "SPEED_ACTUAL", "HB_ONTIME_ACTUAL"]
 STAR_LABELS = {
     "WIN_SCORE_STAR": "Win Score", "SPEED_STAR": "Speed",
     "BRAND_STAR": "Brand", "HB_ONTIME_STAR": "Hutbot", "FSCC_STAR": "FSCC"
@@ -212,6 +221,13 @@ def load_data():
 
     for c in ["OVERALL_FIVESTAR"] + STAR_COLS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    for c in NUMERIC_ACTUALS:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    if "TASTE_SCORE" in df.columns:
+        df["TASTE_SCORE"] = pd.to_numeric(df["TASTE_SCORE"], errors="coerce")
 
     print(f"  {len(df):,} rows loaded")
 
@@ -830,6 +846,8 @@ def filter_analysis_data(df):
 
     # Detect available months from actual data
     available = sorted(filtered["MONTHNUM"].dropna().unique().astype(int))
+    # Cap to the reporting window (ignore incomplete future months such as Aug/Sep)
+    available = [m for m in available if m <= MAX_INCLUDE_MONTH]
     # Filter to only those months
     filtered = filtered[filtered["MONTHNUM"].isin(available)]
 
@@ -954,6 +972,8 @@ def compute_leadership(df):
             "fscc": round(float(sub["FSCC_STAR"].mean()), 3) if sub["FSCC_STAR"].notna().any() else 0,
             "brand": round(float(sub["BRAND_STAR"].mean()), 3) if sub["BRAND_STAR"].notna().any() else 0,
             "hb": round(float(sub["HB_ONTIME_STAR"].mean()), 3) if sub["HB_ONTIME_STAR"].notna().any() else 0,
+            "taste": round(float(pd.to_numeric(sub["TASTE_SCORE"], errors="coerce").mean()), 4) if "TASTE_SCORE" in sub.columns and pd.to_numeric(sub["TASTE_SCORE"], errors="coerce").notna().any() else None,
+            "taste_n": int(pd.to_numeric(sub["TASTE_SCORE"], errors="coerce").notna().sum()) if "TASTE_SCORE" in sub.columns else 0,
         })
 
     latest_n = monthly[-1]["n"] if monthly else 0
@@ -1289,6 +1309,42 @@ def compute_single_zone(zone_df, workshops=None):
                     vals.append(None)
             comps[comp] = vals
 
+        # Component actuals per month (raw metrics, not star scores)
+        actuals = {}
+        for key, col in ACTUAL_COLS.items():
+            vals = []
+            if col not in store_months.columns:
+                actuals[key] = [None] * len(PERIOD_MONTHS)
+                continue
+            for m in PERIOD_MONTHS:
+                sub = store_months[store_months["MONTHNUM"] == m]
+                cell = sub[col].iloc[0] if len(sub) > 0 else None
+                if cell is not None and pd.notna(cell) and str(cell).strip() not in ("", "NA", "NAN", "NONE"):
+                    if col in NUMERIC_ACTUALS:
+                        try:
+                            vals.append(round(float(cell), 2))
+                        except (ValueError, TypeError):
+                            vals.append(None)
+                    else:
+                        vals.append(str(cell).strip())
+                else:
+                    vals.append(None)
+            actuals[key] = vals
+
+        # Taste score per month (fraction 0-1), null where missing
+        taste = []
+        if "TASTE_SCORE" in store_months.columns:
+            for m in PERIOD_MONTHS:
+                sub = store_months[store_months["MONTHNUM"] == m]
+                if len(sub) > 0 and pd.notna(pd.to_numeric(sub["TASTE_SCORE"].iloc[0], errors="coerce")):
+                    taste.append(float(pd.to_numeric(sub["TASTE_SCORE"].iloc[0], errors="coerce")))
+                else:
+                    taste.append(None)
+        else:
+            taste = [None] * len(PERIOD_MONTHS)
+        taste_ok = [v for v in taste if v is not None]
+        taste_latest = taste[-1] if taste and taste[-1] is not None else None
+
         # Growth metrics per month (SSSG / SSTG)
         growth_sssg = []
         growth_sstg = []
@@ -1360,6 +1416,14 @@ def compute_single_zone(zone_df, workshops=None):
             "cb": comps["BRAND_STAR"],
             "ch": comps["HB_ONTIME_STAR"],
             "cf": comps["FSCC_STAR"],
+            "aw": actuals["WIN"],
+            "as": actuals["SPEED"],
+            "ab": actuals["BRAND"],
+            "ah": actuals["HB"],
+            "af": actuals["FSCC"],
+            "ct": taste,
+            "taste_avg": round(sum(taste_ok) / len(taste_ok), 4) if taste_ok else None,
+            "taste_latest": taste_latest,
             "sssg": growth_sssg,
             "sstg": growth_sstg,
             "st": st,
@@ -1518,6 +1582,14 @@ def compute_rising_star_data(df, workshops_by_oa):
         total = len(df[(df["MONTHNUM"] == last_m) & (df["NIELSENDMADESC"] == dma) & (df["CURR_FRAN_OWNER_NM"] == fran)])
         rate = round(n_t2_grp / total * 100) if total > 0 else 0
 
+        # Average taste score for this group's T2 stores (latest available per store),
+        # fraction 0-1 -> shown as percent
+        if "TASTE_SCORE" in df.columns:
+            taste_vals = pd.to_numeric(grp["TASTE_SCORE"], errors="coerce").dropna()
+            taste_avg = round(float(taste_vals.mean()), 4) if len(taste_vals) > 0 else None
+        else:
+            taste_avg = None
+
         dma_fran_data.append({
             "NIELSENDMADESC": str(dma),
             "CURR_FRAN_OWNER_NM": str(fran),
@@ -1531,6 +1603,7 @@ def compute_rising_star_data(df, workshops_by_oa):
             "fscc_pct": fscc_pct,
             "total": int(total),
             "rate": int(rate),
+            "taste_avg": taste_avg,
         })
 
     # Sort: descending by n_t2
@@ -1809,6 +1882,9 @@ def compute_fop_data(df, zones_data):
                     "cb": s.get("cb", []),
                     "ch": s.get("ch", []),
                     "cf": s.get("cf", []),
+                    "ct": s.get("ct", []),
+                    "taste_avg": s.get("taste_avg"),
+                    "taste_latest": s.get("taste_latest"),
                     "sssg": s.get("sssg", []),
                     "sstg": s.get("sstg", []),
                 } for s in stores]
@@ -3032,23 +3108,28 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
     prior_label = MONTH_NAMES.get(prior_ym[1], str(prior_ym[1]))
     next_label = MONTH_NAMES.get(next_ym[1], str(next_ym[1]))
 
-    # Collect all boot camp entries with OA + stable year
-    bc_all = []
-    for oa, odata in workshops_by_oa.items():
-        for entry in odata.get("boot_camp", []) or []:
-            e = dict(entry)
-            e["oa"] = oa
-            if "year" not in e:
-                y, _ = _e_month(e)
-                e["year"] = y
-            bc_all.append(e)
-
-    def _held(month_key):
-        return [e for e in bc_all if _mk(_e_month(e)) == month_key]
-
-    def _future_list():
+    # Collect all workshop entries (boot camp + rising star) with OA + stable year
+    def _harvest(type_key):
         out = []
-        for e in bc_all:
+        for oa, odata in workshops_by_oa.items():
+            for entry in odata.get(type_key, []) or []:
+                e = dict(entry)
+                e["oa"] = oa
+                if "year" not in e:
+                    y, _ = _e_month(e)
+                    e["year"] = y
+                out.append(e)
+        return out
+
+    bc_all = _harvest("boot_camp")
+    rs_all = _harvest("rising_star")
+
+    def _held(source, month_key):
+        return [e for e in source if _mk(_e_month(e)) == month_key]
+
+    def _future_list(source):
+        out = []
+        for e in source:
             y, m = _e_month(e)
             k = _mk((y, m))
             if k == upcoming_months[0]:
@@ -3064,26 +3145,39 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
         stores = len({e.get("store") for e in entries})
         return ws, stores
 
-    prior_entries = _held(prior_key)
+    prior_entries = _held(bc_all, prior_key)
     # YTD = months from first_data month to prior month (all workshops already held)
     ytd_entries = [e for e in bc_all if _mk(_e_month(e)) <= prior_key]
-    future_entries = _future_list()
+    future_entries = _future_list(bc_all)
+
+    prior_entries_rs = _held(rs_all, prior_key)
+    ytd_entries_rs = [e for e in rs_all if _mk(_e_month(e)) <= prior_key]
+    future_entries_rs = _future_list(rs_all)
 
     n_held_last, n_stores_last = _counts(prior_entries)
     n_held_ytd, n_stores_ytd = _counts(ytd_entries)
     n_future, n_future_stores = _counts(future_entries)
 
+    n_rs_held_last, n_rs_stores_last = _counts(prior_entries_rs)
+    n_rs_held_ytd, n_rs_stores_ytd = _counts(ytd_entries_rs)
+    n_rs_future, n_rs_future_stores = _counts(future_entries_rs)
+
     # Who hustled the prior month (stores coached, then workshops)
-    who_did = {}
-    for e in prior_entries:
-        rec = who_did.setdefault(e["oa"], {"oa": e["oa"], "ws_held": set(), "stores_coached": set()})
-        if e.get("workshop_id"):
-            rec["ws_held"].add(e["workshop_id"])
-        if e.get("store"):
-            rec["stores_coached"].add(e["store"])
-    who_list = [{"oa": k, "ws_held": len(v["ws_held"]), "stores_coached": len(v["stores_coached"])}
-                for k, v in who_did.items()]
-    who_list.sort(key=lambda x: (-x["stores_coached"], -x["ws_held"]))
+    def _who(source):
+        who = {}
+        for e in source:
+            rec = who.setdefault(e["oa"], {"oa": e["oa"], "ws_held": set(), "stores_coached": set()})
+            if e.get("workshop_id"):
+                rec["ws_held"].add(e["workshop_id"])
+            if e.get("store"):
+                rec["stores_coached"].add(e["store"])
+        out = [{"oa": k, "ws_held": len(v["ws_held"]), "stores_coached": len(v["stores_coached"])}
+               for k, v in who.items()]
+        out.sort(key=lambda x: (-x["stores_coached"], -x["ws_held"]))
+        return out
+
+    who_list = _who(prior_entries)
+    who_list_rs = _who(prior_entries_rs)
 
     # YTD who-did (for the overall view)
     who_did_ytd = {}
@@ -3183,6 +3277,40 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
     if ctrl and ctrl.get("avg_delta") is not None and bootcamp["avg_delta"] is not None:
         bootcamp["lift"] = round(bootcamp["avg_delta"] - ctrl["avg_delta"], 3)
 
+    # ── Rising Star deep-dive (mirrors Boot Camp) ──
+    nat_rs = (nat_data.get("workshop_effectiveness") or {}).get("rising_star") or {}
+    rising = {
+        "run_label": run_label,
+        "prior_label": prior_label,
+        "next_label": next_label,
+        "latest_month": last_label,
+        # Prior month (who hustled)
+        "n_held_last": n_rs_held_last,
+        "n_stores_last": n_rs_stores_last,
+        "who_did": who_list_rs,
+        # YTD
+        "n_held_ytd": n_rs_held_ytd,
+        "n_stores_ytd": n_rs_stores_ytd,
+        # Upcoming (rest of run month + next month)
+        "n_future": n_rs_future,
+        "n_future_stores": n_rs_future_stores,
+        "future_breakdown": [
+            {"label": b["label"], "workshops": b["workshops"], "stores": b["stores"]}
+            for b in future_breakdown
+        ],
+        # Effectiveness (national, from the past batch that has follow-up data)
+        "n_improved": nat_rs.get("n_improved", 0),
+        "n_not_improved": nat_rs.get("n_not_improved", 0),
+        "n_stores": nat_rs.get("n_stores", 0),
+        "avg_baseline": (nat_rs.get("trajectory") or {}).get("avg_baseline"),
+        "avg_latest": (nat_rs.get("trajectory") or {}).get("avg_latest"),
+        "avg_delta": (nat_rs.get("trajectory") or {}).get("avg_delta"),
+        "lift": None,
+    }
+    ctrl_rs = nat_rs.get("control") or {}
+    if ctrl_rs and ctrl_rs.get("avg_delta") is not None and rising["avg_delta"] is not None:
+        rising["lift"] = round(rising["avg_delta"] - ctrl_rs["avg_delta"], 3)
+
     # ── Per-zone effectiveness table (for BC table) ──
     bc_effectiveness = []
     for oa, z in zones_data.items():
@@ -3237,6 +3365,7 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
         "monthly": monthly,
         "oa_front": oa_front,
         "bootcamp": bootcamp,
+        "rising": rising,
         "bc_effectiveness": bc_effectiveness,
         "franchisees": {"rise": rise, "watch": watch},
         "fop_names": sorted((fop_data.get("fops") or {}).keys()),
@@ -3271,7 +3400,13 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
 
     if _cache_ok:
         print("  Using cached leadership brief")
-        brief_data.update(cached)
+        # Only reuse the LLM narrative fields from cache; structural data (monthly,
+        # oa_front, bootcamp metrics, rising, etc.) is always recomputed fresh.
+        for _k in ("summary", "summarySub", "recognition"):
+            if _k in cached:
+                brief_data[_k] = cached[_k]
+        if "bootcamp" in cached and isinstance(cached["bootcamp"], dict) and cached["bootcamp"].get("narrative"):
+            brief_data.setdefault("bootcamp", {})["narrative"] = cached["bootcamp"]["narrative"]
         return
 
     print("  Generating leadership brief...")
@@ -3454,6 +3589,23 @@ def main(no_cache=False, run_date=None):
     nat_data = compute_leadership(df)
     zones_data = compute_zone_scorecards(df, workshops_by_oa)
 
+    # Enrich workshop entries with per-store actual 5-Star component arrays
+    # (WIN_SCORE/SPEED/BRAND/HUTBOT/FSCC) so the national leadership and Rising
+    # Star drill-downs can break each workshop out by component across
+    # baseline and 30/60/90-day windows.
+    _ws_store_maps = {
+        _oa: {str(_s["s"]): _s for _s in _z.get("stores", [])}
+        for _oa, _z in zones_data.items()
+    }
+    for _oa, _odata in workshops_by_oa.items():
+        _smap = _ws_store_maps.get(_oa, {})
+        for _tk in ("boot_camp", "rising_star"):
+            for _entry in _odata.get(_tk, []):
+                _zs = _smap.get(str(_entry.get("store", "")).strip())
+                if _zs:
+                    for _kk in ("aw", "as", "ab", "ah", "af"):
+                        _entry[_kk] = _zs.get(_kk, [])
+
     # Aggregate national default/at-risk/T1-watch counts from zones_data
     nat_defaulting = sum(z.get("n_defaulting", 0) for z in zones_data.values())
     nat_at_risk = sum(z.get("n_at_risk", 0) for z in zones_data.values())
@@ -3563,6 +3715,14 @@ def main(no_cache=False, run_date=None):
                 entry["type_label"] = tk
                 all_workshops.append(entry)
     nat_data["all_workshops"] = all_workshops
+
+    # Strip the enriched actual arrays from zone-level workshop embeddings:
+    # zone scorecards read components from their own store entries, so keeping
+    # them here would only duplicate data. (national/rising copies remain.)
+    for _z in zones_data.values():
+        for _entry in (_z.get("workshops", {}).get("boot_camp", []) + _z.get("workshops", {}).get("rising_star", [])):
+            for _kk in ("aw", "as", "ab", "ah", "af"):
+                _entry.pop(_kk, None)
 
     # Attach national monthly averages for top-right display on all dashboards
     _nat_monthly = nat_data.get("monthly", [])

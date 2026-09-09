@@ -1365,9 +1365,9 @@ const WS_COMP_META = [
   {key:'all', arr:null,    label:'Overall',   kind:'star', color:'#A62932'},
   {key:'cw',  arr:'aw',    label:'Win Score', kind:'num',  color:COMP_COLORS.cw},
   {key:'cs',  arr:'as',    label:'Speed',     kind:'num',  color:COMP_COLORS.cs},
-  {key:'cb',  arr:'ab',    label:'Brand',     kind:'txt',  color:COMP_COLORS.cb},
+  {key:'cb',  arr:'cb',    label:'Brand',     kind:'star', color:COMP_COLORS.cb},
   {key:'ch',  arr:'ah',    label:'Hutbot',    kind:'pct',  color:COMP_COLORS.ch},
-  {key:'cf',  arr:'af',    label:'FSCC',      kind:'txt',  color:COMP_COLORS.cf},
+  {key:'cf',  arr:'cf',    label:'FSCC',      kind:'star', color:COMP_COLORS.cf},
 ];
 function wsActualAvg(store, arr, months){
   if(!store) return null;
@@ -1416,7 +1416,7 @@ function wsMetrics(store, e){
   const p = {};
   [30,60,90].forEach(per=>{ p[per] = (e.post_scores||[]).find(x=>x.period===per)||null; });
   return WS_COMP_META.map(c=>{
-    if(c.kind==='star'){
+    if(c.arr===null){
       const bl = e.baseline_score;
       const vals = [30,60,90].map(per=> p[per] ? p[per].score : null);
       return {label:c.label, color:c.color, kind:c.kind, bl, vals};
@@ -1459,6 +1459,77 @@ function toggleWsDetail(elm){
     if(chev) chev.textContent = open ? '\u25B6' : '\u25BC';
   }
 }
+// Group-level (workshop card / area) 5-Star component matrix
+function wsFacade(e, sm){
+  const st = sm && e && e.store!=null ? sm[e.store] : null;
+  const o = Object.assign({}, e);
+  o.aw = st ? st.aw||[] : [];
+  o.as = st ? st.as||[] : [];
+  o.ab = st ? st.ab||[] : [];
+  o.ah = st ? st.ah||[] : [];
+  o.af = st ? st.af||[] : [];
+  o.cb = st ? st.cb||[] : [];
+  o.cf = st ? st.cf||[] : [];
+  return o;
+}
+function wsGrpVal(objs, c, winOf){
+  const vals = objs.map(o=>winOf(o)).filter(v=>v!=null && v!=='' && !(typeof v==='number' && isNaN(v)));
+  if(!vals.length) return null;
+  if(c.kind==='txt') return vals;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+function wsDistHTML(vals){
+  const counts = {};
+  vals.forEach(v=>{ const k = String(v); counts[k]=(counts[k]||0)+1; });
+  const order = ['ICONIC!','At Standard','Marginal','Breakdown','Underperforming'];
+  return Object.keys(counts).sort((a,b)=>order.indexOf(a)-order.indexOf(b)).map(k=>'<span style="color:'+wsTextColor(k)+';font-weight:600;">'+esc(k)+'</span><span style="color:var(--muted);font-family:IBM Plex Mono;">&times;'+counts[k]+'</span>').join('&nbsp; ');
+}
+function wsGrpCellHTML(c, val, withDelta, bl){
+  if(val==null || val==='') return '<span style="color:var(--muted)">\u2014</span>';
+  if(c.kind==='txt') return wsDistHTML(val);
+  let h;
+  if(c.kind==='star') h = '<span class="sc '+scoreClass(val)+'">'+val.toFixed(2)+'</span>';
+  else if(c.kind==='pct') h = '<span style="font-family:IBM Plex Mono;font-size:10px;">'+val.toFixed(1)+'%</span>';
+  else h = '<span style="font-family:IBM Plex Mono;font-size:10px;">'+val.toFixed(1)+'</span>';
+  if(withDelta && bl!=null){
+    const dv = val - bl;
+    h += ' <span style="font-size:9px;'+(dv>=0?'color:#276b4d':'color:#a3122a')+'">'+(dv>=0?'+':'')+dv.toFixed(1)+'</span>';
+  }
+  return h;
+}
+function wsGroupComponentHTML(objs, caption){
+  const blM = o=>wsBlMonths(o);
+  const post = (o,per)=>(o.post_scores||[]).find(x=>x.period===per)||null;
+  const fBl = (o,c)=> c.arr===null ? o.baseline_score : (c.kind==='txt' ? wsActualLast(o,c.arr,blM(o)) : wsActualAvg(o,c.arr,blM(o)));
+  const fPost = (o,c,per)=> c.arr===null ? (post(o,per) ? post(o,per).score : null) : (c.kind==='txt' ? wsActualLast(o,c.arr,(post(o,per)||{}).months||[]) : wsActualAvg(o,c.arr,(post(o,per)||{}).months||[]));
+  const rows = WS_COMP_META.map(c=>{
+    const bl = wsGrpVal(objs, c, o=>fBl(o,c));
+    const v = [30,60,90].map(per=>wsGrpVal(objs, c, o=>fPost(o,c,per)));
+    return {c, bl, v};
+  });
+  let h = '<div style="margin:4px 0 2px;padding:6px 10px;background:var(--card);border:1px solid var(--line);border-radius:2px;">';
+  h += '<div style="font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">'+esc(caption||'')+' &middot; actual metrics</div>';
+  h += '<div class="ws-comp-row" style="font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:IBM Plex Mono;"><div>Component</div><div style="text-align:right;">BL</div><div style="text-align:right;">30d</div><div style="text-align:right;">60d</div><div style="text-align:right;">90d</div></div>';
+  rows.forEach(r=>{
+    h += '<div class="ws-comp-row">';
+    h += '<div style="font-family:IBM Plex Mono;font-size:10px;color:'+r.c.color+';font-weight:600;">'+r.c.label+'</div>';
+    h += '<div style="text-align:right;font-family:IBM Plex Mono;font-size:10px;">'+wsGrpCellHTML(r.c, r.bl, false, null)+'</div>';
+    h += '<div style="text-align:right;font-family:IBM Plex Mono;font-size:10px;">'+wsGrpCellHTML(r.c, r.v[0], true, r.bl)+'</div>';
+    h += '<div style="text-align:right;font-family:IBM Plex Mono;font-size:10px;">'+wsGrpCellHTML(r.c, r.v[1], true, r.bl)+'</div>';
+    h += '<div style="text-align:right;font-family:IBM Plex Mono;font-size:10px;">'+wsGrpCellHTML(r.c, r.v[2], true, r.bl)+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+function toggleWsGDetail(did){
+  const det = document.getElementById(did);
+  if(!det) return;
+  const btn = document.querySelector('[data-exp="'+did+'"]');
+  const open = det.style.display === 'block';
+  det.style.display = open ? 'none' : 'block';
+  if(btn){ const chev = btn.querySelector('.ws-chev'); if(chev) chev.textContent = open ? '\u25B6' : '\u25BC'; }
+}
 function exportWorkshopCSV(btn){
   const wid = btn.dataset.wid;
   const d = _curStoreData;
@@ -1483,7 +1554,7 @@ function exportWorkshopCSV(btn){
         if(c.kind==='txt') return wsActualLast(st,c.arr,months);
         return wsActualAvg(st,c.arr,months);
       };
-      const bl = c.kind==='star' ? e.baseline_score : get(blM);
+      const bl = c.arr===null ? e.baseline_score : get(blM);
       const v30 = c.kind==='star' ? (p[30]?p[30].score:null) : get(p[30]?p[30].months:null);
       const v60 = c.kind==='star' ? (p[60]?p[60].score:null) : get(p[60]?p[60].months:null);
       const v90 = c.kind==='star' ? (p[90]?p[90].score:null) : get(p[90]?p[90].months:null);
@@ -1687,8 +1758,9 @@ function renderBootCamps(){
       const allTrendVals=[avgBL,avg30,avg60,avg90].filter(x=>x!=null);
       const boxSpark=sparkline(allTrendVals,80,22);
       const safeWid=String(wid).replace(/[^0-9]/g,'');
+      const cid='wc_'+safeWid;
       pastHTML+=`<div class="ws-date-block" style="border-left:4px solid #A62932;background:#A6293211;">
-        <div class="ws-date-head" onclick="this.nextElementSibling.classList.toggle('open')">
+        <div class="ws-date-head" onclick="document.getElementById('${esc(cid)}').classList.toggle('open')">
           <div>
             <div style="font-size:13px;font-weight:600;font-family:Inter,sans-serif;color:var(--ink);">${esc(dk)}</div>
             <div style="margin-top:3px;font-size:11px;color:var(--muted);font-family:IBM Plex Mono;">${entries.length} stores\u00a0\u00a0\u00b7\u00a0\u00a0${esc(frans.join(', ')||'')}</div>
@@ -1708,7 +1780,9 @@ function renderBootCamps(){
             <button class="ws-export-btn" data-wid="${esc(wid)}" onclick="exportWorkshopCSV(this);event.stopPropagation();" title="Export Franchisee / Area / Store / component scores (baseline, 30, 60, 90d)">Export CSV</button>
           </div>
         </div>
-        <div class="ws-stores">
+        <button class="ws-export-btn" data-exp="g_${wid}" onclick="toggleWsGDetail('g_${esc(wid)}');event.stopPropagation();" title="5-Star components for all stores in this workshop (actual metrics)"><span class="ws-chev">&#x25B6;</span>&nbsp;Components</button>
+        <div class="ws-store-detail ws-grp-detail" id="g_${esc(wid)}">${wsGroupComponentHTML(entries.map(e=>wsFacade(e, storeMap)), 'Workshop components')}</div>
+        <div class="ws-stores" id="${esc(cid)}">
           ${(()=>{
             const areaGroups={};const areaOrder=[];
             entries.forEach(e=>{const a=e._area||'Unknown';if(!areaGroups[a]){areaGroups[a]=[];areaOrder.push(a);}areaGroups[a].push(e);});
@@ -1739,6 +1813,10 @@ function renderBootCamps(){
             return areaOrder.map(an=>{
               const ae=areaGroups[an];
               const aid='za_'+safeWid+'_'+an.replace(/[^a-zA-Z0-9]/g,'_');
+              const agId='ag_'+aid;
+              const aBL = (()=>{const l=ae.filter(e=>e.baseline_score!=null);return l.length?l.reduce((s,e)=>s+e.baseline_score,0)/l.length:null;})();
+              const aP = p=>{const l=ae.map(e=>(e.post_scores||[]).find(x=>x.period===p)).filter(x=>x&&x.score!=null);return l.length?l.reduce((a,b)=>a+b.score,0)/l.length:null;};
+              const a30=aP(30), a60=aP(60), a90=aP(90);
               const wsStoreIds=new Set(ae.map(e=>String(e.store||'')));
               // Control = Area Coach's full cohort that did NOT attend this workshop
               const areaStores=areaStoreLists[an]||[];
@@ -1748,9 +1826,10 @@ function renderBootCamps(){
               const attnColor=attnPct>=75?'#276b4d':attnPct>=50?'#c07f1f':'#a3122a';
               return `<div class="ws-area-block">
                 <div class="ws-area-head" onclick="document.getElementById('${esc(aid)}').classList.toggle('open');this.querySelector('.ws-chevron').textContent=this.querySelector('.ws-chevron').textContent==='\\u25B6'?'\\u25BC':'\\u25B6'">
-                  <div><span class="ws-chevron" style="font-size:9px;margin-right:6px;">&#x25B6;</span><span style="font-weight:600;font-family:Inter,sans-serif;">${esc(an)}</span><span style="margin-left:8px;font-size:10px;color:var(--muted);font-family:IBM Plex Mono;">${ae.length}/${cohort} attended</span></div>
+                  <div><span class="ws-chevron" style="font-size:9px;margin-right:6px;">&#x25B6;</span><span style="font-weight:600;font-family:Inter,sans-serif;">${esc(an)}</span><span style="margin-left:8px;font-size:10px;color:var(--muted);font-family:IBM Plex Mono;">${ae.length}/${cohort} attended</span><span style="margin-left:12px;font-family:IBM Plex Mono;font-size:9.5px;color:var(--muted);">BL <b style="color:var(--ink);">${aBL!=null?aBL.toFixed(2):'\u2014'}</b>${[30,60,90].map(per=>{const av=per===30?a30:per===60?a60:a90;if(av==null||aBL==null)return'<span>&nbsp; '+per+'d \u2014</span>';const dv=av-aBL;return'<span>&nbsp; '+per+'d <b class="'+(dv>=0?'ws-post-up':'ws-post-down')+'">'+(dv>=0?'+':'')+dv.toFixed(2)+'</b></span>';}).join('')}</span><button class="ws-export-btn ws-expand-btn" data-exp="${esc(agId)}" onclick="toggleWsGDetail('${esc(agId)}');event.stopPropagation();" title="5-Star components for this area (actual metrics)"><span class="ws-chev">&#x25B6;</span>&nbsp;Components</button></div>
                   <div><span class="rate-badge" style="background:${attnColor}22;color:${attnColor}">${attnPct}%</span></div>
                 </div>
+                <div class="ws-store-detail ws-grp-detail" id="${esc(agId)}">${wsGroupComponentHTML(ae.map(e=>wsFacade(e, storeMap)), 'Area components')}</div>
                 <div class="ws-area-stores" id="${esc(aid)}">
                   <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#276b4d;margin:6px 0 4px;">Attended (variable) \u00b7 ${ae.length}</div>
                   <div class="ws-store-row" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-family:IBM Plex Mono;border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:4px;">
@@ -1806,8 +1885,9 @@ function renderBootCamps(){
       const bmScores = entries.map(e=>e.baseline_score).filter(x=>x!=null);
       const avgBm = bmScores.length ? bmScores.reduce((a,b)=>a+b,0)/bmScores.length : null;
       const safeWid=String(wid).replace(/[^0-9]/g,'');
+      const cid='wcf_'+safeWid;
       futureHTML+=`<div class="ws-date-block" style="border-left:4px solid #A62932;background:#A6293211;">
-        <div class="ws-date-head" onclick="this.nextElementSibling.classList.toggle('open')">
+        <div class="ws-date-head" onclick="document.getElementById('${esc(cid)}').classList.toggle('open')">
           <div>
             <div style="font-size:13px;font-weight:600;font-family:Inter,sans-serif;color:var(--ink);">${esc(dk)}</div>
             <div style="margin-top:3px;font-size:11px;color:var(--muted);font-family:IBM Plex Mono;">${entries.length} stores\u00a0\u00a0\u00b7\u00a0\u00a0${esc(frans.join(', ')||'')}</div>
@@ -1817,7 +1897,9 @@ function renderBootCamps(){
             <button class="ws-export-btn" data-wid="${esc(wid)}" onclick="exportWorkshopCSV(this);event.stopPropagation();" title="Export Franchisee / Area / Store / component scores (baseline, 30, 60, 90d)">Export CSV</button>
           </div>
         </div>
-        <div class="ws-stores">
+        <button class="ws-export-btn" data-exp="gf_${wid}" onclick="toggleWsGDetail('gf_${esc(wid)}');event.stopPropagation();" title="5-Star components for all stores in this workshop (actual metrics)"><span class="ws-chev">&#x25B6;</span>&nbsp;Components</button>
+        <div class="ws-store-detail ws-grp-detail" id="gf_${esc(wid)}">${wsGroupComponentHTML(entries.map(e=>wsFacade(e, storeMap)), 'Workshop components')}</div>
+        <div class="ws-stores" id="${esc(cid)}">
           ${(()=>{
             const areaGroups={};const areaOrder=[];
             entries.forEach(e=>{const a=e._area||'Unknown';if(!areaGroups[a]){areaGroups[a]=[];areaOrder.push(a);}areaGroups[a].push(e);});
@@ -1825,10 +1907,15 @@ function renderBootCamps(){
             return areaOrder.map(an=>{
               const ae=areaGroups[an];
               const aid='zf_'+safeWid+'_'+an.replace(/[^a-zA-Z0-9]/g,'_');
+              const agId='ag_'+aid;
+              const aBL = (()=>{const l=ae.filter(e=>e.baseline_score!=null);return l.length?l.reduce((s,e)=>s+e.baseline_score,0)/l.length:null;})();
+              const aP = p=>{const l=ae.map(e=>(e.post_scores||[]).find(x=>x.period===p)).filter(x=>x&&x.score!=null);return l.length?l.reduce((a,b)=>a+b.score,0)/l.length:null;};
+              const a30=aP(30), a60=aP(60), a90=aP(90);
               return `<div class="ws-area-block">
                 <div class="ws-area-head" onclick="document.getElementById('${esc(aid)}').classList.toggle('open');this.querySelector('.ws-chevron').textContent=this.querySelector('.ws-chevron').textContent==='\\u25B6'?'\\u25BC':'\\u25B6'">
-                  <div><span class="ws-chevron" style="font-size:9px;margin-right:6px;">&#x25B6;</span><span style="font-weight:600;font-family:Inter,sans-serif;">${esc(an)}</span><span style="margin-left:8px;font-size:10px;color:var(--muted);font-family:IBM Plex Mono;">${ae.length} stores</span></div>
+                  <div><span class="ws-chevron" style="font-size:9px;margin-right:6px;">&#x25B6;</span><span style="font-weight:600;font-family:Inter,sans-serif;">${esc(an)}</span><span style="margin-left:8px;font-size:10px;color:var(--muted);font-family:IBM Plex Mono;">${ae.length} stores</span><span style="margin-left:12px;font-family:IBM Plex Mono;font-size:9.5px;color:var(--muted);">BL <b style="color:var(--ink);">${aBL!=null?aBL.toFixed(2):'\u2014'}</b>${[30,60,90].map(per=>{const av=per===30?a30:per===60?a60:a90;if(av==null||aBL==null)return'<span>&nbsp; '+per+'d \u2014</span>';const dv=av-aBL;return'<span>&nbsp; '+per+'d <b class="'+(dv>=0?'ws-post-up':'ws-post-down')+'">'+(dv>=0?'+':'')+dv.toFixed(2)+'</b></span>';}).join('')}</span><button class="ws-export-btn ws-expand-btn" data-exp="${esc(agId)}" onclick="toggleWsGDetail('${esc(agId)}');event.stopPropagation();" title="5-Star components for this area (actual metrics)"><span class="ws-chev">&#x25B6;</span>&nbsp;Components</button></div>
                 </div>
+                <div class="ws-store-detail ws-grp-detail" id="${esc(agId)}">${wsGroupComponentHTML(ae.map(e=>wsFacade(e, storeMap)), 'Area components')}</div>
                 <div class="ws-area-stores" id="${esc(aid)}">
                   ${ae.map(e=>{
                     const bl=e.baseline_score;

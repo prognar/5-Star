@@ -3603,7 +3603,7 @@ def main(no_cache=False, run_date=None):
             for _entry in _odata.get(_tk, []):
                 _zs = _smap.get(str(_entry.get("store", "")).strip())
                 if _zs:
-                    for _kk in ("aw", "as", "ab", "ah", "af"):
+                    for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf"):
                         _entry[_kk] = _zs.get(_kk, [])
 
     # Aggregate national default/at-risk/T1-watch counts from zones_data
@@ -3721,7 +3721,7 @@ def main(no_cache=False, run_date=None):
     # them here would only duplicate data. (national/rising copies remain.)
     for _z in zones_data.values():
         for _entry in (_z.get("workshops", {}).get("boot_camp", []) + _z.get("workshops", {}).get("rising_star", [])):
-            for _kk in ("aw", "as", "ab", "ah", "af"):
+            for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf"):
                 _entry.pop(_kk, None)
 
     # Attach national monthly averages for top-right display on all dashboards

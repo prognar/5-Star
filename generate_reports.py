@@ -19,7 +19,7 @@ except ImportError:
 
 # ─── Config ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-FIVESTAR_CSV = BASE_DIR / "5-Star with Taste Scores.csv"
+FIVESTAR_CSV = BASE_DIR / "5-Star Python Load_2026-09-14-1723.csv"
 STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
 OUTPUT_DIR = BASE_DIR
@@ -47,7 +47,7 @@ if _ENV_FILE.exists():
 
 TIER_THRESHOLD = 2.5  # T1 < 2.5, T2 >= 2.5 & < 4.0, T3 >= 4.0
 DEFAULT_THRESHOLD = 2.0  # < 2.0 is a "Failure to Satisfy" per brand standards
-MAX_INCLUDE_MONTH = 7  # 5-Star + taste data is only considered valid through July; ignore Aug/Sep placeholders
+MAX_INCLUDE_MONTH = 8  # 5-Star + taste data is valid through Aug 2026; ignore Sep+ placeholders
 PERIODS = []  # set dynamically from data
 MONTH_LABELS = []  # set dynamically from data
 PERIOD_MONTHS = []  # month numbers [1..N] detected from data
@@ -1733,8 +1733,8 @@ def compute_store_metrics(df, months):
         ly_sales = pd.to_numeric(store_g["LY_SS_SALES_TNS"], errors="coerce").sum()
         cy_trans = pd.to_numeric(store_g["CY_SS_TRANS"], errors="coerce").sum()
         ly_trans = pd.to_numeric(store_g["LY_SS_TRANS"], errors="coerce").sum()
-        sssg = cy_sales / ly_sales - 1.0 if ly_sales else -1.0
-        sstg = cy_trans / ly_trans - 1.0 if ly_trans else -1.0
+        sssg = _clip_growth(cy_sales / ly_sales if ly_sales else 0.0) - 1.0
+        sstg = _clip_growth(cy_trans / ly_trans if ly_trans else 0.0) - 1.0
         rows.append({
             "sid": str(sid),
             "overall": _avg_round(store_g["OVERALL_FIVESTAR"].tolist()),
@@ -3603,7 +3603,7 @@ def main(no_cache=False, run_date=None):
             for _entry in _odata.get(_tk, []):
                 _zs = _smap.get(str(_entry.get("store", "")).strip())
                 if _zs:
-                    for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf"):
+                    for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf", "ct"):
                         _entry[_kk] = _zs.get(_kk, [])
 
     # Aggregate national default/at-risk/T1-watch counts from zones_data
@@ -3721,7 +3721,7 @@ def main(no_cache=False, run_date=None):
     # them here would only duplicate data. (national/rising copies remain.)
     for _z in zones_data.values():
         for _entry in (_z.get("workshops", {}).get("boot_camp", []) + _z.get("workshops", {}).get("rising_star", [])):
-            for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf"):
+            for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf", "ct"):
                 _entry.pop(_kk, None)
 
     # Attach national monthly averages for top-right display on all dashboards

@@ -1067,6 +1067,43 @@ def compute_leadership(df):
         "corr_fivestar_sstg": corr_sstg,
     }
 
+    # Growth quintiles (SSSG/SSTG by 5-Star band) for YTD + recent windows,
+    # same method as the Franchisee Dashboard so all views agree.
+    _q_assign = {}
+    for _wk, _mm in (("lm", [last_m]), ("lq", list(PERIOD_MONTHS[-3:])), ("ytd", list(PERIOD_MONTHS))):
+        _q, _ass = compute_quintiles_for(compute_store_metrics(df, _mm), with_assign=True)
+        nat[f"quintiles_{_wk}"] = _q
+        if _wk == "ytd":
+            _q_assign = _ass
+
+    # Monthly SSSG/SSTG by YTD quintile (drives the growth trend charts).
+    # Stores keep their YTD band so trend lines line up with the band table.
+    _dfq = df.assign(_q=df["CHAINED_STORE_ID"].astype(str).map(_q_assign))
+    _dfq = _dfq.dropna(subset=["_q"])
+    _dfq["_q"] = _dfq["_q"].astype(int)
+    _cy_s = pd.to_numeric(_dfq["CY_SS_SALES_TNS"], errors="coerce")
+    _ly_s = pd.to_numeric(_dfq["LY_SS_SALES_TNS"], errors="coerce")
+    _cy_t = pd.to_numeric(_dfq["CY_SS_TRANS"], errors="coerce")
+    _ly_t = pd.to_numeric(_dfq["LY_SS_TRANS"], errors="coerce")
+    _dfq["_sssg"] = (_cy_s / _ly_s).clip(0.5, 2.0) - 1.0
+    _dfq.loc[~(_ly_s > 0), "_sssg"] = None
+    _dfq["_sstg"] = (_cy_t / _ly_t).clip(0.5, 2.0) - 1.0
+    _dfq.loc[~(_ly_t > 0), "_sstg"] = None
+    _g_s = _dfq.groupby(["_q", "MONTHNUM"])["_sssg"].mean()
+    _g_t = _dfq.groupby(["_q", "MONTHNUM"])["_sstg"].mean()
+    _mt = {"labels": list(MONTH_LABELS),
+           "sssg": {q: [] for q in range(1, 6)},
+           "sstg": {q: [] for q in range(1, 6)}}
+    for _q in range(1, 6):
+        for _mm in PERIOD_MONTHS:
+            for _key, _g in (("sssg", _g_s), ("sstg", _g_t)):
+                try:
+                    _v = _g.loc[(_q, _mm)]
+                    _mt[_key][_q].append(round(float(_v), 4) if _v == _v else None)
+                except KeyError:
+                    _mt[_key][_q].append(None)
+    nat["quintile_trends"] = _mt
+
     return nat
 
 
@@ -2119,9 +2156,8 @@ def _normalize_summary(value):
 
     The LLM may return a flat string or a nested object with PAST/PRESENT/FUTURE
     (or past/present/future) paragraph keys; flatten dicts into paragraphs.
+    Also strips stray markdown so narratives render as clean plain text.
     """
-    if isinstance(value, str):
-        return value
     if isinstance(value, dict):
         parts = []
         for key in ("PAST", "PRESENT", "FUTURE"):
@@ -2133,9 +2169,29 @@ def _normalize_summary(value):
                 if key in low and isinstance(low[key], str) and low[key].strip():
                     parts.append(f"{key.upper()}: {low[key].strip()}")
         if parts:
-            return "\n\n".join(parts)
-        return json.dumps(value)
-    return str(value)
+            value = "\n\n".join(parts)
+        else:
+            value = json.dumps(value)
+    if not isinstance(value, str):
+        value = str(value)
+    # Strip markdown artifacts the LLM sometimes adds despite instructions.
+    value = re.sub(r"\*\*(.+?)\*\*", r"\1", value, flags=re.S)
+    value = re.sub(r"^\s*---+\s*$", "", value, flags=re.M)
+    value = re.sub(r"^\s*(-+)\s*$", "", value, flags=re.M)
+    lines = [ln.strip() for ln in value.strip().splitlines()]
+    lines = [ln for ln in lines if ln]
+    # Drop a leading meta-preamble line like "Here is the executive highlight:"
+    if lines and re.match(r"^(Here is|Here's|Below is|Belows|The following|Executive highlight|Summary)[^.!?]*:$", lines[0], re.I):
+        lines.pop(0)
+    value = "\n".join(lines)
+    return value
+
+
+def _normalize_oa_role(value):
+    """Normalize recognition role text to use 'OA' instead of 'Area Coach'."""
+    if not isinstance(value, str):
+        return value
+    return re.sub(r"Area Coach", "OA", value, flags=re.IGNORECASE)
 
 
 def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000, allow_plain_text=False, attempts=3):
@@ -2531,16 +2587,17 @@ def summarize_leadership(nat_data, no_cache=False):
 
     system_prompt = (
         "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
-        "Write a concise national narrative summary for senior leadership. "
+        "Write a concise national narrative summary for senior leadership. 'Less is more': don't "
+        "recite figures — the readers have the numbers in front of them. Lead every point with the "
+        "insight: what the data is telling us, why it matters, and what to do next. Use numbers only "
+        "to land a point, rounded roughly ('a third of stores', 'down a quarter from January'). "
         "No headings or section labels — a flowing 3-4 paragraph executive memo covering: "
-        "national trends over the period (overall average, tier migration, top/bottom zones by improvement, "
-        "component-driven movement), current portfolio health (average, tier distribution, "
-        "zones requiring attention, binding constraints by tier, risk exposure), "
-        "the top and bottom 5 franchisees ranked by average score, "
-        "and the primary national priority with recommended operational focus areas. "
-        "Substantiate all claims with specific figures. Adopt a tone appropriate for executive readership. "
-        "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
-        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
+        "the national story (overall trend and how it actually happened — tier migration, "
+        "component-led movement, notable zone leaders/warnings), current portfolio health "
+        "(distribution, binding constraints by tier, zones requiring attention, risk exposure), "
+        "and the primary national priority with the single most important operational focus. "
+        "End action-oriented. Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, "
+        "BRAND_STAR = Brand, HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
     )
 
     period_label = get_period_label()
@@ -3369,6 +3426,13 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
         "bc_effectiveness": bc_effectiveness,
         "franchisees": {"rise": rise, "watch": watch},
         "fop_names": sorted((fop_data.get("fops") or {}).keys()),
+        "growth": {
+            "lm": nat_data.get("quintiles_lm"),
+            "lq": nat_data.get("quintiles_lq"),
+            "ytd": nat_data.get("quintiles_ytd"),
+            "corr_sssg": nat_data.get("corr_fivestar_sssg"),
+            "corr_sstg": nat_data.get("corr_fivestar_sstg"),
+        },
     }
     return brief
 
@@ -3405,6 +3469,10 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         for _k in ("summary", "summarySub", "recognition"):
             if _k in cached:
                 brief_data[_k] = cached[_k]
+        if isinstance(brief_data.get("recognition"), list):
+            for _p in brief_data["recognition"]:
+                if isinstance(_p, dict):
+                    _p["role"] = _normalize_oa_role(_p.get("role"))
         if "bootcamp" in cached and isinstance(cached["bootcamp"], dict) and cached["bootcamp"].get("narrative"):
             brief_data.setdefault("bootcamp", {})["narrative"] = cached["bootcamp"]["narrative"]
         return
@@ -3453,20 +3521,41 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
     # ── 1) National summary ──
     sys_lead = (
         "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
-        "You write crisp, leadership-ready highlights. Be specific with numbers, "
-        "name names where warranted, and separate 'what's working' from 'where the "
-        "opportunities are'. Tone: confident, direct, recognition-forward."
+        "You write crisp, leadership-ready highlights. Be specific with numbers where they matter, "
+        "name names when the story is earned, and separate 'what's working' from 'where the "
+        "opportunities are'. Tone: confident, direct, recognition-forward. The narrative voice "
+        "throughout is: our OAs and FOPs are making a difference out in the field, and here is "
+        "the proof. Answer three questions framing: are the bootcamps working, are sales improving, "
+        "and how are the franchisees doing?"
     )
+    nat_growth = brief_data.get("growth") or {}
+    _growth_compact = {
+        "seg": None,
+        "ytd_quintiles": nat_growth.get("ytd"),
+        "last_month_quintiles": nat_growth.get("lm"),
+        "corr_sssg": nat_growth.get("corr_sssg"),
+        "corr_sstg": nat_growth.get("corr_sstg"),
+    }
     lead_prompt = (
         f"Here is the {period_label} national 5-Star picture.\n\n"
         f"National monthly averages (avg overall, T1/T2/T3 counts):\n{json.dumps(nat_monthly)}\n\n"
         f"National Boot Camp pulse:\n{json.dumps(nat_bc)}\n\n"
+        f"Sales & transaction growth by 5-Star quintile (SSSG = same-store sales growth, SSTG = same-store "
+        f"transaction growth; last month vs YTD, plus how 5-Star correlates with growth):\n{json.dumps(_growth_compact)}\n\n"
         f"Per-OA detail:\n{json.dumps(oa_compact, indent=2)}\n\n"
-        "Write a concise executive highlight (no more than ~180 words) covering:\n"
-        "1) WHAT'S WORKING WELL — the standout national and OA-level wins this period.\n"
-        "2) WHERE THE OPPORTUNITIES ARE — the most important gaps or risks to act on.\n"
-        "Keep it paragraph form, three short paragraphs, each starting with 'What's working', "
-        "'Opportunities'. Return plain text only."
+        "Write a concise executive highlight (~150 words) answering, in order:\n"
+        "1) ARE THE BOOTCAMPS WORKING? — the cleanest proof the coaching is landing (workshops run, stores "
+        "coached, % improved, lift vs control) and what the best zones are doing right.\n"
+        "2) ARE SALES IMPROVING? — read the quintile story: whether last month's same-store growth is better "
+        "than the YTD trend, who is leading (top 5-Star stores) and who is bleeding (bottom quintile), and the "
+        "operational driver (transactions vs ticket) behind it.\n"
+        "3) HOW ARE THE FRANCHISEES DOING? — the franchisees on the rise and the handful worth watching.\n"
+        "Close on one line of team impact: what our OAs and FOPs did this period that moved the business.\n"
+        "Three short paragraphs, the third rounded out by the impact line. 'Less is more': open each paragraph "
+        "with the insight — what the data is telling leadership — and use numbers only to anchor the point, "
+        "rounded and sparing. Do NOT single out the lowest-average zone by name; if you need a second highlight, "
+        "pick a different positive or constructive example instead. Return plain text only — no markdown, no bold, "
+        "no arrows or bullet characters, no 'Here is' preamble, no separators; just three short paragraphs."
     )
     lead_narr = call_opencode_server([lead_prompt], system_prompt=sys_lead, max_tokens=1200, allow_plain_text=True)
     brief_data["summary"] = _normalize_summary(lead_narr) if lead_narr else (cached or {}).get("summary", "")
@@ -3481,8 +3570,10 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         "change each month; pick whoever has the strongest story.\n\n"
         f"{json.dumps(oa_compact, indent=2)}\n\n"
         "Return a JSON object with key 'recognition' = array of 1-2 objects, each with keys: "
-        "'name' (full OA name), 'role' (e.g. 'Area Coach — <region>'), and 'why' "
-        "(2-3 sentences naming the specific numbers that make this person's impact stand out). "
+        "'name' (full OA name), 'role' (e.g. 'OA — <region>'; always call these leaders 'OAs', never 'Area Coach'), and 'why' "
+        "(2-3 sentences naming the specific numbers that make this person's impact stand out — lead with the "
+        "operational result, e.g. Tier 1 cuts, score movement, stores coached, so the reader feels the team "
+        "impact before the metric). "
         "Only include people with a genuinely notable result."
     )
     rec_result = call_opencode_server([rec_prompt], system_prompt=sys_lead, max_tokens=1200)
@@ -3495,6 +3586,9 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
             rec = [r]
     if not rec:
         rec = (cached or {}).get("recognition") or []
+    for _p in rec:
+        if isinstance(_p, dict):
+            _p["role"] = _normalize_oa_role(_p.get("role"))
     brief_data["recognition"] = rec
 
     # ── 3) Boot camp narrative ──

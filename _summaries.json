@@ -36,11 +36,17 @@
   "Sergio Villasenor": "PAST: Sergio Villasenor's zone delivered the strongest Tier 1 reduction in the group, cutting Tier 1 from 93 to 54 stores (-41.9%) while Tier 3 grew from 34 to 41 (+20.6%), on net movement of 82 stores up versus 37 down. The overall average rose from 2.88 in January to 3.17 in August (+0.29), though momentum was uneven: the average peaked at 3.15 in May-June, softened to 3.06 in July and recovered in August. Win Score was the dominant binding constraint (64.3% of Tier 1, 45.1% of Tier 2), but Speed's binding share is notably higher than peers (21.4% T1, 28.3% T2), signaling service-time pressure building across the mid-tier.\n\nPRESENT: The zone ends the period at 3.17 overall across 56 Tier 1 (avg 1.94), 173 Tier 2 (avg 3.29) and 41 Tier 3 (avg 4.38) stores, with Tier 1 concentration at 20.7%. Risk posture is heavy: 31 defaulting stores and 21 Tier 1 watch stores, with 3 at-risk. Win Score is the primary binding constraint (64.3% of Tier 1), though Speed's 28.3% share of Tier 2 binding is the highest secondary constraint across the OAs. Concentration risk is centered on PEORIA (8 Tier 1 stores at a 73% rate and the zone's lowest area average at 2.55), with Walter, Chris (4 of 4 stores, 100% Tier 1) and KALAFUT, RICHARD (4 Tier 1, 57%, avg 2.63) also material.\n\nFUTURE: The single highest-impact action is a mandated Win Score turnaround in PEORIA - the zone's largest hotspot at 8 Tier 1 stores, a 73% rate and the lowest area average (2.55) - paired with immediate support for Walter, Chris's 100% Tier 1 concentration. Tier 3 retention is the second priority: 17 of 34 Tier 3 stores slid back to Tier 2, and with the highest defaulting volume of the group (31), stabilizing the net +32 Tier 2 expansion is essential to protect the -41.9% Tier 1 reduction achieved this period.",
   "Tim King": "PAST: Tim King's zone opened at the highest starting average of the group (3.07), absorbed a February dip to 2.98, and closed August at 3.23 (+0.16) with a sustained 3.15-3.23 band through June-August. Tier movement was heavily Tier 3-led: Tier 3 grew from 29 to 47 stores (+62.1%, the largest T3 expansion of the group) while Tier 1 fell from 53 to 41 (-22.6%), on 51 moves up versus 25 down. Tim's binding profile differs from peers: Speed overtakes Win Score as the primary Tier 2 constraint (37.6% vs 29.9%), while Win Score still leads Tier 1 (60.5% vs 23.3%).\n\nPRESENT: The zone closes at 3.23 overall - the highest of the three OAs - across 43 Tier 1 (avg 1.90), 117 Tier 2 (avg 3.27) and 47 Tier 3 (avg 4.34) stores, with Tier 1 concentration at 20.8%. Risk posture is the strongest of the trio: 0 at-risk stores, 28 defaulting and just 14 Tier 1 watch stores, the smallest watch load among the OAs. The primary binding constraint is now Speed in Tier 2 (37.6% share). Hotspots concentrate in THAYER, LINDSEY (6 Tier 1 stores, 86% rate, area avg 2.10), Abdou, Michelle (4, 67%) and BROWN, ASHLEY (4, 57%, avg 2.18), with Culp, Brianna the zone's lowest-performing area at 1.93.\n\nFUTURE: The single highest-impact action is a Speed improvement program across Tier 2 opening at THAYER, LINDSEY - the largest hotspot (6 Tier 1 stores, 86% rate, 2.10 average) bridging the Speed-binding issue into Tier 1 - supported by targeted work in Culp, Brianna (1.93) as the zone's weakest territory. With only 14 Tier 1 watch stores and no at-risk stores, Tim can redirect capacity toward defending the 47-store Tier 3 base (up 62.1%), where 12 of the original 29 slid back; locking in those gains while resolving the Speed bind protects the zone's current leadership position.",
   "_version": "months_8_1-2-3-4-5-6-7-8",
-  "_leadership_summary": "National average Win Score improved from 3.19 in January to 3.35 in August 2026, the strongest full-period build in the system, and the movement was broad-based rather than concentrated. Tier migration over the eight months was decisively upward: Tier 1 stores fell from 1,009 to 776 (a 23% reduction), Tier 3 rose from 845 to 1,136, and 1,194 stores moved up a tier against just 679 moving down. Component analysis shows the improvement was Win Score-led, climbing from 2.80 to 3.02\u2014the largest component gain\u2014while Hutbot Ontime delivered the strongest absolute improvement, rising from 3.54 to 3.94. Speed improved only marginally (2.94 to 2.98), Brand held flat at 3.33, and FSCC, though still the strongest score in the system at 4.82, slipped from its January peak of 4.88, a drift worth watching given its frontline role in food safety. Zone performance confirms the upward story, with the most improved areas including Danielle Hudson (+0.30 to a 3.37 average), Sergio Villasenor (+0.29 to 3.17), Sarah Heitz (+0.25 to 3.17), and AKM Shaju (+0.20 to 3.53), while Dustin Patton leads the system at 3.77 on a 0.21-point gain.\n\nCurrent portfolio health is modestly positive but thinly stretched. The system operates at a 3.35 average with 59% of the 4,658 stores in Tier 2 (2,733), 24% in Tier 3 (1,132), and a still-substantial 16% in Tier 1 (753). The zones demanding attention are those with the lowest averages\u2014Kathleen Basbagill at 3.01, and Jesse White, Sarah Heitz, and Sergio Villasenor clustered at 3.17\u20133.18\u2014though several of these are among the fastest improvers and should be credited for momentum. Binding constraints differ meaningfully by tier: for Tier 1 stores, WIN_SCORE_STAR is the binding metric in 66.4% of cases, and for Tier 2 that figure remains 49.8%, whereas Tier 3 is bound more evenly across Brand (32.5%) and Speed (32.0%), with Win Score still at 31.4%. Risk exposure is material: 309 stores are in default, 30 are at imminent risk, and 387 sit on the Tier 1 watchlist, and with a correlation of just 0.11 between 5-Star scores and sales growth, operational quality is being built largely independent of top-line performance.\n\nFranchisee results underscore both the replicability and the failure modes of the model. The top five operators\u2014AL SALAS (4.09 across 49 stores), MARK PETERSON (4.07 across 68), DOUGLAS CLEVELAND (4.03 across 18), HEMANG CHAMPANERIA (3.94), and CRAIG ERIKSON (3.77)\u2014prove 4.0-plus performance is achievable at scale. At the other end, ASAD ADAM MITHA (1.71), JAKE RASOR (1.88), KETANKUMAR PATEL (1.91 across 27 stores), RUSS KLUG (2.11), and JAMES SOUZA (2.20) anchor the bottom, with KETANKUMAR PATEL and JAMES SOUZA representing the most consequential remediation targets given their store counts.\n\nThe primary national priority is Win Score execution, which remains the binding constraint for roughly two-thirds of Tier 1 and half of Tier 2 stores and continues to exert real drag in Tier 3. Recommended focus: intensify coaching on the operational routines that drive Win Score\u2014most critically service speed, which at 2.98 is the weakest absolute component in the system and the natural lever behind both Win and Tier 3's Speed constraint; stabilize FSCC through sustained food-safety emphasis rather than allowing it to erode from its 4.88 baseline; and concentrate field leadership on the 309 defaulting stores and the lowest-averaging franchisees, since closing the gap between the 3.77\u20134.09 top tier and the 1.71\u20132.20 bottom tier is where the next 0.1 point of national average will come from.",
+  "Unknown": {
+    "PAST PERFORMANCE": "The unassigned FOP segment contains a single franchisee, GARRETT MCGINN, with 45 stores and an average of 2.68, representing the weakest average among all FOPs in the period. Performance is uniformly weak: 10 stores defaulting (22.2%) and another 7 on the T1 watch list, leaving nearly 38% of the store base in a defaulting or at-watch state. This segment is a data-ownership and governance gap as much as a performance problem \u2014 45 stores operating without a designated FOP owner and director.",
+    "CURRENT STATE": "With only one franchisee, the entire risk profile rests on MCGINN: 10 defaulting stores, 0 at-risk, and 7 T1-watch. The default rate of 22.2% is by far the highest of any FOP and, absent an assigned operator, has no active management owner, meaning the risk is likely under-monitored and uncaptured in escalation loops. The most pressing challenge is positional: the segment must be resolved organizationally to determine whether MCGINN should be moved to a sponsoring FOP or designated to a director before performance can be actively managed.",
+    "RECOMMENDED ACTION": "The highest-impact action is immediate portfolio governance resolution \u2014 assign GARRETT MCGINN's 45 stores to a named FOP and director so the 10 defaulting stores gain an accountable owner. From there, apply the same remediation standard used for acute operators elsewhere (store-level review and payment plan) given the disproportionate 22.2% default rate, and conduct a verification pass on the FOP assignment data to ensure no additional unassigned stores exist."
+  },
+  "_fop_version_months_8_1-2-3-4-5-6-7-8": "months_8_1-2-3-4-5-6-7-8",
+  "_leadership_summary": "The national portfolio moved from a 3.19 in January to 3.35 in August, a steady climb driven almost entirely by Tier 3 gains. Tier 3 grew from 845 stores to 1,136 \u2014 a third of the fleet now sits there \u2014 while Tier 1 contracted from 1,009 to 776. This wasn't a rising-tide story: the median store improved, but the top end thinned out. Win Score carries Tier 1 at 66.4% of its binding constraint, and that held relatively firm; the real action was in Tier 3, where Speed and Brand are co-dominant constraints at 32% each, meaning the lower tier is being pulled in two directions simultaneously and can't break out without solving both. Danielle Hudson's zone is the most striking example \u2014 she moved a quarter of her stores into Tier 3 (76.9% increase) while cutting her Tier 1 base by over a third, yet her average still climbed 0.30, the largest delta among all OAs. That's a zone converting floor stores into mid-tier performers at scale, which is exactly the portfolio play. Dustin Patton and Michael Grant posted similar T1-to-T3 conversion patterns with 40-50% Tier 1 reductions and strong average gains. On the other end, Cellesha Steel's Tier 1 actually grew 3.2% while her Tier 3 ballooned 75% \u2014 a sign of polarization that bears watching, and Jesse White barely moved the needle with a 0.01 delta across 358 stores despite the second-largest Tier 1 count in the fleet. At the franchisee level, the gap is stark: Al Salas and Mark Peterson are both above 4.0 across 49 and 68 stores respectively, while Asad Adam Mitha sits at 1.71 across 7 units \u2014 all under Betty Olvera's directorship, which suggests the issue is operational execution at the FOP level, not structural. The 309 defaulting stores and 387 Tier 1 watchlist stores represent roughly 15% of the fleet that is actively deteriorating or on the edge, and the 0.11 correlation between 5-Star and same-store sales growth tells us the business case is real but modest \u2014 improving 5-Star is necessary but won't alone drive the top line. The single national priority is clear: accelerate Tier 3 store conversion by attacking the Speed-Brand dual constraint. Speed ticked up to 2.98 in August after trending down all year, which is a warning sign that operational execution is slipping just as volume seasonality should be helping. Every OA with a Tier 3 increase above 40% needs a store-by-store action plan focused on menu accuracy and make-line discipline \u2014 those are the two controllable levers that move both Speed and Brand simultaneously. Sarah Heitz's zone, with a 0.25 delta and 42.5% Tier 3 growth, is the model to replicate; Hellen Lobaccaro's near-flat Tier 1 change (-1.5%) against 47.6% Tier 3 growth suggests stores are stalling at the bottom of Tier 2 rather than converting upward, and she needs targeted intervention. The portfolio is moving in the right direction, but the speed of movement is slowing and the tail is getting longer \u2014 the next 90 days should be about converting the T2-to-T3 pipeline into T2, not just celebrating the T1 exits.",
   "_leadership_version": "months_8_1-2-3-4-5-6-7-8",
   "_brief": {
     "period": "Jan \u2013 Aug 2026",
-    "run_date": "2026-09-14",
+    "run_date": "2026-09-15",
     "run_label": "Sep",
     "prior_label": "Aug",
     "next_label": "Oct",
@@ -563,7 +569,7 @@
       "run_label": "Sep",
       "prior_label": "Aug",
       "next_label": "Oct",
-      "run_day": 14,
+      "run_day": 15,
       "latest_month": "Aug",
       "n_held_last": 60,
       "n_stores_last": 448,
@@ -729,7 +735,7 @@
       "avg_latest": 3.11,
       "avg_delta": 0.23,
       "lift": 0.693,
-      "narrative": "**Boot Camp Leadership Narrative \u2014 Sept Run (data through Aug)**\n\n**Who Hustled in August:** Dustin Patton leads the pack with 10 workshops across 80 stores. Derron Spencer stays close behind at 7 workshops / 76 stores, and Jiselle Medina rounds out the top three with 5 workshops / 46 stores. All three delivered standout reach last month.\n\n**YTD Volume:** Momentum is real \u2014 103 workshops held across 832 stores this year, a strong foundation for continued expansion.\n\n**Upcoming (Oct Focus):** 476 stores scheduled across 64 workshops, led by 277 stores in rest-of-September (38 workshops) and another 199 stores in October (26 workshops).\n\n**Effectiveness:** The model is producing results. 248 of 378 stores with follow-up improved (65.6%), delivering a 0.693 lift over control. Boot Camp works \u2014 we're scaling what's proven."
+      "narrative": "Boot Camp Leadership Narrative \u2013 September Run\nAugust was a high-volume month: 60 workshops across 448 stores. Dustin Patton led the charge with 10 workshops and 80 stores coached, followed by Derron Spencer (7 ws / 76 stores) and Jiselle Medina (5 ws / 46 stores). YTD we've delivered 103 workshops reaching 832 stores\u2014real momentum.\nEffectiveness is holding: 66% of coached stores (248 of 378 with follow-up) improved, with a 0.693 lift versus control. The program works.\nLooking ahead, 476 stores are scheduled across 64 workshops\u2014277 in the remainder of September and 199 in October. Derron Spencer carries the heaviest October load with 17 workshops and 150 stores. Our OAs are making a difference in the field, and the numbers prove it."
     },
     "rising": {
       "run_label": "Sep",
@@ -2907,25 +2913,209 @@
       "Noel Pelayo",
       "Unknown"
     ],
-    "summary": "What's working \u2014 The national average trended from 3.19 in January to 3.36 by August, with Tier-1 stores cut from 1,009 to 776 and Tier-3s growing from 845 to 1,136. Boot Camp remains the engine: 248 of 378 participating stores (66%) improved, averaging +0.23 with a 0.69 lift. Danielle Hudson leads OAs with +0.30 across 420 stores (T1s down 99\u219262) and the highest throughput at 145 coached stores YTD; Dustin Patton posts the strongest lift at 1.42, and Sergio Villasenor improved 17 of his 24 coached stores.\n\nOpportunities \u2014 Flat performers are the watch list: Jesse White moved just +0.01 (T1s up), Paul Inacio stayed flat with Tier-3s declining and zero follow-ups logged, and Tim King carries the only negative lift (-0.157). Kathleen Basbagill's lift (0.245) shows coaching not transferring to results.\n\nOpportunities \u2014 Sustain momentum: 64 workshops/476 stores are booked through October, but Derron Spencer's +0.08 against 150 future store appointments needs disciplined follow-through. Michael Grant and Jiselle Medina lack Boot Camp coverage\u2014expand participation to protect the national trend.",
+    "growth": {
+      "lm": [
+        {
+          "q": 1,
+          "n": 932,
+          "overall": 4.45,
+          "win": 4.6,
+          "speed": 4.12,
+          "brand": 3.63,
+          "hutbot": 4.81,
+          "fscc": 4.95,
+          "sssg": 0.0174,
+          "sstg": 0.0349
+        },
+        {
+          "q": 2,
+          "n": 932,
+          "overall": 3.86,
+          "win": 3.69,
+          "speed": 3.48,
+          "brand": 3.59,
+          "hutbot": 4.44,
+          "fscc": 4.89,
+          "sssg": 0.0106,
+          "sstg": 0.0276
+        },
+        {
+          "q": 3,
+          "n": 931,
+          "overall": 3.41,
+          "win": 2.91,
+          "speed": 3.08,
+          "brand": 3.37,
+          "hutbot": 4.23,
+          "fscc": 4.86,
+          "sssg": 0.0029,
+          "sstg": 0.0176
+        },
+        {
+          "q": 4,
+          "n": 932,
+          "overall": 2.93,
+          "win": 2.3,
+          "speed": 2.57,
+          "brand": 3.14,
+          "hutbot": 3.77,
+          "fscc": 4.83,
+          "sssg": 0.0126,
+          "sstg": 0.025
+        },
+        {
+          "q": 5,
+          "n": 931,
+          "overall": 2.12,
+          "win": 1.58,
+          "speed": 1.67,
+          "brand": 2.9,
+          "hutbot": 2.47,
+          "fscc": 4.58,
+          "sssg": -0.0183,
+          "sstg": -0.0087
+        }
+      ],
+      "lq": [
+        {
+          "q": 1,
+          "n": 933,
+          "overall": 4.33,
+          "win": 4.3,
+          "speed": 4.07,
+          "brand": 3.75,
+          "hutbot": 4.74,
+          "fscc": 4.94,
+          "sssg": 0.0226,
+          "sstg": 0.0337
+        },
+        {
+          "q": 2,
+          "n": 932,
+          "overall": 3.8,
+          "win": 3.55,
+          "speed": 3.43,
+          "brand": 3.52,
+          "hutbot": 4.44,
+          "fscc": 4.9,
+          "sssg": 0.0095,
+          "sstg": 0.0197
+        },
+        {
+          "q": 3,
+          "n": 933,
+          "overall": 3.39,
+          "win": 2.98,
+          "speed": 2.98,
+          "brand": 3.31,
+          "hutbot": 4.2,
+          "fscc": 4.87,
+          "sssg": 0.0078,
+          "sstg": 0.0206
+        },
+        {
+          "q": 4,
+          "n": 932,
+          "overall": 2.97,
+          "win": 2.6,
+          "speed": 2.37,
+          "brand": 3.17,
+          "hutbot": 3.71,
+          "fscc": 4.84,
+          "sssg": 0.0026,
+          "sstg": 0.0114
+        },
+        {
+          "q": 5,
+          "n": 932,
+          "overall": 2.24,
+          "win": 1.96,
+          "speed": 1.62,
+          "brand": 2.9,
+          "hutbot": 2.49,
+          "fscc": 4.6,
+          "sssg": -0.021,
+          "sstg": -0.0126
+        }
+      ],
+      "ytd": [
+        {
+          "q": 1,
+          "n": 933,
+          "overall": 4.21,
+          "win": 4.05,
+          "speed": 4.03,
+          "brand": 3.7,
+          "hutbot": 4.66,
+          "fscc": 4.93,
+          "sssg": -0.0028,
+          "sstg": 0.0363
+        },
+        {
+          "q": 2,
+          "n": 933,
+          "overall": 3.69,
+          "win": 3.31,
+          "speed": 3.4,
+          "brand": 3.51,
+          "hutbot": 4.37,
+          "fscc": 4.9,
+          "sssg": -0.0166,
+          "sstg": 0.0225
+        },
+        {
+          "q": 3,
+          "n": 932,
+          "overall": 3.31,
+          "win": 2.86,
+          "speed": 2.93,
+          "brand": 3.33,
+          "hutbot": 4.05,
+          "fscc": 4.87,
+          "sssg": -0.0136,
+          "sstg": 0.0225
+        },
+        {
+          "q": 4,
+          "n": 933,
+          "overall": 2.9,
+          "win": 2.55,
+          "speed": 2.29,
+          "brand": 3.15,
+          "hutbot": 3.58,
+          "fscc": 4.82,
+          "sssg": -0.021,
+          "sstg": 0.0139
+        },
+        {
+          "q": 5,
+          "n": 932,
+          "overall": 2.25,
+          "win": 2.02,
+          "speed": 1.63,
+          "brand": 2.89,
+          "hutbot": 2.38,
+          "fscc": 4.69,
+          "sssg": -0.046,
+          "sstg": -0.014
+        }
+      ],
+      "corr_sssg": 0.11,
+      "corr_sstg": 0.11
+    },
+    "summary": "Bootcamps are working. Two-thirds of coached stores improved, and the national baseline-to-latest lift of 0.69 points proves the model converts. Danielle Hudson leads YTD with 145 stores coached and a 0.30-point average gain across 420 stores; Dustin Patton's August was the month's most productive at 10 workshops covering 80 stores. Derron Spencer is front-loading the fall with 17 workshops and 150 stores already on the calendar. The pipeline is strong: 64 workshops and 476 stores locked in through October.\nAugust sales broke from the YTD trend. Top-quintile 5-Star stores flipped to positive 1.7% same-store sales growth last month versus negative 0.3% YTD, driven entirely by transactions. The bottom quintile remains the drag, still negative on both sales and traffic. The 5-Star-to-growth correlation holds at 0.11, reinforcing that operational execution translates to the P&L.\nFranchisees are moving. Sergio Villasenor delivered a 0.29-point portfolio gain on 270 stores; AKM Shaju pushed 57 net stores from T1 to T3. Our OAs and field operators ran 60 workshops in August, coached 448 stores, and shifted the national average up to 3.36 by June, the year's high mark. That is the field closing the gap, one store at a time.",
     "recognition": [
       {
         "name": "Danielle Hudson",
-        "role": "Area Coach \u2014 420 stores",
-        "why": "Danielle delivered the largest average score jump in the network this period \u2014 moving from a 3.07 to a 3.39, a +0.32 lift across 420 stores. She also drove the biggest Tier 1 reduction, pulling 32 stores out of the bottom tier (99 \u2192 67), while growing Tier 3 by 40 stores (52 \u2192 92) \u2014 a clear, portfolio-wide shift upward. Her Boot Camp work backed it up: 53 stores improved with a 0.623 effectiveness lift and 74 stores followed up, showing this wasn't a one-month spike but a sustained coaching approach."
+        "role": "OA \u2014 Region",
+        "why": "Danielle delivered the strongest overall swing in the country this period \u2014 moving her portfolio from 3.07 to 3.37, a +0.30 average gain that leads all OAs. That pressure showed up in Tier 1, where she cut 37 stores (99 down to 62) and moved 40 stores up to Tier 3. On the coaching side, she ran 5 Boot Camp workshops touching 34 stores this period with 75 stores improving and 109 in follow-up, reflecting a leader who's driving results at scale."
       },
       {
         "name": "Dustin Patton",
-        "role": "Area Coach \u2014 296 stores",
-        "why": "Dustin was the network's most active coach by volume this period \u2014 running 10 workshops and coaching 80 stores in a single month, both the highest totals among all OAs. That pace is translating to results: his portfolio moved from a 3.56 to a 3.72 average (+0.16) and he reduced Tier 1 by 7 stores (26 \u2192 19) while growing Tier 3 by 33 stores (83 \u2192 116). He's proving that consistent, high-frequency coaching drives measurable movement."
+        "role": "OA \u2014 Region",
+        "why": "Dustin brought the most intensive coaching execution of any OA \u2014 10 Boot Camp workshops reaching 80 stores this period, the highest activity in the group. The impact landed: he cut his Tier 1 count in half (26 down to 13) and pushed 33 stores up to Tier 3, all while starting from an already strong 3.56 base and climbing to 3.77. His Boot Camp lift of 1.422 is the highest in the group by a wide margin, signaling that his coaching is producing real, measurable improvement in the stores he touches."
       }
     ]
   },
-  "_brief_version": "months_8_1-2-3-4-5-6-7-8@2026-09-14",
-  "Unknown": {
-    "PAST PERFORMANCE": "The unassigned FOP segment contains a single franchisee, GARRETT MCGINN, with 45 stores and an average of 2.68, representing the weakest average among all FOPs in the period. Performance is uniformly weak: 10 stores defaulting (22.2%) and another 7 on the T1 watch list, leaving nearly 38% of the store base in a defaulting or at-watch state. This segment is a data-ownership and governance gap as much as a performance problem \u2014 45 stores operating without a designated FOP owner and director.",
-    "CURRENT STATE": "With only one franchisee, the entire risk profile rests on MCGINN: 10 defaulting stores, 0 at-risk, and 7 T1-watch. The default rate of 22.2% is by far the highest of any FOP and, absent an assigned operator, has no active management owner, meaning the risk is likely under-monitored and uncaptured in escalation loops. The most pressing challenge is positional: the segment must be resolved organizationally to determine whether MCGINN should be moved to a sponsoring FOP or designated to a director before performance can be actively managed.",
-    "RECOMMENDED ACTION": "The highest-impact action is immediate portfolio governance resolution \u2014 assign GARRETT MCGINN's 45 stores to a named FOP and director so the 10 defaulting stores gain an accountable owner. From there, apply the same remediation standard used for acute operators elsewhere (store-level review and payment plan) given the disproportionate 22.2% default rate, and conduct a verification pass on the FOP assignment data to ensure no additional unassigned stores exist."
-  },
-  "_fop_version_months_8_1-2-3-4-5-6-7-8": "months_8_1-2-3-4-5-6-7-8"
+  "_brief_version": "months_8_1-2-3-4-5-6-7-8@2026-09-15"
 }

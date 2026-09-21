@@ -294,6 +294,14 @@ def load_data():
     if "DIRECTOR" not in df.columns:
         df["DIRECTOR"] = "Unknown"
 
+    # ---- Franchisee normalization (2026-09): GARRETT MCGINN is Don Rizzie and
+    # ---- his stores attach to FOP Kelly Sharpe. Applied post store-list join so
+    # ---- the corrected name/FOP propagate to every report from this dataframe.
+    _fran_mask = df["CURR_FRAN_OWNER_NM"].astype(str).str.strip().str.upper() == "GARRETT MCGINN"
+    if _fran_mask.any():
+        df.loc[_fran_mask, "CURR_FRAN_OWNER_NM"] = "DON RIZZIE"
+        df.loc[_fran_mask, "FOP"] = "Kelly Sharpe"
+
     return df
 
 
@@ -1826,6 +1834,11 @@ def compute_fop_data(df, zones_data):
     for s in all_stores:
         fop = s.get("o", "Unknown")
         fran = s.get("f", "Unknown")
+        # ---- OA remap (2026-09): GARRETT MCGINN is Don Rizzie; regardless of the
+        # ---- legacy CSV/store-list label, his stores bind to OA Kelly Sharpe ----
+        if str(fran).strip().upper() in ("GARRETT MCGINN", "DONALD RIZZIE"):
+            fop = "Kelly Sharpe"
+            fran = "DON RIZZIE"
         director = s.get("r", "Unknown")
         fop_director[fop] = director
         if director not in director_fops:
@@ -3204,11 +3217,18 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
 
     prior_entries = _held(bc_all, prior_key)
     # YTD = months from first_data month to prior month (all workshops already held)
-    ytd_entries = [e for e in bc_all if _mk(_e_month(e)) <= prior_key]
+    # YTD = months through the prior month PLUS any workshops already held in
+    # the run month before run_day (so Sep 1-14 count as 'held' on a mid-Sep run).
+    def _ytd_held(source):
+        return [e for e in source
+                if _mk(_e_month(e)) <= prior_key
+                or (_mk(_e_month(e)) == _mk((run_year, run_month)) and _e_day(e) < run_day)]
+
+    ytd_entries = _ytd_held(bc_all)
     future_entries = _future_list(bc_all)
 
     prior_entries_rs = _held(rs_all, prior_key)
-    ytd_entries_rs = [e for e in rs_all if _mk(_e_month(e)) <= prior_key]
+    ytd_entries_rs = _ytd_held(rs_all)
     future_entries_rs = _future_list(rs_all)
 
     n_held_last, n_stores_last = _counts(prior_entries)
@@ -3646,6 +3666,8 @@ def generate_brief_html(brief_data, template_path, output_path):
 
 # ─── Main ──────────────────────────────────────────────────────────────────
 
+MONTH_NAMES = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+
 def main(no_cache=False, run_date=None):
     print("=" * 60)
     print("5-Star Report Generator")
@@ -3681,6 +3703,12 @@ def main(no_cache=False, run_date=None):
 
     # Compute data products
     nat_data = compute_leadership(df)
+    _rd = MONTH_NAMES.get(run_date.month, str(run_date.month)) + " " + str(run_date.day) + ", " + str(run_date.year)
+    _rlp = PERIOD_MONTHS[-1]
+    _rl = "data through " + MONTH_NAMES.get(_rlp % 100, str(_rlp % 100)) + " " + str(_rlp // 100)
+    nat_data["run_date"] = _rd
+    nat_data["run_label"] = _rl
+
     zones_data = compute_zone_scorecards(df, workshops_by_oa)
 
     # Enrich workshop entries with per-store actual 5-Star component arrays
@@ -3866,5 +3894,8 @@ if __name__ == "__main__":
     if "--run-date" in _argv:
         _i = _argv.index("--run-date")
         if _i + 1 < len(_argv):
-            _run_date = _argv[_i + 1]
+            try:
+                _run_date = pd.Timestamp(_argv[_i + 1]).normalize()
+            except Exception:
+                _run_date = _argv[_i + 1]
     main(no_cache="--no-cache" in _argv, run_date=_run_date)

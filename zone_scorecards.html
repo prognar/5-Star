@@ -449,20 +449,22 @@ function switchTab(tab){
   if(tab==='targeting') renderTargeting();
 }
 
+const pctCellClass = (v, rev) => v==null||isNaN(v)?'sc-na':(rev?(v<0.2?'sc-t5':v<0.4?'sc-t4':v<0.6?'sc-t3':v<0.8?'sc-t2':'sc-t1'):(v>=0.8?'sc-t5':v>=0.6?'sc-t4':v>=0.4?'sc-t3':v>=0.2?'sc-t2':'sc-t1'));
+
   function scoreClass(v){
     if(v==null) return 'sc-na';
     return v>=5?'sc-t5':v>=4?'sc-t4':v>=3?'sc-t3':v>=2?'sc-t2':'sc-t1';
   }
 
-function trendArrow(slope){
+function trendArrow(slope, rev){
   const a = Math.abs(slope);
   if(slope > 0.05){
     const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
-    return '<span style="color:hsl(142,70%,'+l+'%);font-size:14px">\u2191</span>';
+    return '<span style="color:hsl('+(rev?0:142)+',70%,'+l+'%);font-size:14px">\u2191</span>';
   }
   if(slope < -0.05){
     const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
-    return '<span style="color:hsl(0,70%,'+l+'%);font-size:14px">\u2193</span>';
+    return '<span style="color:hsl('+(rev?142:0)+',70%,'+l+'%);font-size:14px">\u2193</span>';
   }
   return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
 }
@@ -722,15 +724,15 @@ function calcSlope(vals){
     return v>=5?'sc-t5':v>=4?'sc-t4':v>=3?'sc-t3':v>=2?'sc-t2':'sc-t1';
   }
 
-function trendArrow(slope){
+function trendArrow(slope, rev){
   const a = Math.abs(slope);
   if(slope > 0.05){
     const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
-    return '<span style="color:hsl(142,70%,'+l+'%);font-size:14px">\u2191</span>';
+    return '<span style="color:hsl('+(rev?0:142)+',70%,'+l+'%);font-size:14px">\u2191</span>';
   }
   if(slope < -0.05){
     const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
-    return '<span style="color:hsl(0,70%,'+l+'%);font-size:14px">\u2193</span>';
+    return '<span style="color:hsl('+(rev?142:0)+',70%,'+l+'%);font-size:14px">\u2193</span>';
   }
   return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
 }
@@ -1194,32 +1196,33 @@ function renderStoreDetail(d, body){
   html += `<tr style="background:var(--paper)"><td style="color:#c07f1f;font-weight:500">Taste</td>`;
   for(let i=0;i<MONTHS.length;i++){
     const cv = tv[i];
-    html += `<td><span style="color:${cv!=null?(cv>=0.40?'#276b4d;font-weight:600':cv>=0.20?'#e65100':'#a3122a;font-weight:600'):'var(--muted)'};font-family:IBM Plex Mono">${cv!=null?(cv*100).toFixed(0)+'%':'—'}</span></td>`;
+    html += `<td><span class="sc ${pctCellClass(cv)}">${cv!=null?(cv*100).toFixed(0)+'%':'—'}</span></td>`;
   }
   const tvQ1 = avg(tv.slice(0, tvHalf));
   const tvQ2 = avg(tv.slice(tvHalf));
   const tvY = avg(tv);
-  html += `<td><span style="font-family:IBM Plex Mono">${tvQ1!=null?(tvQ1*100).toFixed(0)+'%':'—'}</span></td>`;
-  html += `<td><span style="font-family:IBM Plex Mono">${tvQ2!=null?(tvQ2*100).toFixed(0)+'%':'—'}</span></td>`;
-  html += `<td><span style="font-family:IBM Plex Mono">${tvY!=null?(tvY*100).toFixed(0)+'%':'—'}</span></td>`;
+  html += `<td><span class="sc ${pctCellClass(tvQ1)}">${tvQ1!=null?(tvQ1*100).toFixed(0)+'%':'—'}</span></td>`;
+  html += `<td><span class="sc ${pctCellClass(tvQ2)}">${tvQ2!=null?(tvQ2*100).toFixed(0)+'%':'—'}</span></td>`;
+  html += `<td><span class="sc ${pctCellClass(tvY)}">${tvY!=null?(tvY*100).toFixed(0)+'%':'—'}</span></td>`;
   html += `<td style="text-align:center">${trendArrow(calcSlope(tv.filter(v=>v!=null)))}</td></tr>`;
   // XM360 rows (Accuracy / XM Speed / OSAT B2B)
   const pctRows = [['Accuracy','accuracy','#d97706'],['XM Speed','speed360','#0ea5e9'],['OSAT B2B','osat','#9333ea']];
   pctRows.forEach(([label,key,clr])=>{
     const pv = s[key]||[];
     const pvHalf = Math.ceil(MONTHS.length/2);
+    const rev = key==='osat';
     html += `<tr style="background:var(--paper)"><td style="color:${clr};font-weight:500">${label}</td>`;
     for(let i=0;i<MONTHS.length;i++){
       const cvv = pv[i];
-      html += `<td><span style="color:${cvv!=null?(cvv>=0.40?'#276b4d;font-weight:600':cvv>=0.20?'#e65100':'#a3122a;font-weight:600'):'var(--muted)'};font-family:IBM Plex Mono">${cvv!=null?(cvv*100).toFixed(0)+'%':'—'}</span></td>`;
+      html += `<td><span class="sc ${pctCellClass(cvv, rev)}">${cvv!=null?(cvv*100).toFixed(0)+'%':'—'}</span></td>`;
     }
     const pvQ1 = avg(pv.slice(0, pvHalf));
     const pvQ2 = avg(pv.slice(pvHalf));
     const pvY = avg(pv);
-    html += `<td><span style="font-family:IBM Plex Mono">${pvQ1!=null?(pvQ1*100).toFixed(0)+'%':'—'}</span></td>`;
-    html += `<td><span style="font-family:IBM Plex Mono">${pvQ2!=null?(pvQ2*100).toFixed(0)+'%':'—'}</span></td>`;
-    html += `<td><span style="font-family:IBM Plex Mono">${pvY!=null?(pvY*100).toFixed(0)+'%':'—'}</span></td>`;
-    html += `<td style="text-align:center">${trendArrow(calcSlope(pv.filter(v=>v!=null)))}</td></tr>`;
+    html += `<td><span class="sc ${pctCellClass(pvQ1, rev)}">${pvQ1!=null?(pvQ1*100).toFixed(0)+'%':'—'}</span></td>`;
+    html += `<td><span class="sc ${pctCellClass(pvQ2, rev)}">${pvQ2!=null?(pvQ2*100).toFixed(0)+'%':'—'}</span></td>`;
+    html += `<td><span class="sc ${pctCellClass(pvY, rev)}">${pvY!=null?(pvY*100).toFixed(0)+'%':'—'}</span></td>`;
+    html += `<td style="text-align:center">${trendArrow(calcSlope(pv.filter(v=>v!=null)), rev)}</td></tr>`;
   });
   html += '</tbody></table>';
   

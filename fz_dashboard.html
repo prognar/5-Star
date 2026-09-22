@@ -276,22 +276,23 @@ function fopTasteCell(v, rev){
   return '<span style="color:' + col + ';font-weight:600;font-family:IBM Plex Mono;font-size:11px">' + pct + '</span>';
 }
 function scoreClass(v){ if(v==null||isNaN(v)) return 'sc-na'; if(v>=5) return 'sc-t5'; if(v>=4) return 'sc-t4'; if(v>=3) return 'sc-t3'; if(v>=2) return 'sc-t2'; return 'sc-t1'; }
+const pctCellClass = (v, rev) => v==null||isNaN(v)?'sc-na':(rev?(v<0.2?'sc-t5':v<0.4?'sc-t4':v<0.6?'sc-t3':v<0.8?'sc-t2':'sc-t1'):(v>=0.8?'sc-t5':v>=0.6?'sc-t4':v>=0.4?'sc-t3':v>=0.2?'sc-t2':'sc-t1'));
 function statusBadge(st){
   if(st==='dl') return '<span class="badge-dl">Defaulting</span>';
   if(st==='ar') return '<span class="badge-ar">At Risk</span>';
   if(st==='tw') return '<span class="badge-tw">T1 Watch</span>';
   return '<span class="badge-ok">OK</span>';
 }
-function trendArrow(t){
+function trendArrow(t, rev){
   if(t==null||isNaN(t)) return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
   const a = Math.abs(t);
   if(t > 0.02){
     const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
-    return '<span style="color:hsl(142,70%,'+l+'%);font-size:14px">\u2191</span>';
+    return '<span style="color:hsl('+(rev?0:142)+',70%,'+l+'%);font-size:14px">\u2191</span>';
   }
   if(t < -0.02){
     const l = a > 0.3 ? 30 : a > 0.15 ? 36 : 42;
-    return '<span style="color:hsl(0,70%,'+l+'%);font-size:14px">\u2193</span>';
+    return '<span style="color:hsl('+(rev?142:0)+',70%,'+l+'%);font-size:14px">\u2193</span>';
   }
   return '<span style="color:var(--muted);font-size:14px;opacity:.5">\u2192</span>';
 }
@@ -1101,11 +1102,11 @@ function showStoreDetail(storeId){
   html += '<tr style="background:var(--paper)"><td style="color:#c07f1f;font-weight:500">Taste</td>';
   for(let i=0;i<MONTHS.length;i++){
     const cv = tvr[i];
-    html += '<td><span style="' + (cv!=null?'color:' + (cv>=0.40?'#276b4d;font-weight:600':cv>=0.20?'#e65100':'#a3122a;font-weight:600'):'color:var(--muted)') + ';font-family:IBM Plex Mono">' + (cv!=null?(cv*100).toFixed(0)+'%':'\u2014') + '</span></td>';
+    html += '<td><span class="sc ' + pctCellClass(cv) + '">' + (cv!=null?(cv*100).toFixed(0)+'%':'\u2014') + '</span></td>';
   }
   const tvrValid = tvr.filter(v=>v!=null);
   const tvrY = tvrValid.length ? tvrValid.reduce((a,b)=>a+b,0)/tvrValid.length : null;
-  html += '<td><span style="font-family:IBM Plex Mono">' + (tvrY!=null?(tvrY*100).toFixed(0)+'%':'\u2014') + '</span></td>';
+  html += '<td><span class="sc ' + pctCellClass(tvrY) + '">' + (tvrY!=null?(tvrY*100).toFixed(0)+'%':'\u2014') + '</span></td>';
   html += '<td style="text-align:center">' + trendArrow(calcSlope(tvrValid)) + '</td></tr>';
   // XM360 rows (Accuracy / XM Speed / OSAT B2B)
   [['Accuracy','accuracy','#d97706'],['XM Speed','speed360','#0ea5e9'],['OSAT B2B','osat','#9333ea']].forEach(([label,key,clr])=>{
@@ -1114,12 +1115,12 @@ function showStoreDetail(storeId){
     html += '<tr style="background:var(--paper)"><td style="color:' + clr + ';font-weight:500">' + label + '</td>';
     for(let i=0;i<MONTHS.length;i++){
       const cv2 = pv[i];
-      html += '<td><span style="' + (cv2!=null?'color:' + (rev?(cv2>=0.40?'#a3122a;font-weight:600':cv2>=0.20?'#e65100':'#276b4d;font-weight:600'):(cv2>=0.40?'#276b4d;font-weight:600':cv2>=0.20?'#e65100':'#a3122a;font-weight:600')):'color:var(--muted)') + ';font-family:IBM Plex Mono">' + (cv2!=null?(cv2*100).toFixed(0)+'%':'\u2014') + '</span></td>';
+      html += '<td><span class="sc ' + pctCellClass(cv2, rev) + '">' + (cv2!=null?(cv2*100).toFixed(0)+'%':'\u2014') + '</span></td>';
     }
     const pvValid = pv.filter(v=>v!=null);
     const pvY = pvValid.length ? pvValid.reduce((a,b)=>a+b,0)/pvValid.length : null;
-    html += '<td><span style="font-family:IBM Plex Mono">' + (pvY!=null?(pvY*100).toFixed(0)+'%':'\u2014') + '</span></td>';
-    html += '<td style="text-align:center">' + trendArrow(calcSlope(pvValid)) + '</td></tr>';
+    html += '<td><span class="sc ' + pctCellClass(pvY, rev) + '">' + (pvY!=null?(pvY*100).toFixed(0)+'%':'\u2014') + '</span></td>';
+    html += '<td style="text-align:center">' + trendArrow(calcSlope(pvValid), rev) + '</td></tr>';
   });
   html += '</tbody></table>';
   container.innerHTML = html;

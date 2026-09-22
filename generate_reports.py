@@ -19,7 +19,7 @@ except ImportError:
 
 # ─── Config ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-FIVESTAR_CSV = BASE_DIR / "5-Star Python Load_2026-09-14-1723.csv"
+FIVESTAR_CSV = BASE_DIR / "5-Star with XM360.csv"
 STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
 OUTPUT_DIR = BASE_DIR
@@ -226,8 +226,11 @@ def load_data():
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    if "TASTE_SCORE" in df.columns:
-        df["TASTE_SCORE"] = pd.to_numeric(df["TASTE_SCORE"], errors="coerce")
+    # Customer-sentiment metrics (fraction 0-1): Taste + XM360 (Accuracy /
+    # Speed / OSAT B2B). Rendered wherever Taste renders; all optional.
+    for c in ["TASTE_SCORE", "ACCURACY_SCORE", "SPEED_SCORE", "OSAT_SCORE"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
 
     print(f"  {len(df):,} rows loaded")
 
@@ -954,6 +957,16 @@ def compute_tier_flows(monthly_by_store):
 
 # ─── Leadership Summary ────────────────────────────────────────────────────
 
+def _monthly_pct(sub, col):
+    """Monthly mean + non-null count for a fraction score column (0-1)."""
+    if col not in sub.columns:
+        return None, 0
+    vals = pd.to_numeric(sub[col], errors="coerce")
+    if not vals.notna().any():
+        return None, 0
+    return round(float(vals.mean()), 4), int(vals.notna().sum())
+
+
 def compute_leadership(df):
     """Compute national-level leadership summary data."""
     print("Computing leadership summary...")
@@ -980,8 +993,14 @@ def compute_leadership(df):
             "fscc": round(float(sub["FSCC_STAR"].mean()), 3) if sub["FSCC_STAR"].notna().any() else 0,
             "brand": round(float(sub["BRAND_STAR"].mean()), 3) if sub["BRAND_STAR"].notna().any() else 0,
             "hb": round(float(sub["HB_ONTIME_STAR"].mean()), 3) if sub["HB_ONTIME_STAR"].notna().any() else 0,
-            "taste": round(float(pd.to_numeric(sub["TASTE_SCORE"], errors="coerce").mean()), 4) if "TASTE_SCORE" in sub.columns and pd.to_numeric(sub["TASTE_SCORE"], errors="coerce").notna().any() else None,
-            "taste_n": int(pd.to_numeric(sub["TASTE_SCORE"], errors="coerce").notna().sum()) if "TASTE_SCORE" in sub.columns else 0,
+            "taste": _monthly_pct(sub, "TASTE_SCORE")[0],
+            "taste_n": _monthly_pct(sub, "TASTE_SCORE")[1],
+            "accuracy": _monthly_pct(sub, "ACCURACY_SCORE")[0],
+            "accuracy_n": _monthly_pct(sub, "ACCURACY_SCORE")[1],
+            "speed360": _monthly_pct(sub, "SPEED_SCORE")[0],
+            "speed360_n": _monthly_pct(sub, "SPEED_SCORE")[1],
+            "osat": _monthly_pct(sub, "OSAT_SCORE")[0],
+            "osat_n": _monthly_pct(sub, "OSAT_SCORE")[1],
         })
 
     latest_n = monthly[-1]["n"] if monthly else 0
@@ -1376,19 +1395,28 @@ def compute_single_zone(zone_df, workshops=None):
                     vals.append(None)
             actuals[key] = vals
 
-        # Taste score per month (fraction 0-1), null where missing
-        taste = []
-        if "TASTE_SCORE" in store_months.columns:
-            for m in PERIOD_MONTHS:
-                sub = store_months[store_months["MONTHNUM"] == m]
-                if len(sub) > 0 and pd.notna(pd.to_numeric(sub["TASTE_SCORE"].iloc[0], errors="coerce")):
-                    taste.append(float(pd.to_numeric(sub["TASTE_SCORE"].iloc[0], errors="coerce")))
-                else:
-                    taste.append(None)
-        else:
-            taste = [None] * len(PERIOD_MONTHS)
-        taste_ok = [v for v in taste if v is not None]
-        taste_latest = taste[-1] if taste and taste[-1] is not None else None
+        # Customer-sentiment metrics per month (fraction 0-1), null where
+        # missing: Taste + XM360 (Accuracy / Speed / OSAT B2B).
+        _pct_cols = (("TASTE_SCORE", "ct"), ("ACCURACY_SCORE", "accuracy"),
+                     ("SPEED_SCORE", "speed360"), ("OSAT_SCORE", "osat"))
+        pct_arrays = {}
+        pct_ok = {}
+        pct_latest = {}
+        for _col, _key in _pct_cols:
+            arr = []
+            if _col in store_months.columns:
+                for m in PERIOD_MONTHS:
+                    sub = store_months[store_months["MONTHNUM"] == m]
+                    if len(sub) > 0 and pd.notna(pd.to_numeric(sub[_col].iloc[0], errors="coerce")):
+                        arr.append(float(pd.to_numeric(sub[_col].iloc[0], errors="coerce")))
+                    else:
+                        arr.append(None)
+            else:
+                arr = [None] * len(PERIOD_MONTHS)
+            oks = [v for v in arr if v is not None]
+            pct_arrays[_key] = arr
+            pct_ok[_key] = oks
+            pct_latest[_key] = arr[-1] if arr and arr[-1] is not None else None
 
         # Growth metrics per month (SSSG / SSTG)
         growth_sssg = []
@@ -1466,9 +1494,18 @@ def compute_single_zone(zone_df, workshops=None):
             "ab": actuals["BRAND"],
             "ah": actuals["HB"],
             "af": actuals["FSCC"],
-            "ct": taste,
-            "taste_avg": round(sum(taste_ok) / len(taste_ok), 4) if taste_ok else None,
-            "taste_latest": taste_latest,
+            "ct": pct_arrays["ct"],
+            "taste_avg": round(sum(pct_ok["ct"]) / len(pct_ok["ct"]), 4) if pct_ok["ct"] else None,
+            "taste_latest": pct_latest["ct"],
+            "accuracy": pct_arrays["accuracy"],
+            "accuracy_avg": round(sum(pct_ok["accuracy"]) / len(pct_ok["accuracy"]), 4) if pct_ok["accuracy"] else None,
+            "accuracy_latest": pct_latest["accuracy"],
+            "speed360": pct_arrays["speed360"],
+            "speed360_avg": round(sum(pct_ok["speed360"]) / len(pct_ok["speed360"]), 4) if pct_ok["speed360"] else None,
+            "speed360_latest": pct_latest["speed360"],
+            "osat": pct_arrays["osat"],
+            "osat_avg": round(sum(pct_ok["osat"]) / len(pct_ok["osat"]), 4) if pct_ok["osat"] else None,
+            "osat_latest": pct_latest["osat"],
             "sssg": growth_sssg,
             "sstg": growth_sstg,
             "st": st,
@@ -1627,13 +1664,16 @@ def compute_rising_star_data(df, workshops_by_oa):
         total = len(df[(df["MONTHNUM"] == last_m) & (df["NIELSENDMADESC"] == dma) & (df["CURR_FRAN_OWNER_NM"] == fran)])
         rate = round(n_t2_grp / total * 100) if total > 0 else 0
 
-        # Average taste score for this group's T2 stores (latest available per store),
-        # fraction 0-1 -> shown as percent
-        if "TASTE_SCORE" in df.columns:
-            taste_vals = pd.to_numeric(grp["TASTE_SCORE"], errors="coerce").dropna()
-            taste_avg = round(float(taste_vals.mean()), 4) if len(taste_vals) > 0 else None
-        else:
-            taste_avg = None
+        # Average customer-sentiment scores (fraction 0-1 -> shown as percent)
+        # for this group's T2 stores: Taste + XM360 (Accuracy / Speed / OSAT).
+        pct_avgs = {}
+        for _col, _key in (("TASTE_SCORE", "taste_avg"), ("ACCURACY_SCORE", "accuracy_avg"),
+                           ("SPEED_SCORE", "speed360_avg"), ("OSAT_SCORE", "osat_avg")):
+            if _col in df.columns:
+                _vals = pd.to_numeric(grp[_col], errors="coerce").dropna()
+                pct_avgs[_key] = round(float(_vals.mean()), 4) if len(_vals) > 0 else None
+            else:
+                pct_avgs[_key] = None
 
         dma_fran_data.append({
             "NIELSENDMADESC": str(dma),
@@ -1648,7 +1688,10 @@ def compute_rising_star_data(df, workshops_by_oa):
             "fscc_pct": fscc_pct,
             "total": int(total),
             "rate": int(rate),
-            "taste_avg": taste_avg,
+            "taste_avg": pct_avgs["taste_avg"],
+            "accuracy_avg": pct_avgs["accuracy_avg"],
+            "speed360_avg": pct_avgs["speed360_avg"],
+            "osat_avg": pct_avgs["osat_avg"],
         })
 
     # Sort: descending by n_t2
@@ -1935,6 +1978,15 @@ def compute_fop_data(df, zones_data):
                     "ct": s.get("ct", []),
                     "taste_avg": s.get("taste_avg"),
                     "taste_latest": s.get("taste_latest"),
+                    "accuracy": s.get("accuracy", []),
+                    "accuracy_avg": s.get("accuracy_avg"),
+                    "accuracy_latest": s.get("accuracy_latest"),
+                    "speed360": s.get("speed360", []),
+                    "speed360_avg": s.get("speed360_avg"),
+                    "speed360_latest": s.get("speed360_latest"),
+                    "osat": s.get("osat", []),
+                    "osat_avg": s.get("osat_avg"),
+                    "osat_latest": s.get("osat_latest"),
                     "sssg": s.get("sssg", []),
                     "sstg": s.get("sstg", []),
                 } for s in stores]
@@ -3725,7 +3777,8 @@ def main(no_cache=False, run_date=None):
             for _entry in _odata.get(_tk, []):
                 _zs = _smap.get(str(_entry.get("store", "")).strip())
                 if _zs:
-                    for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf", "ct"):
+                    for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf", "ct",
+                                "accuracy", "speed360", "osat"):
                         _entry[_kk] = _zs.get(_kk, [])
 
     # Aggregate national default/at-risk/T1-watch counts from zones_data
@@ -3843,7 +3896,8 @@ def main(no_cache=False, run_date=None):
     # them here would only duplicate data. (national/rising copies remain.)
     for _z in zones_data.values():
         for _entry in (_z.get("workshops", {}).get("boot_camp", []) + _z.get("workshops", {}).get("rising_star", [])):
-            for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf", "ct"):
+            for _kk in ("aw", "as", "ab", "ah", "af", "cb", "cf", "ct",
+                        "accuracy", "speed360", "osat"):
                 _entry.pop(_kk, None)
 
     # Attach national monthly averages for top-right display on all dashboards

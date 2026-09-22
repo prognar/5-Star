@@ -255,10 +255,11 @@ function render(){
     const f = first && first[key]!=null ? first[key] : null;
     if(v==null) return;
     const d = f!=null ? v - f : null;
-    const pcol = v>=0.40 ? '#276b4d' : v>=0.20 ? '#e65100' : '#a3122a';
+    const rev = key==='osat';
+    const pcol = rev ? (v>=0.40 ? '#a3122a' : v>=0.20 ? '#e65100' : '#276b4d') : (v>=0.40 ? '#276b4d' : v>=0.20 ? '#e65100' : '#a3122a');
     ntH += statChip('National '+label+' (latest)', (v*100).toFixed(1)+'%', pcol) +
       statChip(label+' sample', (latest[nKey]!=null?latest[nKey].toLocaleString():'\u2014')+' stores', '') +
-      (d!=null ? statChip('vs period start', (d>=0?'+':'')+(d*100).toFixed(1)+'pts', d>=0?'#276b4d':'#a3122a') : '');
+      (d!=null ? statChip('vs period start', (d>=0?'+':'')+(d*100).toFixed(1)+'pts', rev?(d>=0?'#a3122a':'#276b4d'):(d>=0?'#276b4d':'#a3122a')) : '');
   });
   nt.innerHTML = ntH;
 

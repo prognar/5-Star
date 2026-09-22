@@ -284,10 +284,10 @@ function focusBarHTML(a){
   return bar + `<div class="focus-label">${labels.join(' + ')}</div>`;
 }
 
-function tasteCellHTML(v){
+function tasteCellHTML(v, rev){
   if(v==null || isNaN(v)) return '<span class="muted">—</span>';
   const pct = (v*100).toFixed(0)+'%';
-  const col = v>=0.40 ? '#276b4d' : v>=0.20 ? '#e65100' : '#a3122a';
+  const col = rev ? (v>=0.40 ? '#a3122a' : v>=0.20 ? '#e65100' : '#276b4d') : (v>=0.40 ? '#276b4d' : v>=0.20 ? '#e65100' : '#a3122a');
   return `<span style="color:${col};font-weight:600;">${pct}</span>`;
 }
 
@@ -311,7 +311,7 @@ dmaFranData.forEach((a,i)=>{
   let wsBadge = '<span class="ws-status-badge ws-status-none">None</span>';
   if(hasCompleted) wsBadge = '<span class="ws-status-badge ws-status-completed">Completed</span>';
   else if(hasScheduled) wsBadge = '<span class="ws-status-badge ws-status-scheduled">Scheduled</span>';
-  rows += `<tr><td class="rank">${i+1}</td><td class="name">${esc(a.CURR_FRAN_OWNER_NM)}</td><td>${esc(a.NIELSENDMADESC)}</td><td>${esc(a.oa)}${zoneFlag}</td><td>${a.n_t2} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${wsBadge}</td><td>${focusBarHTML(a)}</td><td class="taste-cell">${tasteCellHTML(a.taste_avg)}</td><td class="taste-cell">${tasteCellHTML(a.accuracy_avg)}</td><td class="taste-cell">${tasteCellHTML(a.speed360_avg)}</td><td class="taste-cell">${tasteCellHTML(a.osat_avg)}</td></tr>`;
+  rows += `<tr><td class="rank">${i+1}</td><td class="name">${esc(a.CURR_FRAN_OWNER_NM)}</td><td>${esc(a.NIELSENDMADESC)}</td><td>${esc(a.oa)}${zoneFlag}</td><td>${a.n_t2} / ${a.total}</td><td><span class="rate-badge" style="background:${rateColor}22; color:${rateColor}">${a.rate}%</span></td><td>${wsBadge}</td><td>${focusBarHTML(a)}</td><td class="taste-cell">${tasteCellHTML(a.taste_avg)}</td><td class="taste-cell">${tasteCellHTML(a.accuracy_avg)}</td><td class="taste-cell">${tasteCellHTML(a.speed360_avg)}</td><td class="taste-cell">${tasteCellHTML(a.osat_avg,true)}</td></tr>`;
 });
 document.getElementById('dmaFranTable').innerHTML = rows;
 

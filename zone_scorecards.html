@@ -504,12 +504,12 @@ function setGroup(g){
   renderPortfolio();
 }
 
-function sparkline(vals, w=60, h=20){
+function sparkline(vals, w=60, h=20, rev){
   const v = vals.filter(x=>x!=null);
   if(v.length<1) return '';
   const lo=Math.min(...v)-0.2, hi=Math.max(...v)+0.2, rng=hi-lo||1;
   const trend = v[v.length-1] - v[0];
-  const col = trend>0?'#276b4d':trend<0?'#a3122a':'#6b6560';
+  const col = rev ? (trend<0?'#276b4d':trend>0?'#a3122a':'#6b6560') : (trend>0?'#276b4d':trend<0?'#a3122a':'#6b6560');
   if(v.length===1){
     const cx = (w-1)/2, cy = h/2;
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><circle cx="${cx}" cy="${cy}" r="2.5" fill="${col}"/></svg>`;
@@ -737,16 +737,16 @@ function trendArrow(slope){
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function fm(v){ return v!=null ? v.toFixed(2) : '—'; }
-function pctCell(s, latestKey, arrKey){
+function pctCell(s, latestKey, arrKey, rev){
   const v = s[latestKey];
   if(v==null) return '<span class="muted" style="font-size:10px">—</span>';
   const pct = (v*100).toFixed(0)+'%';
-  const col = v >= 0.40 ? 'var(--pine)' : v >= 0.20 ? '#e65100' : '#a3122a';
+  const col = rev ? (v >= 0.40 ? '#a3122a' : v >= 0.20 ? '#e65100' : 'var(--pine)') : (v >= 0.40 ? 'var(--pine)' : v >= 0.20 ? '#e65100' : '#a3122a');
   const tv = (s[arrKey]||[]).filter(x=>x!=null);
   let chg = '';
   if(tv.length >= 2){
     const dpp = (tv[tv.length-1] - tv[tv.length-2])*100;
-    chg = ' <span style="font-size:9px;'+(dpp>=0?'color:#276b4d':'color:#a3122a')+'">'+(dpp>=0?'+':'')+dpp.toFixed(1)+'pp</span>';
+    chg = ' <span style="font-size:9px;'+(rev?(dpp>=0?'color:#a3122a':'color:#276b4d'):(dpp>=0?'color:#276b4d':'color:#a3122a'))+'">'+(dpp>=0?'+':'')+dpp.toFixed(1)+'pp</span>';
   }
   return '<span style="color:'+col+';font-weight:600;font-family:IBM Plex Mono;font-size:11px">'+pct+'</span>'+chg;
 }
@@ -1022,7 +1022,7 @@ function renderStoreLevel(d, body){
       <td style="text-align:center">${pctCell(s,'taste_latest','ct')}</td>
       <td style="text-align:center">${pctCell(s,'accuracy_latest','accuracy')}</td>
       <td style="text-align:center">${pctCell(s,'speed360_latest','speed360')}</td>
-      <td style="text-align:center">${pctCell(s,'osat_latest','osat')}</td>
+      <td style="text-align:center">${pctCell(s,'osat_latest','osat',true)}</td>
       <td class="pf-spark">${sparkline(MONTHS.map((_,i)=>s['m'+(i+1)]))}</td>
     </tr>`;
   });
@@ -1048,7 +1048,7 @@ function renderStoreLevel(d, body){
         <td style="text-align:center">${pctCell(s,'taste_latest','ct')}</td>
         <td style="text-align:center">${pctCell(s,'accuracy_latest','accuracy')}</td>
         <td style="text-align:center">${pctCell(s,'speed360_latest','speed360')}</td>
-        <td style="text-align:center">${pctCell(s,'osat_latest','osat')}</td>
+        <td style="text-align:center">${pctCell(s,'osat_latest','osat',true)}</td>
         <td class="pf-spark">${sparkline(MONTHS.map((_,i)=>s['m'+(i+1)]))}</td></tr>`;
     });
     document.getElementById('pfStoreBody').innerHTML = rows||'<tr><td colspan="'+(9+nCols)+'" style="padding:20px;text-align:center;color:var(--muted);font-family:Inter">No stores match.</td></tr>';
@@ -1133,17 +1133,18 @@ function renderStoreDetail(d, body){
   function pctCompCard(label, ak, hex){
     const vals = (s[ak]||[]);
     const vAvg = avg(vals);
+    const rev = ak==='osat';
     return `<div class="comp-card" style="border:1px solid ${hex}33;background:${hex}08;">
     <div class="comp-name">${label}</div>
-    <div class="comp-val" style="color:${vAvg!=null?(vAvg>=0.40?'#276b4d':vAvg>=0.20?'#e65100':'#a3122a'):'var(--muted)'}">${vAvg!=null?(vAvg*100).toFixed(0)+'%':'—'}</div>
+    <div class="comp-val" style="color:${vAvg!=null?(rev?(vAvg>=0.40?'#a3122a':vAvg>=0.20?'#e65100':'#276b4d'):(vAvg>=0.40?'#276b4d':vAvg>=0.20?'#e65100':'#a3122a')):'var(--muted)'}">${vAvg!=null?(vAvg*100).toFixed(0)+'%':'—'}</div>
     <div style="font-family:IBM Plex Mono;font-size:10px;color:var(--muted);margin-top:2px;">
       ${vals.map((cv,j)=>{
         const sep = j>0?' · ':'';
-        const clr = cv!=null ? 'color:'+(cv>=0.40?'#276b4d;font-weight:600':cv>=0.20?'#e65100':'#a3122a;font-weight:600') : '';
+        const clr = cv!=null ? 'color:'+(rev?(cv>=0.40?'#a3122a;font-weight:600':cv>=0.20?'#e65100':'#276b4d;font-weight:600'):(cv>=0.40?'#276b4d;font-weight:600':cv>=0.20?'#e65100':'#a3122a;font-weight:600')) : '';
         return sep + '<span'+(clr?' style="'+clr+'"':'')+'>'+(cv!=null?(cv*100).toFixed(0)+'%':'—')+'</span>';
       }).join('')}
     </div>
-    <div class="comp-spark">${sparkline(vals)}</div>
+    <div class="comp-spark">${sparkline(vals,60,20,rev)}</div>
   </div>`;
   }
   html += '<div class="comp-grid" style="grid-template-columns:repeat(4,1fr);margin-top:10px;">';

@@ -269,10 +269,10 @@ const COMP_COLORS = {cw:'#a3122a',cs:'#c07f1f',ch:'#5b7a9e',cb:'#7a5ba3',cf:'#6b
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fm(v){ return v!=null&&!isNaN(v) ? (Math.round(v*100)/100).toFixed(2) : '—'; }
-function fopTasteCell(v){
+function fopTasteCell(v, rev){
   if(v==null || isNaN(v)) return '<span class="muted" style="font-size:10px">—</span>';
   const pct = (v*100).toFixed(0)+'%';
-  const col = v >= 0.40 ? '#276b4d' : v >= 0.20 ? '#e65100' : '#a3122a';
+  const col = rev ? (v >= 0.40 ? '#a3122a' : v >= 0.20 ? '#e65100' : '#276b4d') : (v >= 0.40 ? '#276b4d' : v >= 0.20 ? '#e65100' : '#a3122a');
   return '<span style="color:' + col + ';font-weight:600;font-family:IBM Plex Mono;font-size:11px">' + pct + '</span>';
 }
 function scoreClass(v){ if(v==null||isNaN(v)) return 'sc-na'; if(v>=5) return 'sc-t5'; if(v>=4) return 'sc-t4'; if(v>=3) return 'sc-t3'; if(v>=2) return 'sc-t2'; return 'sc-t1'; }
@@ -344,7 +344,7 @@ function computeStoreStatus(s){
   if(latest!=null && latest>=2 && latest<2.5) return 'tw';
   return 'ok';
 }
-function sparkline(vals, w=60, h=20){
+function sparkline(vals, w=60, h=20, rev){
   const v = vals.filter(x=>x!=null);
   if(v.length===0) return '';
   if(v.length===1){
@@ -356,7 +356,7 @@ function sparkline(vals, w=60, h=20){
   const ys = v.map(x=>h-(x-lo)/rng*(h-2)-1);
   const pts = xs.map((x,i)=>`${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
   const trend = v[v.length-1] - v[0];
-  const col = trend>0?'#276b4d':trend<0?'#a3122a':'#6b6560';
+  const col = rev ? (trend<0?'#276b4d':trend>0?'#a3122a':'#6b6560') : (trend>0?'#276b4d':trend<0?'#a3122a':'#6b6560');
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${xs[xs.length-1].toFixed(1)}" cy="${ys[ys.length-1].toFixed(1)}" r="2" fill="${col}"/></svg>`;
 }
 
@@ -932,7 +932,7 @@ function renderStoreList(fran){
       '<td style="text-align:center">' + fopTasteCell(s.taste_latest) + '</td>' +
       '<td style="text-align:center">' + fopTasteCell(s.accuracy_latest) + '</td>' +
       '<td style="text-align:center">' + fopTasteCell(s.speed360_latest) + '</td>' +
-      '<td style="text-align:center">' + fopTasteCell(s.osat_latest) + '</td>' +
+      '<td style="text-align:center">' + fopTasteCell(s.osat_latest,true) + '</td>' +
       '<td style="text-align:center">' + trendArrow(s.t) + '</td>' +
       '<td><button onclick="showStoreDetail(\'' + esc(s.s) + '\')" style="font-family:IBM Plex Mono;font-size:9.5px;cursor:pointer;border:1px solid var(--line);background:var(--card);padding:3px 8px;border-radius:2px;color:var(--muted)">Detail</button></td>' +
     '</tr>';
@@ -1044,16 +1044,17 @@ function showStoreDetail(storeId){
   [['Taste','ct','#c07f1f'],['Accuracy','accuracy','#d97706'],['XM Speed','speed360','#0ea5e9'],['OSAT B2B','osat','#9333ea']].forEach(([label,ak,hex])=>{
     const tv = s[ak] || [];
     const tvAvg = tv.filter(v=>v!=null).length ? tv.reduce((a,b)=>a+b,0)/tv.filter(v=>v!=null).length : null;
+    const rev = ak==='osat';
     if(tvAvg!=null || tv.length){
       scH += '<div class="comp-card" style="border:1px solid ' + hex + '33;background:' + hex + '08">' +
           '<div class="comp-name">' + label + '</div>' +
-          '<div class="comp-val" style="color:' + (tvAvg!=null?(tvAvg>=0.40?'#276b4d':tvAvg>=0.20?'#e65100':'#a3122a'):'var(--muted)') + '">' + (tvAvg!=null?(tvAvg*100).toFixed(0)+'%':'\u2014') + '</div>' +
+          '<div class="comp-val" style="color:' + (tvAvg!=null?(rev?(tvAvg>=0.40?'#a3122a':tvAvg>=0.20?'#e65100':'#276b4d'):(tvAvg>=0.40?'#276b4d':tvAvg>=0.20?'#e65100':'#a3122a')):'var(--muted)') + '">' + (tvAvg!=null?(tvAvg*100).toFixed(0)+'%':'\u2014') + '</div>' +
           '<div class="comp-mo">' + tv.map((cv,j) => {
             const sep = j>0?' \u00b7 ':'';
-            const clr = cv!=null?'color:' + (cv>=0.40?'#276b4d;font-weight:600':cv>=0.20?'#e65100':'#a3122a;font-weight:600'):'';
+            const clr = cv!=null?'color:' + (rev?(cv>=0.40?'#a3122a;font-weight:600':cv>=0.20?'#e65100':'#276b4d;font-weight:600'):(cv>=0.40?'#276b4d;font-weight:600':cv>=0.20?'#e65100':'#a3122a;font-weight:600')):'';
             return sep + '<span' + (clr?' style="' + clr + '"':'') + '>' + (cv!=null?(cv*100).toFixed(0)+'%':'\u2014') + '</span>';
           }).join('') + '</div>' +
-          '<div style="margin-top:6px">' + sparkline(tv) + '</div>' +
+          '<div style="margin-top:6px">' + sparkline(tv,60,20,rev) + '</div>' +
         '</div>';
     }
   });
@@ -1109,10 +1110,11 @@ function showStoreDetail(storeId){
   // XM360 rows (Accuracy / XM Speed / OSAT B2B)
   [['Accuracy','accuracy','#d97706'],['XM Speed','speed360','#0ea5e9'],['OSAT B2B','osat','#9333ea']].forEach(([label,key,clr])=>{
     const pv = s[key] || [];
+    const rev = key==='osat';
     html += '<tr style="background:var(--paper)"><td style="color:' + clr + ';font-weight:500">' + label + '</td>';
     for(let i=0;i<MONTHS.length;i++){
       const cv2 = pv[i];
-      html += '<td><span style="' + (cv2!=null?'color:' + (cv2>=0.40?'#276b4d;font-weight:600':cv2>=0.20?'#e65100':'#a3122a;font-weight:600'):'color:var(--muted)') + ';font-family:IBM Plex Mono">' + (cv2!=null?(cv2*100).toFixed(0)+'%':'\u2014') + '</span></td>';
+      html += '<td><span style="' + (cv2!=null?'color:' + (rev?(cv2>=0.40?'#a3122a;font-weight:600':cv2>=0.20?'#e65100':'#276b4d;font-weight:600'):(cv2>=0.40?'#276b4d;font-weight:600':cv2>=0.20?'#e65100':'#a3122a;font-weight:600')):'color:var(--muted)') + ';font-family:IBM Plex Mono">' + (cv2!=null?(cv2*100).toFixed(0)+'%':'\u2014') + '</span></td>';
     }
     const pvValid = pv.filter(v=>v!=null);
     const pvY = pvValid.length ? pvValid.reduce((a,b)=>a+b,0)/pvValid.length : null;

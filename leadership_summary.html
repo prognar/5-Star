@@ -460,9 +460,10 @@ document.getElementById('nStores').textContent = NAT.n_stores_latest.toLocaleStr
     const pvals = natM.map(m=>m[key]).filter(v=>v!=null);
     const pv = pvals[pvals.length-1], pp = pvals[pvals.length-2];
     if(pv != null){
-      const pCol = pv >= 0.40 ? '#8fd0a8' : pv >= 0.20 ? '#f2b25c' : '#f2a0a0';
+      const rev = key==='osat';
+      const pCol = rev ? (pv >= 0.40 ? '#f2a0a0' : pv >= 0.20 ? '#f2b25c' : '#8fd0a8') : (pv >= 0.40 ? '#8fd0a8' : pv >= 0.20 ? '#f2b25c' : '#f2a0a0');
       const pChg = pp != null ? (pv - pp)*100 : null;
-      const pPort = pChg != null ? ' <span style="color:'+(pChg>=0?'#8fd0a8':'#f2a0a0')+'">'+(pChg>=0?'+':'')+pChg.toFixed(1)+'pp</span>' : '';
+      const pPort = pChg != null ? ' <span style="color:'+((rev?(pChg>=0?'#f2a0a0':'#8fd0a8'):(pChg>=0?'#8fd0a8':'#f2a0a0')))+'">'+(pChg>=0?'+':'')+pChg.toFixed(1)+'pp</span>' : '';
       document.getElementById(elId).innerHTML = 'National '+label+': <span style="color:'+pCol+';font-weight:600;">'+(pv*100).toFixed(0)+'%</span>'+pPort;
     }
   });

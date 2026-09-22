@@ -491,6 +491,13 @@ function getViewLabel(i){
 function getViewCount(){
   return _pfState.view==='quarterly'?2:_pfState.view==='ytd'?1:MONTHS.length;
 }
+function viewAggregate(vals){
+  if(_pfState.view==='monthly'){
+    for(let i=vals.length-1;i>=0;i--){ if(vals[i]!=null) return vals[i]; }
+    return null;
+  }
+  return avg(_pfState.view==='quarterly' ? vals.slice(Math.ceil(MONTHS.length/2)) : vals);
+}
 function avg(arr){ const v=arr.filter(x=>x!=null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; }
 
 function setView(v){
@@ -1115,7 +1122,7 @@ function renderStoreDetail(d, body){
   html += '<div class="comp-grid">';
   ['cw','cs','cb','ch','cf'].forEach(k=>{
     const vals = s[k]||[];
-    const avgVal = avg(vals);
+    const avgVal = viewAggregate(vals);
     html += `<div class="comp-card">
       <div class="comp-name">${COMP_LABELS[k]}</div>
       <div class="comp-val" style="color:${avgVal>=5?'#00B050':avgVal>=4?'#A9D18E':avgVal>=3?'#70AD47':avgVal>=2?'#F15B73':'#C90F2D'}">${fm(avgVal)}</div>
@@ -1134,7 +1141,7 @@ function renderStoreDetail(d, body){
   // Customer-sentiment cards (Taste + XM360; fraction -> percent)
   function pctCompCard(label, ak, hex){
     const vals = (s[ak]||[]);
-    const vAvg = avg(vals);
+    const vAvg = viewAggregate(vals);
     const rev = ak==='osat';
     return `<div class="comp-card" style="border:1px solid ${hex}33;background:${hex}08;">
     <div class="comp-name">${label}</div>

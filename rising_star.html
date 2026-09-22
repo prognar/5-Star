@@ -237,7 +237,7 @@ function sparkline(vals, w=60, h=20){
 })();
 
 const map = L.map('map', {scrollWheelZoom:false}).setView([39.5,-98.35], 4);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {attribution:'&copy; OpenStreetMap contributors &copy; CARTO', maxZoom:12, subdomains:'abcd'}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {attribution:'Tiles &copy; Esri \u2014 Esri, DeLorme, NAVTEQ', maxZoom:12}).addTo(map);
 const _rsLayers = {};
 points.forEach(p=>{
   const bind = codeMap[p.binding];

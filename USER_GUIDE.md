@@ -8,8 +8,8 @@ Four HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`. 
 
 ### Requirements
 
-- **Python 3.9+** with standard library (no pip packages required)
-- **(Optional) OpenCode LLM server** — set `OPENCODE_SERVER_PASSWORD` to enable AI-generated narrative summaries. Without it, data-driven fallback summaries are used and reports always have content.
+- **Python 3.9+**, plus the `anthropic` package (`pip install anthropic`) if you want AI-generated summaries
+- **(Optional) Claude API access** — set `ANTHROPIC_API_KEY` (or run `ant auth login`) to enable AI-generated narrative summaries. Without it, data-driven fallback summaries are used and reports always have content.
 - **Monthly CSV** — the script auto-detects which months are present in the CSV and adjusts all labels, sparklines, and scoring windows accordingly. No month references are hardcoded.
 
 ### Required Files
@@ -25,6 +25,7 @@ Drop these into the `Reporting` folder:
 | File | Description |
 |---|---|
 | `Workshops.csv` | Boot Camp and Rising Star workshop attendance records — enables the Workshops tab and workshop effectiveness analysis |
+| `Alignment.csv` | Store org-hierarchy alignment (OA, Zone, FOP, Director, DMA, Region, Area, address, lat/long, rolling 3-month 5-Star avg, Tier) — enables the Alignment tab on the Franchisee Dashboard |
 
 ### Running the Script
 
@@ -36,7 +37,7 @@ Outputs four self-contained HTML files. No server, no database — share them as
 
 ### LLM Summaries
 
-Summaries are cached in `_summaries.json`. Delete this file to force regeneration. If the OpenCode server is unavailable, deterministic fallback summaries (data-driven) are used for leadership, zones, and FOPs — the reports always have content.
+Summaries are cached in `_summaries.json`. Delete this file to force regeneration — the cache does not invalidate on its own when only the summary-generation logic changes, only when the report's month range changes. If the Claude API is unavailable (no `ANTHROPIC_API_KEY` / auth profile, or a request fails), deterministic fallback summaries (data-driven) are used for leadership, zones, and FOPs — the reports always have content.
 
 ### Exporting Data from Snowflake
 
@@ -104,6 +105,123 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 
 </details>
 
+<details>
+<summary><code>Alignment.csv</code> — store org-hierarchy alignment (optional; powers the Alignment tab in <code>fz_dashboard.html</code>)</summary>
+
+Run `USE DATABASE DATASCIENCE;` first (the connection has no default database).
+
+```sql
+WITH MONTH_LOOKUP AS (
+    SELECT * FROM VALUES
+        ('JANUARY',1),('FEBRUARY',2),('MARCH',3),('APRIL',4),
+        ('MAY',5),('JUNE',6),('JULY',7),('AUGUST',8),
+        ('SEPTEMBER',9),('OCTOBER',10),('NOVEMBER',11),('DECEMBER',12)
+    AS T(MONTHNAME, MONTHNO)
+),
+FIVESTAR_MONTHLY AS (
+    SELECT DISTINCT
+         V.CHAINED_STORE_ID
+        ,V.YEARNO
+        ,V.MONTHNAME
+        ,V.OVERALL_FIVESTAR
+        ,CAST(REPLACE(V.YEARNO, 'Y', '') AS INT) * 12 + ML.MONTHNO AS MONTH_SEQ
+    FROM AXC1195.VW_FIVESTAR_SUMMARY V
+    JOIN MONTH_LOOKUP ML ON V.MONTHNAME = ML.MONTHNAME
+),
+LATEST_SEQ AS (
+    SELECT CHAINED_STORE_ID, MAX(MONTH_SEQ) AS LATEST_MONTH_SEQ
+    FROM FIVESTAR_MONTHLY
+    WHERE OVERALL_FIVESTAR IS NOT NULL
+    GROUP BY ALL
+),
+FIVESTAR_3MO AS (
+    SELECT F.CHAINED_STORE_ID, ROUND(AVG(F.OVERALL_FIVESTAR), 2) AS FIVESTAR_AVG_3MO
+    FROM FIVESTAR_MONTHLY F
+    JOIN LATEST_SEQ L ON F.CHAINED_STORE_ID = L.CHAINED_STORE_ID
+       AND F.MONTH_SEQ BETWEEN L.LATEST_MONTH_SEQ - 2 AND L.LATEST_MONTH_SEQ
+    WHERE F.OVERALL_FIVESTAR IS NOT NULL
+    GROUP BY ALL
+)
+ZONE_LATEST AS (
+    -- Zone comes from whichever of MANUAL_ZONE_OVERRIDES / STORE_ZONE_MAP was
+    -- updated most recently for that store — NOT from OPX_ALIGNMENT, which
+    -- can disagree with these two (confirmed 364 stores in disagreement as of
+    -- 2026-09-30) and is missing ~119 open stores entirely.
+    SELECT CHAINED_STORE_ID, ZONE
+    FROM (
+        SELECT CHAINED_STORE_ID, ZONE, UPDATED_TS,
+            ROW_NUMBER() OVER (PARTITION BY CHAINED_STORE_ID ORDER BY UPDATED_TS DESC) AS RN
+        FROM (
+            SELECT CHAINED_STORE_ID, ZONE, UPDATED_TS FROM AXC1195.MANUAL_ZONE_OVERRIDES
+            UNION ALL
+            SELECT CHAINED_STORE_ID, ZONE, UPDATED_TS FROM AXC1195.STORE_ZONE_MAP
+        )
+    )
+    WHERE RN = 1
+),
+FOP_LATEST AS (
+    -- FOP is assigned per-FRANCHISEE (not per-store) via OPX_FRAN_FOP_MAP.
+    SELECT FRANCHISEE_NAME, FOP_NAME
+    FROM (
+        SELECT FRANCHISEE_NAME, FOP_NAME, UPDATED_TS,
+            ROW_NUMBER() OVER (PARTITION BY FRANCHISEE_NAME ORDER BY UPDATED_TS DESC) AS RN
+        FROM AXC1195.OPX_FRAN_FOP_MAP
+        WHERE IS_ACTIVE = 1
+    )
+    WHERE RN = 1
+),
+DIRECTOR_LATEST AS (
+    -- Director is assigned per-FOP via OPX_FOP_DIRECTOR_MAP.
+    SELECT FOP_NAME, DIRECTOR_NAME
+    FROM (
+        SELECT FOP_NAME, DIRECTOR_NAME, UPDATED_TS,
+            ROW_NUMBER() OVER (PARTITION BY FOP_NAME ORDER BY UPDATED_TS DESC) AS RN
+        FROM AXC1195.OPX_FOP_DIRECTOR_MAP
+        WHERE IS_ACTIVE = 1
+    )
+    WHERE RN = 1
+)
+SELECT
+     A.CHAINED_STORE_ID
+    ,A.CURR_FRAN_OWNER_NM AS FRANCHISEE
+    ,O.OA
+    ,Z.ZONE
+    ,FM.FOP_NAME
+    ,DM.DIRECTOR_NAME
+    ,A.NIELSENDMADESC AS DMA
+    ,A.FREGIONDESC AS REGION
+    ,A.FAREADESC AS AREA
+    ,A.RESTMAILADDR1
+    ,A.RESTMAILCITYNM AS CITY
+    ,A.RESTMAILSTATEID AS STATE
+    ,A.LATITUDE
+    ,A.LONGITUDE
+    ,FS.FIVESTAR_AVG_3MO
+    ,CASE
+        WHEN FS.FIVESTAR_AVG_3MO >= 4   THEN 'Tier 3'
+        WHEN FS.FIVESTAR_AVG_3MO >= 2.5 THEN 'Tier 2'
+        WHEN FS.FIVESTAR_AVG_3MO IS NOT NULL THEN 'Tier 1'
+        ELSE NULL
+     END AS TIER
+FROM DSC.ALIGN_DIM_V1 A
+LEFT JOIN FIVESTAR_3MO FS ON A.CHAINED_STORE_ID = FS.CHAINED_STORE_ID
+LEFT JOIN ZONE_LATEST Z ON A.CHAINED_STORE_ID = Z.CHAINED_STORE_ID
+LEFT JOIN AXC1195.ZONE_OA_MAP O ON Z.ZONE = O.ZONE
+-- OA is derived FROM the zone (ZONE_OA_MAP is a clean 15-row 1:1 lookup), not
+-- stored per-store — this is why OA never needs its own override table.
+LEFT JOIN FOP_LATEST FM ON UPPER(A.CURR_FRAN_OWNER_NM) = UPPER(FM.FRANCHISEE_NAME)
+LEFT JOIN DIRECTOR_LATEST DM ON FM.FOP_NAME = DM.FOP_NAME
+WHERE A.OWNERID <> 'L'
+  AND A.CURR_FRAN_OWNER_NM NOT LIKE 'PIZZA HUT%'
+  AND A.STATUSDESC = 'Open';
+```
+
+**Why not join `OPX_ALIGNMENT` directly (the first version of this query)?** It was missing ~119 open stores entirely and disagreed with `STORE_ZONE_MAP` on Zone for 364 more — confirmed by querying both tables directly. The corrected query above (the production pattern already used elsewhere) brought unmapped stores from 119 down to 0. If a store still comes back unmapped, add it to `AXC1195.MANUAL_ZONE_OVERRIDES` directly in Snowflake — the SQL already reads from that table, so no code change is needed here.
+
+No LLM/Claude call is involved in this pipeline — it's a pure Snowflake query → CSV → static HTML table.
+
+</details>
+
 ---
 
 ## 1. `leadership_summary.html` — National Executive View
@@ -152,7 +270,18 @@ ORDER BY W.WORKSHOP_DATE, WR.STORE_NUMBER;
 
 ### Score Mode Toggle
 
-Toggle between **LM** (Last Month), **LQ** (Last Quarter), and **YTD** (Year-to-Date) to change how scores are displayed. The headline score and all table averages update to reflect the selected mode. In LQ mode, scores are computed as a rolling 3-month average.
+Toggle between **LM** (Last Month), **LQ** (Last Quarter), and **YTD** (Year-to-Date) to change how scores are displayed. The toggle is **unified** — it drives the headline score, the metric cards, the quintile window, and every table average together. In LQ mode, scores are computed as a rolling 3-month average (last 3 months, e.g. Jun–Aug). The default mode is YTD. The quintile section stays visible at every drill level, including franchisee — at the franchisee level it shows the parent FOP's quintile breakdown as top-of-page context while the store list below is franchisee-specific.
+
+### Alignment Tab
+
+A second tab (**Portfolio** / **Alignment**) alongside the drill-down view above. Lists every open franchised store from `Alignment.csv` (org-hierarchy: OA, Zone, FOP, Director, DMA, Region, Area, mailing address, lat/long, rolling 3-month 5-Star average, and Tier) in one flat, sortable, filterable table — independent of the Portfolio tab's Director/FOP drill-down.
+
+- **Sort:** click any column header to sort ascending/descending (same `.sortable` pattern as the rest of the app).
+- **Filter:** dropdowns for Zone, FOP, Director, State, and Tier (all low-cardinality, built from the data at render time) plus a free-text search box that matches store #, franchisee, city, DMA, area, and region — covers the higher-cardinality fields (Area has ~700 distinct values, DMA ~200, Region ~190) without needing 700-option dropdowns.
+- **Export CSV:** exports exactly the currently filtered + sorted rows (not the full table) — what's on screen is what you get. The downloaded filename encodes the active filters (e.g. `Store_Alignment_zone-DeepSouth_tier-Tier1_2026-09-29.csv`) so a shared export is self-documenting about what it contains.
+- No LLM/Claude call is involved anywhere in this tab.
+
+**Every open store should have a Zone/OA.** `Alignment.csv` only includes open stores (`STATUSDESC = 'Open'` in the SQL), so any store still showing "Unassigned" is a genuine gap, not a closed-store artifact. The SQL (see below) already resolves Zone from `AXC1195.MANUAL_ZONE_OVERRIDES` ∪ `STORE_ZONE_MAP` (most-recently-updated wins) and derives OA from Zone via `AXC1195.ZONE_OA_MAP`, so this should normally be empty. If `generate_reports.py` ever finds a gap anyway, it writes the current list to `Unmapped_Zone_Stores.csv` (store #, franchisee, DMA, city, state, lat/long) — the fix for any store on that list is to add it to `AXC1195.MANUAL_ZONE_OVERRIDES` in Snowflake directly (the real override table the SQL reads from), not to the report generator's code.
 
 ### Trend Arrows
 
@@ -222,3 +351,161 @@ Status is recomputed from store data at render time (not from the CSV) using the
 **Why zone-agnostic:** Rising Star targeting cuts across OA zone boundaries — it follows franchisee footprint within a DMA, so a row may span multiple OAs.
 
 ---
+
+## 5. `leadership_brief.html` — Leadership Brief (Private)
+
+**Audience:** Leadership only (recognition-focused). **Not linked** from the shared pages — open the file directly.
+
+**What it does:** A single, LLM-driven executive pulse that pulls together national highlights, OA recognition, Boot Camp performance, and franchisee movement into one page refreshed each month when 5-Star and workshop data update.
+
+### Sections
+- **National Summary** — LLM narrative covering *What's working well* and *Where the opportunities are*, backed by the period's numbers.
+- **Recognition Spotlight** — 1–2 named OAs who "swung hard" this period (the standout can change month to month). The LLM picks whoever has the strongest data-backed story — biggest average move, Tier 1 reduction / stores moved up, or Boot Camp impact.
+- **OA Front** — zone grid: stores, from→to average, Δ avg, T1/T3 movement, and workshops held/upcoming.
+- **Boot Camp Pulse** — KPI cards (held / upcoming / stores improved / lift vs control), an LLM narrative covering 30/60/90 follow-ups, number completed this period, how effective they've been, and who did the most, plus a per-zone effectiveness table.
+- **Franchisee Level** — franchisees on the rise (largest LQ→latest improvement) and franchisees to watch (by defaulting/at-risk/watch counts).
+
+### Data refresh
+Runs automatically as part of `python generate_reports.py`. The three LLM narratives are cached in `_summaries.json` under `_brief_version`; they regenerate when the month range changes. If the Claude API is unavailable, the data-driven tables and cards still render (narrative spots show a placeholder and reuse the last good cached text when available).
+
+---
+---
+
+## Reporting session changelog — 2026-09-30
+
+All changes below are **durable**: they live in `generate_reports.py`. Verified after `python generate_reports.py --run-date 2026-09-29` + `scripts/_verify_five.py` → `OVERALL: PASS`.
+
+### 1. Alignment.csv refresh + reference-file cross-check
+- Re-pulled `Alignment.csv` from Snowflake after the user updated `OPX_ALIGNMENT`: 45 stores that previously showed "Unassigned" FOP/Director now correctly resolve (all to Kelly Sharpe / Betty Olvera); confirmed by diffing the freshly-pulled data against what was previously embedded in `fz_dashboard.html`.
+- Cross-checked the user-supplied `Alignments - 15 zones.csv` against the live SQL pull: 114 stores where the reference file has a real OA/Zone/FOP/Director value and the SQL join returns null — **zero true conflicts** (no case where both sources have a value and disagree). 29 stores in the reference file don't exist in `DSC.ALIGN_DIM_V1` at all (confirmed directly against the source table, not just excluded by the query's `WHERE` clause) — likely closed/decommissioned stores lingering in that reference file. 3 stores are in the SQL pull but not the reference file.
+- Found and fixed a genuine cross-report inconsistency: the reference file still has this franchisee as **"GARRETT MCGINN"**; the SQL pull already has it as **"DONALD RIZZIE"** (corrected upstream in Snowflake since the original pull); the rest of the dashboard has standardized on **"DON RIZZIE"** (see the `_fran_mask`/"Franchisee normalization (2026-09)" comment near the top of `generate_reports.py`, and the OA-remap alias list further down). `load_alignment_data()` now folds both "GARRETT MCGINN" and "DONALD RIZZIE" into "DON RIZZIE" so the Alignment tab agrees with the rest of the app.
+
+### 2. `MANUAL_ZONE_OVERRIDES` (Python dict) — superseded by item 3 below, same day
+- Added a Python-side `MANUAL_ZONE_OVERRIDES` dict in `generate_reports.py` as a stopgap for the 118 stores unmapped under the `OPX_ALIGNMENT`-only join (see item 1). **Removed later the same session** once it turned out Snowflake already has a real `AXC1195.MANUAL_ZONE_OVERRIDES` table for exactly this purpose — see item 3. Left here only so the session history makes sense; there is no Python-side override dict in the current code.
+
+### 3. Rewrote the Alignment.csv SQL — `OPX_ALIGNMENT` was the wrong join target
+- The user pointed out two more tables exist: `AXC1195.MANUAL_ZONE_OVERRIDES` (542 rows, real manual override table) and `AXC1195.STORE_ZONE_MAP` (5,014 rows, auto-computed). Querying Snowflake directly: **0** of the 118 unmapped stores exist in either table (so the unmapped list itself was accurate), but **364** open stores have a Zone in `OPX_ALIGNMENT` that actively **disagrees** with `STORE_ZONE_MAP` — a correctness problem 3x bigger than the coverage gap, invisible from the CSV alone.
+- The user supplied the actual production join pattern: Zone comes from `MANUAL_ZONE_OVERRIDES ∪ STORE_ZONE_MAP` (latest `UPDATED_TS` wins), OA is derived *from* Zone via `AXC1195.ZONE_OA_MAP` (a clean 15-row 1:1 lookup — OA is not a per-store field at all), FOP comes from `AXC1195.OPX_FRAN_FOP_MAP` keyed by franchisee name (`IS_ACTIVE = 1`, latest `UPDATED_TS`), and Director comes from `AXC1195.OPX_FOP_DIRECTOR_MAP` keyed by FOP name (same pattern). None of these go through `OPX_ALIGNMENT`.
+- Rewrote and tested the corrected query against Snowflake: unmapped stores dropped from 119 to 0 (the "1" remaining is the pre-existing single garbage all-null row already filtered out elsewhere), confirming this is the right join. See the updated SQL in the `Alignment.csv` section above.
+- Removed the Python-side `MANUAL_ZONE_OVERRIDES` dict from `generate_reports.py` (item 2) — it duplicated a mechanism that already exists correctly in Snowflake. Any future store-mapping gap should be fixed by adding a row to `AXC1195.MANUAL_ZONE_OVERRIDES` directly, not by editing this codebase.
+- Also tried to fix the repeated Snowflake SSO browser popups: installed `keyring` (silences the "cannot cache id token" warning) and tested `client_store_temporary_credential=True` explicitly — neither stopped the browser from reopening on every connection. This points to ID-token caching needing to be enabled at the **Snowflake account level** (an admin-side security-integration setting for external-browser SSO), not something fixable from the client. Flagged for the user rather than spending further turns on client-side workarounds.
+
+### 4. Fixed slow page load — root cause was the external Google Fonts `@import`, not the embedded data size
+- User asked whether the ~18 MB `fz_dashboard.html` file (largely `FOP_DATA`, now also `ALIGNMENT_DATA`) could be made to load faster. Measured first rather than guessing: in a headless-browser test harness, actually parsing all 16 MB of `FOP_DATA` as a JS object literal took a consistent **33-42 ms** — the embedded-data hypothesis was wrong.
+- Isolated the real cause with a controlled A/B test: the same file with only the `@import url('https://fonts.googleapis.com/...')` line removed loaded in **5-13 ms** across three runs, vs. a wildly inconsistent **2.6-33 seconds** with it present (this environment has unreliable outbound network access, so the import's DNS/connection resolution is what stalls the page — a corporate VPN or firewall that blocks/throttles `fonts.googleapis.com` would cause the same thing on a real machine).
+- Removed the identical `@import` line from **all five** reports (`fz_dashboard.html`, `zone_scorecards.html`, `leadership_summary.html`, `leadership_brief.html`, `rising_star.html`) — same line, same problem, in every one. Font-family declarations already end in generic fallbacks (`sans-serif`/`monospace`), so removal is a graceful, safe degradation (loses the distinctive Oswald/Inter/IBM Plex Mono look, gains zero external network dependency — actually closer to the reports' own "self-contained, share as a file attachment" design goal from `PRESENTATION.md`).
+- Verified: `scripts/_verify_five.py` → `OVERALL: PASS` after regenerating through the normal pipeline (the removal survives `replace_data_block`/`_replace_month_refs` since those only touch the data consts and month text, not the `<style>` block). Re-measured the real `fz_dashboard.html` post-fix: consistent 5-10 ms load across three runs.
+
+---
+
+## Reporting session changelog — 2026-09-29
+
+All changes below are **durable**: they live in `generate_reports.py`, `fz_dashboard.html`, `zone_scorecards.html`, and `leadership_summary.html`. Verified after `python generate_reports.py --run-date 2026-09-29` + `scripts/_verify_five.py` → `OVERALL: PASS` (esprima-clean).
+
+### 0. LLM backend switched from OpenCode/Ollama to the Claude API
+- `generate_reports.py` no longer talks to a local OpenCode server (`_detect_opencode_url`, `cleanup_session`, session-based HTTP calls all removed). `call_claude()` (formerly `call_opencode_server`) now calls `client.messages.create(...)` via the official `anthropic` Python SDK.
+- **Credentials:** set `ANTHROPIC_API_KEY` in `.env` (or run `ant auth login`). If the key is an org key not scoped to a single workspace, also set `ANTHROPIC_WORKSPACE_ID` in `.env` — read only from `.env` itself (`_ENV_FILE_VARS`), never from an ambient shell/session variable of the same name, so an unrelated `ANTHROPIC_WORKSPACE_ID` in the calling environment can't get silently attached to every request.
+- **Model:** defaults to `claude-sonnet-5-5` (override via `ANTHROPIC_MODEL`) — the right tier for short, structured executive narratives generated from data, not open-ended reasoning.
+- **Effort / `max_tokens` tuning (important if you see silent "LLM call failed" with no error text):** Claude's adaptive thinking spends part of `max_tokens` on hidden thinking tokens before writing the visible response. The batched calls (`summarize_zones` — up to 4 OA summaries per call, `summarize_fops` — all FOPs in one call) need enough headroom for several full 3-paragraph summaries plus thinking; they're set to `max_tokens=8000`. All calls default `effort="low"` in `call_claude()` (templated business writing, not hard reasoning) to keep the thinking budget small. If you see the diagnostic log line `LLM response had no usable content (stop_reason=..., output_tokens=...)`, raise that call site's `max_tokens` rather than assuming the prompt is broken.
+- Auth/permission failures (bad or unscoped key) are not retried — `call_claude` sets `_LLM_UNAVAILABLE = True` on the first one so the remaining ~20 summary calls in a run fail fast instead of each retrying a doomed request.
+- Delete `_summaries.json` after any change to summary-generation logic (prompts, model, effort, etc.) — the cache only auto-invalidates when the report's month range changes, not when the generation code changes.
+- `USER_GUIDE.md`, `brand_standards.md` requirements sections updated from `OPENCODE_SERVER_PASSWORD` to `ANTHROPIC_API_KEY`.
+
+### 1. `REMAINING_ISSUES.md` four-item pass
+Implemented and verified all four previously-open items: hide AI-summary box on franchisee drill-down, per-view (LM/LQ/YTD) sparklines on metric cards, raw value alongside star score for Win/Speed/Hutbot component cards, and exported cards stating the actual report timeframe (`REPORT_YEAR` constant + `_periodLabel()` helper). See `REMAINING_ISSUES.md` for the full breakdown.
+
+### 2. OA names → Zone names in AI-generated report text
+- Added `OAs.xlsx` (OA, Latitude, Longitude, City, 15 Zone, 24 Zone) as the OA→Zone name lookup. `generate_reports.py` loads it into `OA_ZONE_MAP` and exposes `zone_name_for(oa)` (falls back to the OA's own name if the file or a mapping is missing).
+- `generate_fallback_summary`'s National Insight narrative, and the `zone_rank` / `zone_rank_compact` data fed to the LLM narrative, now carry a `"zone"` field alongside `"oa"` — both the deterministic fallback text and the LLM-written summary now refer to zones by their Zone name (e.g. "Pacific Northwest", "Deep South") instead of the OA's personal name.
+- `leadership_summary.html` Zone Ranking table: header renamed `Zone (OA)` → `Zone`; each row shows the Zone name with the OA's name as a small muted sub-line for reference.
+- `zone_scorecards.html`: OA dropdown options now read `"<Zone Name> — <OA Name>"` (value stays the OA key so drill-down/data lookups are unaffected); the `Zone:` footer line, breadcrumb, and portfolio subtitle/metric-panel title all show the Zone name (OA name kept in parens on the footer for reference).
+- Per-OA `compute_single_zone` python dict (backing `zone_scorecards.html`'s `ZONES` const) also carries the new `"zone"` field.
+- Ran with a stale `_summaries.json`: LLM/fallback summary text only refreshes when the cached `_version` changes (month range), so the cache had to be deleted once to force the National Insight / per-zone summaries to pick up the new zone-name text. Delete `_summaries.json` after any future change to summary-generation logic, not just after a data refresh.
+- Follow-up (same day, during the Claude API migration below): the LLM-*written* per-zone 3-paragraph summaries (`summarize_zones`) still said "Danielle Hudson's 420-store portfolio" — the compact data passed to the model didn't carry a zone-name field, only the OA's name as the JSON dict key. Added `"zone_name": zone_name_for(oa)` to `oa_data[oa]` and an explicit system-prompt instruction to refer to the zone by `zone_name` in prose while keeping the OA's name only as the JSON key for mapping — confirmed fixed ("the Texas North / Oklahoma zone's monthly average rose...").
+
+### 3. Franchisee Dashboard: keep quintile summary visible on franchisee drill-down
+- `renderQuintiles()` (`fz_dashboard.html`) no longer hides `#quintSection` when `_state.level === 'fran'`. `quintScope()` already mapped the franchisee level to its parent FOP's quintile bucket, so the section now stays visible and shows that FOP-level breakdown as "up top" context while the store list below is franchisee-specific. (Supersedes the 2026-09-24 entry below, which had this hide as a deliberate design choice.)
+
+### 4. New Alignment tab on the Franchisee Dashboard
+- Added a `Portfolio` / `Alignment` tab bar to `fz_dashboard.html` (first tab UI in this file — wraps the existing drill-down content as `tabPortfolio`, adds `tabAlignment`).
+- New optional input `Alignment.csv` (SQL to produce it is in this guide's "Exporting Data from Snowflake" section) — one row per open franchised store: franchisee, OA/Zone/FOP/Director assignment, DMA/Region/Area, mailing address, lat/long, rolling 3-month 5-Star average, and Tier. `load_alignment_data()` in `generate_reports.py` reads it (optional — empty tab if the file is missing) and `generate_fop_html` embeds it as `ALIGNMENT_DATA`.
+- Sortable (click any header), filterable (dropdowns for Zone/FOP/Director/State/Tier + free-text search covering store #/franchisee/city/DMA/area/region), and exportable — the CSV export respects whatever filters are currently active and encodes them into the filename.
+- Verified end-to-end: ran the SQL against Snowflake live (4,666 stores), confirmed the data embeds correctly, and confirmed tab-switch/filter/sort/export all work via a headless-browser test that drives the real page JS (not just a static DOM check).
+- No LLM/Claude call anywhere in this tab — pure Snowflake → CSV → static HTML/JS.
+
+### 4b. Fixed "High rack + high DaaS (9709%)" — double percentage scaling bug
+- `metricPanel()`'s Delivery-section DaaS caveat (`fz_dashboard.html` and `zone_scorecards.html`, right after the metric card grid) reads `_dssV = _mNow(withP, MET_DEFS.find(x=>x.k==='dss'))`. The `dss` metric definition already carries `f:100`, so `_mNow`/`_mval` returns a value already on the 0–100 scale (e.g. `97.09` for 97.09% DaaS share) — same convention every other `u:'%'` metric card uses.
+- The caveat block didn't know this: it compared `_dssV>=0.5` (a 0–1-fraction threshold, so it fired as "high DaaS" for almost any nonzero share) and displayed `(_dssV*100).toFixed(0)+'%'` (re-multiplying an already-scaled value) — `97.09 * 100 = 9709`, hence "High rack + high DaaS (9709%)".
+- Fixed both files: threshold is now `_dssV>=50`, display is now `_dssV.toFixed(0)+'%'` (no second `*100`).
+- Verified via a headless-browser unit test of `metricPanel()` with synthetic per-month `p` data: 97% DaaS → "High rack + high DaaS (97%)"; 20% DaaS → "High rack + low DaaS (20%)" — both branches now read correctly.
+
+### 5. Claude API usage audit — confirmed scope, fixed a real "once a month" gap
+- Audited every reference to the Anthropic client in the codebase: `_claude_client.messages.create(...)` is called from exactly one line, inside `call_claude()`, itself only ever invoked by the four summary-generation functions (`summarize_zones`, `summarize_leadership`, `summarize_fops`, `summarize_brief`). Nothing else — not the Alignment tab, not Snowflake, not any script in `scripts/` — touches the Claude API.
+- Found and fixed a real gap: `summarize_brief`'s cache key embedded the literal `--run-date` (defaulting to *today's actual date* when not passed), unlike the other three functions which key only on the report's month range. That meant the Leadership Brief's 3 LLM calls fired fresh on every calendar day the script ran without an explicit, stable `--run-date` — not just when a new month's data landed. Fixed by keying `summarize_brief` on `_summary_version()` alone, matching the other three. Verified: regenerated three times with three different `--run-date` values (same month range) — after the fix, only the first run (transitioning off the old cache format) called the LLM; the next two both hit cache with zero new calls.
+- **Net effect:** as long as the report's detected month range doesn't change, none of the four summary functions call the Claude API — regardless of how many times or with what `--run-date` the script is re-run. The LLM is only actually called when a new month's 5-Star data lands (i.e., ~once a month in the documented workflow), or after `_summaries.json` is deleted on purpose.
+
+---
+
+## Reporting session changelog — 2026-09-24 (Franchisee Dashboard export & toggle pass)
+
+All changes below are **durable**: they live in `fz_dashboard.html` / `zone_scorecards.html` self-templates (the generator only patches data, never rewrites render JS). Verified after `python generate_reports.py --run-date 2026-09-15` + `scripts/_verify_five.py` → `OVERALL: PASS` (esprima-clean).
+
+### 1. Quintile section at high level only
+- `<section id="quintSection">` (`fz_dashboard.html:226`) — `renderQuintiles()` hides it and returns when `_state.level === 'fran'` (`:1477-1482`), shows otherwise. Quintile window buttons drive the same unified toggle.
+
+### 2. Unified Monthly / Quarterly / YTD toggle
+- `setViewMode(mode)` (`fz_dashboard.html:299`) sets **both** `_scoreMode` and `_quintWindow`, syncs the `.avg-mode-btn` and `.quint-win-btn` active states, then calls `refreshCurrentView()`.
+- `setScoreMode(mode)` and `setQuintWindow(w)` both delegate to `setViewMode` — no more desynced windows.
+- Default unified to **YTD**.
+- `_mNow` quarterly is now the last 3 months: `_psum(stores, MONTHS.length - 3, null)` (Jun–Aug), matching `LQ_KEYS`.
+
+### 3. Exported restaurant-card fixes (PNG)
+- **Dark-background bug:** `elToBlob` now does `dv.appendChild(clone)` instead of moving child nodes (`fz:1713`, `zone:2612`) — preserves the card root's inline light background.
+- **"undefined franchisee" label:** restaurant-header line now renders `s.f || _state.fran` and only adds the " · franchisee" suffix when a franchisee name exists (`fz:1778`).
+- **Footer sigma callouts removed** from card footers and metric-panel footers (grep confirms 0 matches for `never averaged` / `never an average` / `Recomputed per level` in both files).
+
+### 4. Documentation
+- `REMAINING_ISSUES.md` added — four open items (AI-summary hide at franchisee drill-down, per-view trendlines, Score+Value on component cards, timeframe in exports) with exact line references and verification hooks.
+
+---
+
+## Reporting session changelog — 2026-09-15
+
+All of the following are **durable**: they live in `generate_reports.py` (data + module-level constants) or in the self-template HTML files that the generator only patches (never rewrites the render JS, so hand-edits like the map tiles and paragraph renderer survive every regeneration).
+
+### 1. Run-date on report titles (freshness)
+
+- `leadership_summary.html` and `leadership_brief.html` — keep the run-date/freshness stamp (title shows the period; the report carries a `Run date:` line bound to the report's run label).
+- `zone_scorecards.html`, `rising_star.html`, `fz_dashboard.html` — **no** run date in `<title>`. The generator never writes `<title>` (verified: 0 `<title>`-stamping code paths), so these stay clean on regeneration.
+
+### 2. Rising Star map — tile provider
+
+The map previously used `tile.openstreetmap.org`, which started blocking with the OSM tile-usage-policy screen (“Access blocked … osM.wiki/Blocked”). Now uses **CARTO light tiles** (no API key, allowed for dashboards):
+
+```
+https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png
+```
+
+Verified durable: regen re-produces the OSM-free tile block + CARTO URL.
+
+### 3. National Portfolio Summary — paragraphing
+
+The Portfolio narrative is no longer one `<br>`-joined wall of text. The renderer now groups sentences into real paragraphs:
+
+- Narratives come back (plain text) from the LLM / cached `_summaries.json`.
+- The leadership summary JS renders them as separate `<p>` blocks (`paras.map(...)`), readable instead of a single `<br>` wall.
+
+### 4. Franchisee reassociation (data)
+
+GARRETT MCGINN stores (and any legacy `DONALD`-mislabelled franchisee stores) are bound at generator level to OA **Kelly Sharpe** in `compute_fop_data`/`compute_fop` — applies on every regeneration, all reports. The store-level OA column no longer shows an unlinked/blank FOP for that franchisee.
+
+### 5. Module-level constants (regen reliability)
+
+- `MONTH_NAMES` is now a **module-level** dict (was function-local), so `generate_reports.py` no longer crashes with `NameError: MONTH_NAMES` when `--run-date` is omitted.
+- `_MONTH_NAME` legacy helper retained for backward compatibility; the module-level `MONTH_NAMES` is the source of truth for all title/period month label lookups.
+
+### 6. Scripts hygiene
+
+- Root of `Reporting/` now contains only **`generate_reports.py`**.
+- All one-off checkers / probes / sweep helpers were moved to **`scripts/`** (or deleted). Re-runnable verification helpers live there too (`scripts/_final_verify.py`, etc.).
+- `brand_standards.md`, `USER_GUIDE.md`, and `PRESENTATION.md` remain the documentation set for this reporting folder.

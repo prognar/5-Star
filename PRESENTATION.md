@@ -84,10 +84,11 @@ Workshops      → shows whether training investments are paying off
 | FOP view | Per-FOP AI summary + franchisee table | FOP gets a 3-paragraph AI insight (Past \| Present \| Future) and every franchisee sorted by risk — actionable intelligence for the next check-in |
 | Franchisee drill-down | Store list with search, status badges, trend arrows, Region & Area Coach filters | Before a franchisee meeting, pull up every store in trouble with scores, consecutive months, and FSCC/Brand failures. Filter by Region or Area Coach |
 | Store Detail | Status banner + component breakdown | Clear language: "Default threshold met — immediate improvement plan required" with month-by-month component scores |
+| Alignment tab | Flat, sortable, filterable list of every open franchised store | Independent of the Portfolio drill-down — a second tab listing all stores with their org-hierarchy assignment (OA, Zone, FOP, Director, DMA, Region, Area, address, lat/long) plus rolling 3-month 5-Star average and Tier. Filter by Zone/FOP/Director/State/Tier or free-text search, sort any column, export exactly what's filtered (filename encodes the active filters) |
 
 **Dynamic headline score:** The Average 5-star in the header updates as you drill down — national → director → FOP → franchisee — always showing the weighted average for your current selection. The Jan→Jun delta below it updates too.
 
-**Score mode toggle:** LM / LQ / YTD buttons change how scores are computed across all views. LQ mode computes a rolling 3-month average.
+**Score mode toggle:** LM / LQ / YTD buttons change how scores are computed across all views — headline score, metric cards, quintiles, and tables stay in sync (single unified toggle). LQ mode computes a rolling 3-month average; YTD is the default. The quintile section stays visible at every drill level — at the franchisee level it shows the parent FOP's quintile breakdown as context.
 
 **Trend arrows:** Gradient coloring — darker green = stronger improvement, darker red = steeper decline. Severity thresholds: >0.3 slope = strong, >0.15 = moderate.
 
@@ -200,3 +201,11 @@ No database, no server, no credentials needed — even LLM summaries are optiona
 ## The FSCC Gap (Elevated)
 
 One known issue: the Brand Standards Manual says a failed FSCC should cap a store at 1.0★. The actual weighted-average formula lets FSCC be overridden by strong scores in other components. This means some stores with failing food safety scores appear in Tier 2 or 3. The reports reflect the formula as-calculated, not the policy override. **This is flagged for escalation — the reports are ready to implement an FSCC override as soon as policy alignment is decided.**
+
+## Reporting-session notes (2026-09-15)
+Run-date freshness stamps appear only on `leadership_summary.html` and `leadership_brief.html`; the zone/rising-star/franchisee titles stay run-date-free by design (generator never writes `<title>`).
+Rising Star map uses CARTO light tiles (no OSM block). National Portfolio Summary renders as real paragraphs.
+Full changelog: see `USER_GUIDE.md` → "Reporting session changelog — 2026-09-15".
+
+## Reporting-session notes (2026-09-24)
+Unified LM/LQ/YTD toggle across the Franchisee Dashboard; quintiles now appear only at All/Director/FOP level; PNG card exports fixed (light background, franchisee label, footer sigma callouts removed). Open items tracked in `REMAINING_ISSUES.md`. See `USER_GUIDE.md` → "Reporting session changelog — 2026-09-24".

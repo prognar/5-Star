@@ -4,9 +4,8 @@ import json
 import re
 import os
 import sys
+import csv
 import hashlib
-import urllib.request
-import base64
 from pathlib import Path
 from scipy.stats import pearsonr
 
@@ -19,16 +18,18 @@ except ImportError:
 
 # ─── Config ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-FIVESTAR_CSV = BASE_DIR / "5-Star with XM360.csv"
+FIVESTAR_CSV = BASE_DIR / "5-Star full.csv"
 STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
+ALIGNMENT_CSV = BASE_DIR / "Alignment.csv"
 OUTPUT_DIR = BASE_DIR
 
-# Load .env credentials if present (used for the opencode serve LLM backend).
-# .env is the source of truth for the OPENCODE_SERVER_* connection settings so a
-# stray shell value (e.g. stale desktop-app port) never points at the wrong
-# server; other keys only fill in when unset.
+# Load .env credentials if present (used for the Claude API LLM backend).
+# .env is the source of truth for the ANTHROPIC_* connection settings so a
+# stray shell value never points at the wrong key; other keys only fill in
+# when unset.
 _ENV_FILE = BASE_DIR / ".env"
+_ENV_FILE_VARS = {}  # only what .env itself defines — never an ambient shell/session value
 if _ENV_FILE.exists():
     try:
         with open(_ENV_FILE, "r", encoding="utf-8") as _f:
@@ -40,7 +41,8 @@ if _ENV_FILE.exists():
                     _v = _v.strip()
                     if not _k:
                         continue
-                    if _k.startswith("OPENCODE_SERVER_") or _k not in os.environ:
+                    _ENV_FILE_VARS[_k] = _v
+                    if _k.startswith("ANTHROPIC_") or _k not in os.environ:
                         os.environ[_k] = _v
     except (OSError, ValueError):
         pass
@@ -51,6 +53,28 @@ MAX_INCLUDE_MONTH = 8  # 5-Star + taste data is valid through Aug 2026; ignore S
 PERIODS = []  # set dynamically from data
 MONTH_LABELS = []  # set dynamically from data
 PERIOD_MONTHS = []  # month numbers [1..N] detected from data
+REPORT_YEAR = 2026  # set dynamically from data
+
+# OA -> Zone name lookup (OAs.xlsx, "15 Zone" column). Falls back to the OA's
+# own name if the file is missing or an OA isn't listed, so reports never blank
+# out a zone label — they just show the OA name as before.
+OA_ZONE_FILE = BASE_DIR / "OAs.xlsx"
+OA_ZONE_MAP = {}
+if OA_ZONE_FILE.exists():
+    try:
+        _oaz = pd.read_excel(OA_ZONE_FILE, usecols=["OA", "15 Zone"])
+        for _, _r in _oaz.iterrows():
+            _oa_name = str(_r["OA"]).strip() if pd.notna(_r["OA"]) else ""
+            _zone_name = str(_r["15 Zone"]).strip() if pd.notna(_r["15 Zone"]) else ""
+            if _oa_name and _zone_name:
+                OA_ZONE_MAP[_oa_name] = _zone_name
+    except (ValueError, KeyError, OSError):
+        print("  WARNING: Could not read OA->Zone mapping from OAs.xlsx")
+
+
+def zone_name_for(oa):
+    """Map an OA's personal name to its Zone name (falls back to the OA name)."""
+    return OA_ZONE_MAP.get(str(oa).strip(), oa) if oa else oa
 
 STAR_COLS = ["WIN_SCORE_STAR", "SPEED_STAR", "BRAND_STAR", "HB_ONTIME_STAR", "FSCC_STAR"]
 ACTUAL_COLS = {
@@ -74,57 +98,29 @@ BINDING_ORDER = ["WIN_SCORE_STAR", "SPEED_STAR", "BRAND_STAR", "HB_ONTIME_STAR",
 TIER_COLORS = {1: "#a3122a", 2: "#c07f1f", 3: "#276b4d"}
 TIER_NAMES = {1: "Bootcamp", 2: "Rising Star", 3: "Top Tier"}
 
-# OpenCode server config (used for LLM summaries)
-_OC_URL = os.environ.get("OPENCODE_SERVER_URL", "")
-OPENCODE_SERVER_USER = os.environ.get("OPENCODE_SERVER_USERNAME", "opencode")
-OPENCODE_SERVER_PASS = os.environ.get("OPENCODE_SERVER_PASSWORD", "")
-# LLM model used for summaries. Explicit model avoids relying on the serve's
-# default (which can be a slow local model). Matches what worked previously.
-LLM_PROVIDER = os.environ.get("OPENCODE_LLM_PROVIDER", "opencode")
-LLM_MODEL = os.environ.get("OPENCODE_LLM_MODEL", "big-pickle")
+# Claude API config (used for LLM summaries). The Anthropic SDK's zero-arg
+# client resolves credentials on its own (ANTHROPIC_API_KEY, then
+# ANTHROPIC_AUTH_TOKEN, then an `ant auth login` profile), so construction
+# always succeeds here; a missing-credential error only surfaces on the first
+# actual request, which call_claude() catches and reports once.
+# Sonnet is the right tier for this workload: short, structured executive
+# narratives generated from data, not open-ended reasoning.
+LLM_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 SUMMARIES_CACHE = BASE_DIR / "_summaries.json"
 
-
-def _detect_opencode_url():
-    """Auto-detect the opencode server URL from running processes."""
-    if _OC_URL:
-        return _OC_URL
-    try:
-        import subprocess, sys
-        out = subprocess.check_output(
-            ["netstat", "-ano"], shell=True, text=True, timeout=5
-        )
-        # Parse lines like: TCP 127.0.0.1:64771 0.0.0.0:0 LISTENING 10460
-        opencode_pids = set()
-        # Get opencode process PIDs
-        task_out = subprocess.check_output(
-            ["tasklist", "/FI", "IMAGENAME eq OpenCode.exe", "/FO", "CSV"],
-            shell=True, text=True, timeout=5
-        )
-        for line in task_out.strip().split("\n"):
-            if "OpenCode.exe" in line:
-                parts = line.split(",")
-                if len(parts) >= 2:
-                    pid = parts[1].strip().strip('"')
-                    opencode_pids.add(pid)
-        # Find matching listening port
-        for line in out.strip().split("\n"):
-            if "LISTENING" in line and "127.0.0.1" in line:
-                cols = line.split()
-                if len(cols) >= 5:
-                    addr = cols[1]
-                    pid = cols[4]
-                    if pid in opencode_pids and ":" in addr:
-                        port = addr.rsplit(":", 1)[-1]
-                        return f"http://127.0.0.1:{port}"
-    except Exception:
-        pass
-    return "http://127.0.0.1:62464"
-
-
-OPENCODE_SERVER_URL = _detect_opencode_url()
-# Extend timeout for LLM calls (15 OA summaries is a lot of tokens)
-_LLM_TIMEOUT = 600  # seconds
+try:
+    import anthropic as _anthropic
+    # Org API keys that aren't scoped to a single workspace require the
+    # workspace ID on every request (400 invalid_request_error otherwise).
+    # Read this only from .env itself, never an ambient shell/session
+    # variable — an unrelated ANTHROPIC_WORKSPACE_ID from the calling
+    # environment would otherwise get silently attached to every request.
+    _workspace_id = _ENV_FILE_VARS.get("ANTHROPIC_WORKSPACE_ID", "")
+    _client_kwargs = {"default_headers": {"anthropic-workspace-id": _workspace_id}} if _workspace_id else {}
+    _claude_client = _anthropic.Anthropic(**_client_kwargs)
+except ImportError:
+    _anthropic = None
+    _claude_client = None
 
 # Snowflake config (optional — set env vars to enable)
 SNOWFLAKE_ACCOUNT = os.environ.get("SNOWFLAKE_ACCOUNT", "")
@@ -206,6 +202,201 @@ def convert_for_json(obj):
     return obj
 
 
+# ─── Store "lever to pull" model (2026-09) ─────────────────────────────────
+# Per-store operational levers ranked by system leverage, validated against
+# store-level correlations: Rack time is the dual lever (inside OTD <18 AND
+# accuracy/B2B); Hutbot adoption is fully store-controllable with a large
+# overall swing; make-line speed is the fastest route to the next Speed star
+# (no accuracy penalty observed); then the quality/friction levers.
+LEVER_PRIORITY = ["Rack (staging)", "Hutbot adoption", "Make-line speed",
+                  "Late delivery", "Outages", "Negative survey", "Accuracy"]
+
+
+# ─── 5-Star scoring mechanics (confirmed vs data: 100% band fit) ───────────
+# Overall 5-Star = 0.35*Win + 0.30*Speed + 0.20*HB + 0.075*Brand + 0.075*FSCC.
+# Win / Speed / Hutbot are graded from a monthly % through discrete bands:
+#   Win:   <42 / 42-49 / 49-55 / 55-62 / >=62
+#   Speed: <35 / 35-44 / 44-53 / 53-70 / >=70   (share out-the-door <=18min)
+#   HB:    <80 / 80-85 / 85-90 / 90-95 / >=95
+# Brand/Core + FSCC are 3rd-party audits (7.5% each) and are not %-banded.
+STAR_THRESHOLDS = {
+    "WIN":   {"col": "WIN_SCORE_ACTUAL",  "t": [42, 49, 55, 62], "w": 0.35, "label": "Win Score"},
+    "SPEED": {"col": "SPEED_ACTUAL",      "t": [35, 44, 53, 70], "w": 0.30, "label": "Speed"},
+    "HB":    {"col": "HB_ONTIME_ACTUAL",  "t": [80, 85, 90, 95], "w": 0.20, "label": "Hutbot"},
+}
+
+
+def _latest_metric(store_months, col):
+    if col not in store_months.columns:
+        return None
+    v = pd.to_numeric(store_months[col], errors="coerce")
+    v = v[v.notna()]
+    return float(v.iloc[-1]) if len(v) else None
+
+
+def compute_next_star(store_months):
+    """Per store: current % grade, next-star gap and weighted score gain."""
+    ns = {}
+    for _k, _cfg in STAR_THRESHOLDS.items():
+        _act = _latest_metric(store_months, _cfg["col"])
+        _e = {"a": round(_act, 1) if _act is not None else None, "gain": _cfg["w"]}
+        if _act is not None:
+            _st = 1 + sum(1 for _t in _cfg["t"] if _act >= _t)
+            _e["star"] = _st
+            if _st < 5:
+                _tgt = _cfg["t"][_st - 1]
+                _e["target"] = float(_tgt)
+                _e["need"] = round(max(0.0, _tgt - _act), 1)
+        ns[_k] = _e
+    return ns
+
+
+def _num_mean(store_months, col):
+    if col not in store_months.columns:
+        return None
+    s = pd.to_numeric(store_months[col], errors="coerce")
+    return float(s.mean()) if s.notna().any() else None
+
+
+# ─── Operational / business metric parts (5-STAR_METRICS.md) ────────────────
+# Short JSON keys -> source CSV columns, aligned to PERIOD_MONTHS per store.
+# Ratios are recomputed at ANY level by summing the parts, then dividing
+# (never average-the-averages). Delivery vs non-delivery branches split by
+# whether the store carries delivery volume (TOT_DEL_BTN_5_120_CNT/TOT_DEL_CNT).
+_STORE_PART_DEF = [
+    # -- delivery branch --
+    ("d30", "DEL_LESS_30"), ("g45", "DEL_GRT_45"), ("p10", "PROMISE_TIME_WITHIN_10"),
+    ("dt", "DEL_TIME"), ("dtn", "DEL_TIME_CNT"),
+    ("otd", "SUM_OUT_THE_DOOR_TIME"), ("otn", "TOT_DEL_OUT_THE_DOOR_TIME_CNT"),
+    ("o18", "OUT_THE_DOOR_TIME_LT_18_CNT"),
+    ("rk", "DEL_RACK_TIME"), ("rkn", "DEL_RACK_TIME_CNT"),
+    ("dr", "DRIVE_TIME"), ("drn", "TOT_DEL_DRIVE_TIME_CNT"),
+    ("das", "DAAS_DELIVERIES"), ("int", "INTERNAL_DELIVERIES"),
+    ("mk", "MAKE_TIME"), ("mk4", "MAKE_LESS_4"),
+    ("pr", "PROD_TIME"), ("prn", "PROD_TIME_CNT"), ("p15", "PROD_LESS_15"),
+    ("bt", "TOT_DEL_BTN_5_120_CNT"),
+    # -- non-delivery branch --
+    ("nmk", "NON_DEL_MAKE_TIME"), ("nmk4", "NON_DEL_MAKE_TIME_LT_4_CNT"), ("nn", "TOT_NON_DEL_CNT"),
+    ("np", "NON_DEL_PROD_TIME"), ("npc", "TOT_NON_DEL_PROD_TIME_CNT"), ("np15", "NON_DEL_PROD_LESS_15"),
+    ("nra", "NON_DEL_RACK_TIME"), ("nrn", "NON_DEL_RACK_TIME_CNT"),
+    # -- business (all stores) --
+    ("sa", "CY_TOTAL_NET_SALES"), ("cs", "CY_SS_SALES_TNS"), ("ls", "LY_SS_SALES_TNS"),
+    ("ct", "CY_SS_TRANS"), ("lt", "LY_SS_TRANS"), ("dg", "DIGITAL_ORDERSOURCE"), ("nd", "NON_DIGITAL_ORDERSOURCE"),
+    ("cm", "CANCELS_MADE_AMT"), ("c2", "CANCELS_NOTMADE_AMT"), ("co", "AVAIL_CO_HOURS"),
+    ("de", "AVAIL_DEL_HOURS"), ("wb", "WEB_DEACTIVATIONS"), ("ou", "PRODUCT_OUTAGES"),
+    ("rg", "RGM_FLG"), ("po", "POLL_COUNT"),
+]
+_DEL_PART_KEYS = {"d30", "g45", "p10", "dt", "dtn", "otd", "otn", "o18", "rk", "rkn",
+                  "dr", "drn", "das", "int", "mk", "mk4", "pr", "prn", "p15", "bt"}
+_NON_PART_KEYS = {"nmk", "nmk4", "nn", "np", "npc", "np15", "nra", "nrn"}
+_DEC1_PART_KEYS = {"co", "de"}  # hours: keep 1 decimal
+
+
+def _store_parts(store_months):
+    """Per-store monthly parts object (aligned to PERIOD_MONTHS). Only the
+    branch(es) the store actually runs on plus business parts. All-zero series
+    are omitted (JS summation treats missing as 0)."""
+    months = PERIOD_MONTHS
+    rows_m = {}
+    for _, r in store_months.iterrows():
+        rows_m[int(r["MONTHNUM"])] = r
+
+    cache = {}
+
+    def _g(m, col):
+        k = (m, col)
+        if k in cache:
+            return cache[k]
+        r = rows_m.get(m)
+        v = None
+        if r is not None:
+            c = r.get(col)
+            if c is not None:
+                try:
+                    f = float(c)
+                    v = f if f == f else None  # NaN -> None
+                except (TypeError, ValueError):
+                    v = None
+        cache[k] = v
+        return v
+
+    has_del = any((_g(m, "TOT_DEL_BTN_5_120_CNT") or 0) > 0 for m in months)
+    if not has_del:
+        has_del = any((_g(m, "TOT_DEL_CNT") or 0) > 0 for m in months)
+    has_non = any((_g(m, "TOT_NON_DEL_CNT") or 0) > 0 for m in months)
+    if not has_non:
+        has_non = any((_g(m, "NON_DEL_PROD_TIME") or 0) > 0 for m in months)
+
+    out = {}
+    for key, col in _STORE_PART_DEF:
+        if key in _DEL_PART_KEYS and not has_del:
+            continue
+        if key in _NON_PART_KEYS and not has_non:
+            continue
+        arr = [None] * len(months)
+        anyv = False
+        for i, m in enumerate(months):
+            v = _g(m, col)
+            if v is None:
+                continue
+            arr[i] = v
+            if v != 0:
+                anyv = True
+        if anyv:
+            if key in _DEC1_PART_KEYS:
+                out[key] = [round(x, 1) if x is not None else None for x in arr]
+            else:
+                out[key] = [int(round(x)) if x is not None else None for x in arr]
+    return out
+
+
+def _ratio_mean(store_months, num_col, den_col):
+    if num_col not in store_months.columns or den_col not in store_months.columns:
+        return None
+    n = pd.to_numeric(store_months[num_col], errors="coerce")
+    d = pd.to_numeric(store_months[den_col], errors="coerce")
+    r = (n / d).replace([np.inf, -np.inf], np.nan)
+    return float(r.mean()) if r.notna().any() else None
+
+
+def compute_store_levers(store_months):
+    """Lever tags + callout metrics for one store (avg over its month rows)."""
+    rack = _ratio_mean(store_months, "DEL_RACK_TIME", "TOT_DEL_CNT")
+    mk = _ratio_mean(store_months, "MAKE_TIME", "TOT_DEL_CNT")
+    late = _ratio_mean(store_months, "DEL_GRT_45", "TOT_DEL_CNT")
+    r18 = _ratio_mean(store_months, "OUT_THE_DOOR_TIME_LT_18_CNT", "TOT_DEL_OUT_THE_DOOR_TIME_CNT")
+    out = _ratio_mean(store_months, "PRODUCT_OUTAGES", "CY_SS_TRANS")
+    if out is not None:
+        out *= 100.0
+    hb = _num_mean(store_months, "HB_ONTIME_STAR")
+    osat = _num_mean(store_months, "OSAT_SCORE")
+    acc = _num_mean(store_months, "ACCURACY_SCORE")
+    tags = []
+    if rack is not None and rack > 5.5:
+        tags.append("Rack (staging)")
+    if hb is not None and hb <= 2.0:
+        tags.append("Hutbot adoption")
+    if mk is not None and mk > 4.0:
+        tags.append("Make-line speed")
+    if late is not None and late > 0.12:
+        tags.append("Late delivery")
+    if out is not None and out > 0.05:
+        tags.append("Outages")
+    if osat is not None and osat > 0.26:
+        tags.append("Negative survey")
+    if acc is not None and acc < 0.35:
+        tags.append("Accuracy")
+    def _r(v, nd=1):
+        return round(v, nd) if v is not None else None
+    return {
+        "lv": tags,
+        "top": next((t for t in LEVER_PRIORITY if t in tags), ""),
+        "lg": {"rack": _r(rack), "mk": _r(mk), "late": _r(late, 2),
+               "r18": _r(r18, 2), "out": _r(out, 2), "hb": _r(hb),
+               "osat": _r(osat, 2), "acc": _r(acc, 2)},
+    }
+
+
 # ─── Data Loading ──────────────────────────────────────────────────────────
 
 def load_data():
@@ -225,6 +416,22 @@ def load_data():
     for c in NUMERIC_ACTUALS:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Operational/business metric parts (5-STAR_METRICS.md)
+    for _k, _c in _STORE_PART_DEF:
+        if _c in df.columns:
+            df[_c] = pd.to_numeric(df[_c], errors="coerce")
+
+    # Derived growth columns (SSSG / SSTG) — previous source carried them;
+    # recompute from the same-store CY/LY fields present in 5-Star full.csv.
+    for _ss, _cy, _ly in (("SSSG", "CY_SS_SALES_TNS", "LY_SS_SALES_TNS"),
+                          ("SSTG", "CY_SS_TRANS", "LY_SS_TRANS")):
+        if _cy in df.columns and _ly in df.columns:
+            cyv = pd.to_numeric(df[_cy], errors="coerce")
+            lyv = pd.to_numeric(df[_ly], errors="coerce")
+            df[_ss] = cyv / lyv.replace(0, np.nan) - 1.0
+        else:
+            df[_ss] = np.nan
 
     # Customer-sentiment metrics (fraction 0-1): Taste + XM360 (Accuracy /
     # Speed / OSAT B2B). Rendered wherever Taste renders; all optional.
@@ -842,8 +1049,8 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
 
 def filter_analysis_data(df):
     """Filter to active stores Jan-Dec 2026 with valid 5-Star scores.
-    Detects available months and sets global PERIODS, MONTH_LABELS, PERIOD_MONTHS."""
-    global PERIODS, MONTH_LABELS, PERIOD_MONTHS
+    Detects available months and sets global PERIODS, MONTH_LABELS, PERIOD_MONTHS, REPORT_YEAR."""
+    global PERIODS, MONTH_LABELS, PERIOD_MONTHS, REPORT_YEAR
 
     df = df.copy()
     df["_year"] = df["YEARNO"].astype(str).str.extract(r"(\d{4})").astype(float)
@@ -872,6 +1079,7 @@ def filter_analysis_data(df):
         period = 202600 + m
         PERIODS.append(period)
         MONTH_LABELS.append(MONTH_NAMES.get(m, f"M{m}"))
+    REPORT_YEAR = 2026
 
     first = MONTH_NAMES.get(available[0], f"M{available[0]}")
     last = MONTH_NAMES.get(available[-1], f"M{available[-1]}")
@@ -1037,6 +1245,7 @@ def compute_leadership(df):
 
         oa_list.append({
             "oa": oa,
+            "zone": zone_name_for(oa),
             "n": n_stores,
             "avg_latest": round(avg_latest, 2),
             "avg_base": round(avg_base, 2),
@@ -1418,6 +1627,12 @@ def compute_single_zone(zone_df, workshops=None):
             pct_ok[_key] = oks
             pct_latest[_key] = arr[-1] if arr and arr[-1] is not None else None
 
+        # Lever model — "what to pull first" for this store
+        lev = compute_store_levers(store_months)
+
+        # Next-star boost — where the actual scoring rewards a small boost
+        ns = compute_next_star(store_months)
+
         # Growth metrics per month (SSSG / SSTG)
         growth_sssg = []
         growth_sstg = []
@@ -1506,6 +1721,11 @@ def compute_single_zone(zone_df, workshops=None):
             "osat": pct_arrays["osat"],
             "osat_avg": round(sum(pct_ok["osat"]) / len(pct_ok["osat"]), 4) if pct_ok["osat"] else None,
             "osat_latest": pct_latest["osat"],
+            "lv": lev["lv"],
+            "top": lev["top"],
+            "lg": lev["lg"],
+            "ns": ns,
+            "p": _store_parts(store_months),
             "sssg": growth_sssg,
             "sstg": growth_sstg,
             "st": st,
@@ -1574,6 +1794,7 @@ def compute_single_zone(zone_df, workshops=None):
 
     return {
         "oa": oa,
+        "zone": zone_name_for(oa),
         "n_stores": n_stores,
         "n_fran": n_fran,
         "headline_avg": round(headline_avg, 2),
@@ -1849,6 +2070,82 @@ def _num(v):
         return None
 
 
+def load_alignment_data():
+    """Load the store alignment/org-hierarchy table (Alignment.csv, optional).
+
+    One row per open franchised store: franchisee, OA/Zone/FOP/Director
+    assignment, DMA/Region/Area, mailing address, lat/long, and the rolling
+    3-month 5-Star average + tier. Powers the Alignment tab in
+    fz_dashboard.html. Missing org-hierarchy fields (stores not yet mapped in
+    OPX_ALIGNMENT) are surfaced as "Unassigned" rather than blank.
+    """
+    if not ALIGNMENT_CSV.exists():
+        return []
+
+    df = pd.read_csv(ALIGNMENT_CSV)
+    df = df[df["CHAINED_STORE_ID"].notna()]
+
+    # Same franchisee-name normalization applied to the main 5-Star pipeline
+    # (see the "Franchisee normalization (2026-09)" comment near the top of
+    # this file, and the OA-remap alias list a few hundred lines below) — this
+    # franchisee shows up under three different spellings across sources
+    # (5-Star.csv: GARRETT MCGINN; this Alignment SQL pull: DONALD RIZZIE) and
+    # the dashboard has standardized on DON RIZZIE everywhere else.
+    _fran_mask = df["FRANCHISEE"].astype(str).str.strip().str.upper().isin(("GARRETT MCGINN", "DONALD RIZZIE"))
+    if _fran_mask.any():
+        df.loc[_fran_mask, "FRANCHISEE"] = "DON RIZZIE"
+        df.loc[_fran_mask, "FOP_NAME"] = "Kelly Sharpe"
+
+    def _sid(v):
+        s = str(int(v)) if isinstance(v, float) else str(v).strip()
+        return s.zfill(6) if s.isdigit() and len(s) < 6 else s
+
+    def _txt(v, default="Unassigned"):
+        if pd.isna(v):
+            return default
+        s = str(v).strip()
+        return s if s else default
+
+    rows = []
+    for _, r in df.iterrows():
+        rows.append({
+            "s": _sid(r["CHAINED_STORE_ID"]),
+            "f": _txt(r.get("FRANCHISEE"), ""),
+            "oa": _txt(r.get("OA")),
+            "zone": _txt(r.get("ZONE")),
+            "fop": _txt(r.get("FOP_NAME")),
+            "dir": _txt(r.get("DIRECTOR_NAME")),
+            "dma": _txt(r.get("DMA"), ""),
+            "region": _txt(r.get("REGION"), ""),
+            "area": _txt(r.get("AREA"), ""),
+            "addr": _txt(r.get("RESTMAILADDR1"), ""),
+            "city": _txt(r.get("CITY"), ""),
+            "state": _txt(r.get("STATE"), ""),
+            "lat": _num(r.get("LATITUDE")),
+            "lon": _num(r.get("LONGITUDE")),
+            "fs": _num(r.get("FIVESTAR_AVG_3MO")),
+            "tier": _txt(r.get("TIER"), "Unrated"),
+        })
+    print(f"  Loaded {len(rows)} stores from Alignment.csv")
+
+    # Every open store should have a Zone/OA (the SQL already resolves Zone
+    # from AXC1195.MANUAL_ZONE_OVERRIDES ∪ STORE_ZONE_MAP and derives OA from
+    # Zone via ZONE_OA_MAP, so this should normally be empty). Surface any
+    # gap so it doesn't go unnoticed — add missing stores to
+    # AXC1195.MANUAL_ZONE_OVERRIDES in Snowflake directly, not here.
+    unmapped = [r for r in rows if r["oa"] == "Unassigned"]
+    if unmapped:
+        unmapped_path = BASE_DIR / "Unmapped_Zone_Stores.csv"
+        with open(unmapped_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["CHAINED_STORE_ID", "FRANCHISEE", "DMA", "CITY", "STATE", "LATITUDE", "LONGITUDE"])
+            for r in sorted(unmapped, key=lambda r: (r["f"], r["s"])):
+                w.writerow([r["s"], r["f"], r["dma"], r["city"], r["state"], r["lat"], r["lon"]])
+        print(f"  {len(unmapped)} stores still unmapped (OA/Zone) — see {unmapped_path.name}")
+
+    return rows
+
+
 def compute_fop_data(df, zones_data):
     """Compute FOP-level data aggregated from zones_data stores.
 
@@ -1926,6 +2223,33 @@ def compute_fop_data(df, zones_data):
 
         for fran in sorted(fop_groups[fop].keys()):
             stores = fop_groups[fop][fran]
+
+            # Leverage profile for this franchisee (share of stores binding each lever)
+            _shares = {_l: 0.0 for _l in LEVER_PRIORITY}
+            for _s in stores:
+                for _l in LEVER_PRIORITY:
+                    if _l in (_s.get("lv") or []):
+                        _shares[_l] += 1.0
+            if len(stores) > 0:
+                _shares = {k: round(v / len(stores), 3) for k, v in _shares.items()}
+            _top_fran = ""
+            _best = -1.0
+            for _l in LEVER_PRIORITY:
+                if _shares.get(_l, 0.0) > _best:
+                    _best = _shares.get(_l, 0.0)
+                    _top_fran = _l
+
+            # Stores within ~2 pts of the next star on a %-band component
+            _close = {"WIN": 0, "SPEED": 0, "HB": 0}
+            for _s in stores:
+                _ns = _s.get("ns") or {}
+                for _k in ("WIN", "SPEED", "HB"):
+                    _e = _ns.get(_k) or {}
+                    if _e.get("star") in (None, 5):
+                        continue
+                    if _e.get("need") is not None and _e["need"] <= 2.0:
+                        _close[_k] += 1
+
             fran_avg = sum(s.get("y") or s.get(f"m{last_m}") or 0 for s in stores) / len(stores)
             # Latest month avg
             _lm_scores = [s.get(f"m{last_m}") for s in stores if s.get(f"m{last_m}") is not None]
@@ -1957,6 +2281,9 @@ def compute_fop_data(df, zones_data):
                 "n_defaulting": fran_dl,
                 "n_at_risk": fran_ar,
                 "n_t1_watch": fran_tw,
+                "lvt": _top_fran,
+                "lvs": _shares,
+                "close": _close,
                 "stores": [{
                     "s": s["s"],
                     **{f"m{m}": s.get(f"m{m}") for m in PERIOD_MONTHS},
@@ -1987,6 +2314,11 @@ def compute_fop_data(df, zones_data):
                     "osat": s.get("osat", []),
                     "osat_avg": s.get("osat_avg"),
                     "osat_latest": s.get("osat_latest"),
+                    "lv": s.get("lv", []),
+                    "top": s.get("top", ""),
+                    "lg": s.get("lg", {}),
+                    "ns": s.get("ns", {}),
+                    "p": s.get("p", {}),
                     "sssg": s.get("sssg", []),
                     "sstg": s.get("sstg", []),
                 } for s in stores]
@@ -2085,16 +2417,14 @@ def compute_fop_data(df, zones_data):
 
 # ─── LLM Summaries ─────────────────────────────────────────────────────────
 
-def cleanup_session(session_id, headers):
-    try:
-        req = urllib.request.Request(
-            f"{OPENCODE_SERVER_URL}/session/{session_id}",
-            method="DELETE",
-            headers=headers,
-        )
-        urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        pass
+# Set once call_claude() hits a non-retryable auth/permission failure, so the
+# remaining ~20 summary calls in a run short-circuit instead of each retrying
+# and failing individually against the same missing credential.
+_LLM_UNAVAILABLE = False
+
+
+def _llm_available():
+    return _claude_client is not None and not _LLM_UNAVAILABLE
 
 
 def generate_fallback_summary(nat_data):
@@ -2154,9 +2484,9 @@ def generate_fallback_summary(nat_data):
     else:
         para1_parts.append(f"Tier movement was mixed: {moved_up} stores moved up and {moved_down} fell back, a net change of {net}.")
     if best_zone:
-        para1_parts.append(f"The strongest zone was {best_zone.get('oa', 'N/A')} (avg {best_zone.get('avg_latest', 0):.2f}, {_delta(best_zone.get('delta', 0))}),")
+        para1_parts.append(f"The strongest zone was {zone_name_for(best_zone.get('oa', 'N/A'))} (avg {best_zone.get('avg_latest', 0):.2f}, {_delta(best_zone.get('delta', 0))}),")
     if worst_zone:
-        para1_parts.append(f"while the zone needing the most attention was {worst_zone.get('oa', 'N/A')} (avg {worst_zone.get('avg_latest', 0):.2f}, {_delta(worst_zone.get('delta', 0))}).")
+        para1_parts.append(f"while the zone needing the most attention was {zone_name_for(worst_zone.get('oa', 'N/A'))} (avg {worst_zone.get('avg_latest', 0):.2f}, {_delta(worst_zone.get('delta', 0))}).")
 
     para2_parts = [
         f"As of the latest month, the national portfolio averages {avg_end:.2f} stars across approximately {nat_data.get('n_stores_latest', 0):,} open stores.",
@@ -2175,7 +2505,7 @@ def generate_fallback_summary(nat_data):
         "The top national priority is reducing the Tier 1 store count by addressing Win Score and Speed, which are the most common binding constraints across the portfolio.",
     ]
     if best_zone and worst_zone:
-        para3_parts.append(f"Focus should be on supporting the bottom-ranked zones ({worst_zone.get('oa', 'N/A')}) while studying and replicating the practices of top performers ({best_zone.get('oa', 'N/A')}).")
+        para3_parts.append(f"Focus should be on supporting the bottom-ranked zones ({zone_name_for(worst_zone.get('oa', 'N/A'))}) while studying and replicating the practices of top performers ({zone_name_for(best_zone.get('oa', 'N/A'))}).")
 
     # Franchisee rankings
     _franks = nat_data.get("franchisee_rankings", {})
@@ -2259,91 +2589,62 @@ def _normalize_oa_role(value):
     return re.sub(r"Area Coach", "OA", value, flags=re.IGNORECASE)
 
 
-def call_opencode_server(prompt_parts, system_prompt=None, max_tokens=2000, allow_plain_text=False, attempts=3):
-    """Send a prompt to the opencode server and return the text response.
+def call_claude(prompt_parts, system_prompt=None, max_tokens=4000, allow_plain_text=False, attempts=3, effort="low"):
+    """Send a prompt to Claude and return the text response.
 
     Returns the parsed first JSON object when present. If allow_plain_text is
     True and the response contains no parseable JSON, returns the raw text
     instead (used for prompts that ask for a plain narrative, e.g. leadership).
-    Transient failures are retried with a fresh session (attempts).
+    Transient failures (rate limits, server errors, network) are retried;
+    auth/permission failures are not — they mark the LLM unavailable for the
+    rest of this run instead of retrying the same failure repeatedly.
+
+    `effort` defaults to "low" — these are templated executive-summary writes
+    from structured data, not open-ended reasoning, so a low thinking budget
+    keeps most of `max_tokens` available for the visible response instead of
+    hidden thinking tokens.
     """
-    if not OPENCODE_SERVER_PASS:
-        print("  WARNING: OPENCODE_SERVER_PASSWORD not set, skipping LLM summaries")
+    global _LLM_UNAVAILABLE
+
+    if not _llm_available():
+        print("  WARNING: Claude API not configured (set ANTHROPIC_API_KEY or run `ant auth login`), skipping LLM summaries")
         return None
 
-    auth_str = base64.b64encode(f"{OPENCODE_SERVER_USER}:{OPENCODE_SERVER_PASS}".encode()).decode()
-    headers = {
-        "Authorization": f"Basic {auth_str}",
-        "Content-Type": "application/json",
-    }
-
     full_prompt = "\n".join(prompt_parts)
+    kwargs = {"output_config": {"effort": effort}}
+    if system_prompt:
+        kwargs["system"] = system_prompt
 
     for attempt in range(attempts):
         if attempt:
             print(f"    Retrying LLM call (attempt {attempt + 1}/{attempts})...")
 
-        # Create session
         try:
-            req = urllib.request.Request(
-                f"{OPENCODE_SERVER_URL}/session",
-                data=json.dumps({"title": "5-Star OA Summaries"}).encode(),
-                headers=headers,
-                method="POST",
+            response = _claude_client.messages.create(
+                model=LLM_MODEL,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": full_prompt}],
+                **kwargs,
             )
-            with urllib.request.urlopen(req, timeout=_LLM_TIMEOUT) as resp:
-                session = json.loads(resp.read())
-        except Exception as e:
-            if attempt == attempts - 1:
-                print(f"    Could not create session: {e}")
-            continue
-
-        session_id = session["id"]
-
-        # Build message body — pin the model explicitly (works regardless of the
-        # serve instance's configured default).
-        body = {
-            "model": {"providerID": LLM_PROVIDER, "modelID": LLM_MODEL},
-            "parts": [{"type": "text", "text": full_prompt}],
-        }
-        if system_prompt:
-            body["system"] = system_prompt
-
-        req2 = urllib.request.Request(
-            f"{OPENCODE_SERVER_URL}/session/{session_id}/message",
-            data=json.dumps(body).encode(),
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req2, timeout=_LLM_TIMEOUT) as resp:
-                result = json.loads(resp.read())
+        except (_anthropic.AuthenticationError, _anthropic.PermissionDeniedError) as e:
+            print(f"    Claude API auth failed, disabling LLM summaries for this run: {e}")
+            _LLM_UNAVAILABLE = True
+            return None
         except Exception as e:
             if attempt == attempts - 1:
                 print(f"    LLM request failed: {e}")
-            cleanup_session(session_id, headers)
             continue
 
-        # Extract text response
-        raw_text = None
-        try:
-            for part in result.get("parts", []):
-                if part.get("type") == "text" and part.get("text"):
-                    text = part["text"]
-                    if raw_text is None:
-                        raw_text = text
-                    parsed = _extract_first_json(text)
-                    if parsed is not None:
-                        cleanup_session(session_id, headers)
-                        return parsed
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            if attempt == attempts - 1:
-                print(f"    Could not parse LLM response: {e}")
-            continue
-        finally:
-            cleanup_session(session_id, headers)
-        if allow_plain_text and raw_text:
-            return raw_text
+        raw_text = next((b.text for b in response.content if b.type == "text" and b.text), None)
+        if raw_text:
+            parsed = _extract_first_json(raw_text)
+            if parsed is not None:
+                return parsed
+            if allow_plain_text:
+                return raw_text
+        if attempt == attempts - 1:
+            print(f"    LLM response had no usable content (stop_reason={response.stop_reason}, "
+                  f"output_tokens={response.usage.output_tokens}) — consider raising max_tokens")
         # No usable content this attempt — fall through to retry.
     return None
 
@@ -2426,7 +2727,7 @@ def generate_fallback_fop_summary(fop_compact):
 
 
 def summarize_zones(zones_data, no_cache=False):
-    """Generate LLM summaries for each OA zone using the opencode server."""
+    """Generate LLM summaries for each OA zone using Claude."""
     oa_names = sorted(zones_data.keys())
     version = _summary_version()
 
@@ -2460,7 +2761,7 @@ def summarize_zones(zones_data, no_cache=False):
     has_any_cache = any(oa in cache for oa in oa_names)
 
     # If no password configured, skip LLM and use whatever cache exists
-    if not OPENCODE_SERVER_PASS:
+    if not _llm_available():
         if has_any_cache:
             print("  Using cached LLM summaries (no server configured)")
             _apply_cached()
@@ -2491,6 +2792,7 @@ def summarize_zones(zones_data, no_cache=False):
             for m in (z.get("monthly") or [])
         ]
         oa_data[oa] = {
+            "zone_name": zone_name_for(oa),
             "stores": z["n_stores"],
             "fran": z["n_fran"],
             "avg_by_tier": z["avg_by_tier"],
@@ -2525,13 +2827,15 @@ def summarize_zones(zones_data, no_cache=False):
 
     system_prompt = (
         "You are a senior 5-Star operations analyst at a leading quick-service restaurant chain. "
-        "Draft a professional 3-paragraph executive summary for each OA zone. "
+        "Draft a professional 3-paragraph executive summary for each zone. "
+        "In the prose, refer to each zone by its 'zone_name' field (e.g. 'the Pacific Northwest zone') — "
+        "never by the OA's personal name; the OA's name is only the JSON key for mapping the summary back. "
         "Paragraph 1 — PAST PERFORMANCE: Summarize the period's results including tier movement volumes, "
         "binding constraint drivers, and key numerical trends. "
         "Paragraph 2 — CURRENT STATE: Assess the zone's portfolio health — overall average, tier composition, "
         "high-risk areas (Tier 1 concentration), risk metrics (defaulting, at-risk, T1 watch), "
         "and the primary binding constraint limiting performance. "
-        "Paragraph 3 — RECOMMENDED ACTION: Identify the single highest-impact action for the OA and "
+        "Paragraph 3 — RECOMMENDED ACTION: Identify the single highest-impact action for the zone and "
         "specific areas or franchisees requiring attention. "
         "Support all observations with specific figures. "
         "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
@@ -2551,7 +2855,7 @@ def summarize_zones(zones_data, no_cache=False):
             + "\n\nReturn a JSON object with a 'summaries' key mapping each OA name "
             "to a 3-paragraph summary (PAST | PRESENT | FUTURE)."
         )
-        result = call_opencode_server([user_prompt], system_prompt=system_prompt)
+        result = call_claude([user_prompt], system_prompt=system_prompt, max_tokens=8000)
         summaries = {}
         if isinstance(result, dict):
             sval = result.get("summaries")
@@ -2588,7 +2892,7 @@ def summarize_zones(zones_data, no_cache=False):
 
 
 def summarize_leadership(nat_data, no_cache=False):
-    """Generate a national leadership LLM summary using the opencode server."""
+    """Generate a national leadership LLM summary using Claude."""
     version = _summary_version()
     cache = {}
     if SUMMARIES_CACHE.exists():
@@ -2607,7 +2911,7 @@ def summarize_leadership(nat_data, no_cache=False):
         nat_data["summary"] = cache[SUM_KEY]
         return
 
-    if not OPENCODE_SERVER_PASS:
+    if not _llm_available():
         if SUM_KEY in cache:
             print("  Using cached leadership summary (no server)")
             nat_data["summary"] = cache[SUM_KEY]
@@ -2626,7 +2930,7 @@ def summarize_leadership(nat_data, no_cache=False):
               for m in (nat_data.get("monthly") or [])]
 
     zone_rank_compact = [
-        {"oa": z["oa"], "stores": z["n"], "avg": z["avg_latest"],
+        {"oa": z["oa"], "zone": z.get("zone", z["oa"]), "stores": z["n"], "avg": z["avg_latest"],
          "delta": round(z["delta"], 2), "t1": z["t1_latest"], "t3": z["t3_latest"],
          "t1_chg_pct": z["t1_pct_chg"], "t3_chg_pct": z["t3_pct_chg"]}
         for z in (nat_data.get("zone_rank") or [])
@@ -2673,7 +2977,7 @@ def summarize_leadership(nat_data, no_cache=False):
         "No JSON wrapper, no headings, no section labels."
     )
 
-    result = call_opencode_server([user_prompt], system_prompt=system_prompt, allow_plain_text=True)
+    result = call_claude([user_prompt], system_prompt=system_prompt, allow_plain_text=True)
     if result is None:
         if SUM_KEY in cache:
             print("  LLM call failed, falling back to cached leadership summary")
@@ -2701,7 +3005,7 @@ def summarize_leadership(nat_data, no_cache=False):
 
 
 def summarize_fops(fop_data, no_cache=False):
-    """Generate LLM summaries for each FOP using the opencode server."""
+    """Generate LLM summaries for each FOP using Claude."""
     fop_names = sorted(fop_data.get("fops", {}).keys())
     version = _summary_version()
 
@@ -2753,7 +3057,7 @@ def summarize_fops(fop_data, no_cache=False):
 
     has_any_cache = any(name in cache for name in fop_names)
 
-    if not OPENCODE_SERVER_PASS:
+    if not _llm_available():
         if has_any_cache:
             print("  Using cached FOP summaries (no server)")
             _apply_cached()
@@ -2788,7 +3092,7 @@ def summarize_fops(fop_data, no_cache=False):
         "to a 3-paragraph summary (PAST | PRESENT | FUTURE)."
     )
 
-    result = call_opencode_server([user_prompt], system_prompt=system_prompt)
+    result = call_claude([user_prompt], system_prompt=system_prompt, max_tokens=8000)
     if result is None:
         if has_any_cache:
             print("  LLM call failed, falling back to cached FOP summaries (stale)")
@@ -3109,11 +3413,14 @@ def generate_zones_html(zones_data, template_path, output_path):
 
     # Inject dynamic month labels and period label
     html = replace_data_block(html, "MONTHS", MONTH_LABELS)
+    html = re.sub(r'const REPORT_YEAR = \d+;', f'const REPORT_YEAR = {REPORT_YEAR};', html, count=1)
     html = _replace_month_refs(html)
 
     # Update OA dropdown options to match actual OAs (exclude internal keys starting with _)
     oa_names = sorted(k for k in zones_data if not k.startswith("_"))
-    options = "\n".join(f'<option value="{name}">{name}</option>' for name in oa_names)
+    options = "\n".join(
+        f'<option value="{name}">{zone_name_for(name)} — {name}</option>' for name in oa_names
+    )
     html = re.sub(
         r'<select id="oaSelect".*?</select>',
         f'<select id="oaSelect" onchange="renderZone(this.value)">\n{options}\n        </select>',
@@ -3127,16 +3434,18 @@ def generate_zones_html(zones_data, template_path, output_path):
     print(f"  Written to {output_path}")
 
 
-def generate_fop_html(fop_data, template_path, output_path):
+def generate_fop_html(fop_data, alignment_data, template_path, output_path):
     """Generate Franchisee Dashboard HTML from template."""
     print(f"  Franchisee Dashboard -> {output_path.name}")
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
 
     html = replace_data_block(html, "FOP_DATA", fop_data)
+    html = replace_data_block(html, "ALIGNMENT_DATA", alignment_data)
 
     # Inject dynamic month labels
     html = replace_data_block(html, "MONTHS", MONTH_LABELS)
+    html = re.sub(r'const REPORT_YEAR = \d+;', f'const REPORT_YEAR = {REPORT_YEAR};', html, count=1)
     html = _replace_month_refs(html)
 
     # Update FOP dropdown options
@@ -3512,9 +3821,13 @@ def compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date
 def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
     """Generate the LLM narrative for the Leadership Brief (private page).
     Produces national high-level summary, recognition spotlight (1-2 named OAs),
-    and a boot camp narrative. Cached on the period version + run date."""
-    run_date = brief_data.get("run_date", "")
-    version = f"{_summary_version()}@{run_date}"
+    and a boot camp narrative. Cached on the report's month range only — same as
+    the other three summary functions — so it only regenerates (and calls the
+    LLM) when a new month's data lands, not every time the script is run with a
+    different --run-date/today's date. `run_date` itself is still recorded on
+    brief_data as a freshness stamp; it's just no longer part of the cache key.
+    """
+    version = _summary_version()
     cache = {}
     if SUMMARIES_CACHE.exists():
         try:
@@ -3629,7 +3942,7 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         "pick a different positive or constructive example instead. Return plain text only — no markdown, no bold, "
         "no arrows or bullet characters, no 'Here is' preamble, no separators; just three short paragraphs."
     )
-    lead_narr = call_opencode_server([lead_prompt], system_prompt=sys_lead, max_tokens=1200, allow_plain_text=True)
+    lead_narr = call_claude([lead_prompt], system_prompt=sys_lead, max_tokens=3000, allow_plain_text=True)
     brief_data["summary"] = _normalize_summary(lead_narr) if lead_narr else (cached or {}).get("summary", "")
 
     # ── 2) Recognition spotlight ──
@@ -3648,7 +3961,7 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         "impact before the metric). "
         "Only include people with a genuinely notable result."
     )
-    rec_result = call_opencode_server([rec_prompt], system_prompt=sys_lead, max_tokens=1200)
+    rec_result = call_claude([rec_prompt], system_prompt=sys_lead, max_tokens=3000)
     rec = []
     if isinstance(rec_result, dict):
         r = rec_result.get("recognition")
@@ -3685,7 +3998,7 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         f"Data:\n{json.dumps({'bootcamp': nat_bc, 'oa_level': oa_compact}, indent=2)}\n\n"
         "Return plain text."
     )
-    bc_narr = call_opencode_server([bc_prompt], system_prompt=sys_lead, max_tokens=1000, allow_plain_text=True)
+    bc_narr = call_claude([bc_prompt], system_prompt=sys_lead, max_tokens=2500, allow_plain_text=True)
     brief_data["bootcamp"]["narrative"] = _normalize_summary(bc_narr) if bc_narr else ((cached or {}).get("bootcamp") or {}).get("narrative", "")
 
     # Cache (only persist when we actually produced a narrative; otherwise the
@@ -3837,6 +4150,9 @@ def main(no_cache=False, run_date=None):
     fop_data = compute_fop_data(df, zones_data)
     summarize_fops(fop_data, no_cache=no_cache)
 
+    # Store alignment table (optional; powers the Alignment tab)
+    alignment_data = load_alignment_data()
+
     # Attach per-FOP summaries to nat_data for leadership page
     fop_summaries = {}
     for fop_name, fop_info in fop_data.get("fops", {}).items():
@@ -3923,6 +4239,7 @@ def main(no_cache=False, run_date=None):
 
     generate_fop_html(
         fop_data,
+        alignment_data,
         template_dir / "fz_dashboard.html",
         OUTPUT_DIR / "fz_dashboard.html"
     )

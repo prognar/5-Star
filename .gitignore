@@ -1,0 +1,17 @@
+# Raw source data exports -- large, regenerable, and business-sensitive
+*.csv
+*.xlsx
+
+# Secrets
+.env
+connections.toml
+
+# Logo backup (keep original out of the public tree; PHLogo.png is the tracked asset)
+PHLogo_original_red.png
+
+# Caches, logs, scratch
+__pycache__/
+*.log
+*.log.err
+*-OLD
+_originals/

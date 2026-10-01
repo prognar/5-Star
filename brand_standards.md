@@ -205,7 +205,8 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 |---|---|
 | `leadership_summary.html` | National executive view with Overview + Default Watch + Workshops tabs. National Insight narrative (LLM), Workshop Summary metrics, Workshop Effectiveness for Boot Camp and Rising Star, date-aggregated workshop list with Export CSV (DATE, WORKSHOP_TYPE, AREA_COACH, STORE, BASELINE, 30d, 60d, 90d, CHANGE), per-FOP summaries. Per-zone and national LLM summaries. |
 | `zone_scorecards.html` | Per-zone drill-down (4 tabs: Overview, Portfolio, Boot Camps, Targeting) with OA summaries + Boot Camp Workshop History (distinct-date aggregation with sparkline trends and per-store drill-down) + Bootcamp Targeting table (T1 areas by count/concentration with binding focus bars) |
-| `fz_dashboard.html` | Franchisee Dashboard: portfolio overview of all franchisees with Director/FOP drill-down. Select Director for roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box (also available in leadership Workshops tab). |
+| `fz_dashboard.html` | Franchisee Dashboard: portfolio overview of all franchisees with Director/FOP drill-down. Select Director for roll-up, then FOP → franchisee → store drill-down with detail. Per-FOP LLM summaries in the Portfolio Insight box (also available in leadership Workshops tab). Loads **`fz_dashboard_detail.js`** (below) on first franchisee drill-down — keep both files in the same folder. |
+| `fz_dashboard_detail.js` | Companion data file for `fz_dashboard.html` (2026-09-30, load-speed fix) — per-store drill-down-only fields (metric-panel parts, sentiment trends, component star history, lever detail) that would otherwise bloat the main file's up-front load. Lazy-loaded the first time a user opens a franchisee; without it, drill-down views render with those fields simply absent (`fz_dashboard.html` degrades gracefully, no error). Must ship alongside `fz_dashboard.html` — same repo folder on GitHub. |
 | `rising_star.html` | Rising Star targeting — 2 tabs: Targets (national Tier 2 store map, all DMA×Franchisee groups sorted by T2 count with binding focus bars, multi-zone flags, and workshop status badges) and Workshops (date-grouped cards matching Leadership Summary format with gold background, Area Coach drill-down, per-store baseline/30d/60d/90d scores, sparkline trends, and deltas). Zone-agnostic by design — groups may span multiple OAs. |
 | `_summaries.json` | Cached LLM or fallback summaries (auto-created, delete to force regeneration) |
 
@@ -218,12 +219,12 @@ STORE_NUMBER,OA_NAME,WORKSHOP_DATE,WORKSHOP_TYPE
 4. Open fz_dashboard.html, zone_scorecards.html, leadership_summary.html, rising_star.html
 ```
 
-LLM summaries (optional, set this environment variable to enable):
+LLM summaries (optional, uses the Claude API — set this environment variable to enable, or run `ant auth login`):
 
 ```powershell
-$env:OPENCODE_SERVER_PASSWORD = "your_password"
+$env:ANTHROPIC_API_KEY = "your_api_key"
 ```
 
-If no LLM server is configured, the script generates **deterministic fallback summaries** for leadership, zones, and FOPs — the reports always have content. Delete `_summaries.json` to force regeneration of all summaries.
+If no Claude API credential is configured, the script generates **deterministic fallback summaries** for leadership, zones, and FOPs — the reports always have content. Delete `_summaries.json` to force regeneration of all summaries (also required after changing summary-generation logic, since the cache only expires on its own when the report's month range changes).
 
 No other setup required — the script automatically picks up the latest CSV inputs and regenerates all four HTML files.

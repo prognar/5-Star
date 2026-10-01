@@ -1486,6 +1486,46 @@ def compute_single_zone(zone_df, workshops=None):
             })
     bootcamp_data.sort(key=lambda x: x["n_t1"], reverse=True)
 
+    # Tier 1 Opportunity tracking (Boot Camp Opportunities section).
+    # "Start of year" / "Now" reuse the exact same single-month tier counts as the
+    # Overview tab's tier-flow numbers (t1_start/t1_end below), so this section never
+    # disagrees with Overview. The had/upcoming/no-bootcamp buckets split the "now"
+    # population (latest month, single-month tier) and always sum to it exactly.
+    # Use the same store set as flows["endCounts"] (stores present in both the first
+    # and last period months) so the buckets below always sum to exactly t1_end.
+    _merged = flows["merged"]
+    t1_now_ids = set(_merged.loc[_merged["tier_last"] == 1, "CHAINED_STORE_ID"])
+
+    bc_entries = (workshops or {}).get("boot_camp", [])
+    bc_past_stores = {e["store"] for e in bc_entries if e.get("status") in ("past", "current")}
+    bc_future_stores = {e["store"] for e in bc_entries if e.get("status") == "future"}
+
+    t1_had_bootcamp = t1_now_ids & bc_past_stores
+    t1_upcoming_bootcamp = (t1_now_ids - t1_had_bootcamp) & bc_future_stores
+    t1_no_bootcamp = t1_now_ids - t1_had_bootcamp - t1_upcoming_bootcamp
+
+    no_bc_rows = may_df[may_df["CHAINED_STORE_ID"].isin(t1_no_bootcamp)]
+    no_bc_list = []
+    for _, r in no_bc_rows.iterrows():
+        sid_b = str(r["CHAINED_STORE_ID"])
+        no_bc_list.append({
+            "s": sid_b.zfill(5) if sid_b.isdigit() else sid_b,
+            "a": str(r.get("FAREADESC", "")) if pd.notna(r.get("FAREADESC")) else "",
+            "f": str(r.get("CURR_FRAN_OWNER_NM", "")) if pd.notna(r.get("CURR_FRAN_OWNER_NM")) else "",
+            "d": str(r.get("NIELSENDMADESC", "")) if pd.notna(r.get("NIELSENDMADESC")) else "",
+            "score": round(float(r["OVERALL_FIVESTAR"]), 2) if pd.notna(r["OVERALL_FIVESTAR"]) else None,
+        })
+    no_bc_list.sort(key=lambda x: (x["a"], x["score"] if x["score"] is not None else 99))
+
+    t1_opportunity = {
+        "start": t1_start,
+        "now": t1_end,
+        "had_bootcamp": len(t1_had_bootcamp),
+        "upcoming": len(t1_upcoming_bootcamp),
+        "no_bootcamp": len(t1_no_bootcamp),
+        "no_bootcamp_stores": no_bc_list,
+    }
+
     # Area spotlight (lowest and highest scoring areas with 5+ stores)
     area_avgs = may_df.groupby("FAREADESC").agg(
         n=("CHAINED_STORE_ID", "count"),
@@ -1811,6 +1851,7 @@ def compute_single_zone(zone_df, workshops=None):
         "binding_tbl": binding_tbl,
         "avg_by_tier": avg_by_tier,
         "bootcamp_areas": bootcamp_data,
+        "t1_opportunity": t1_opportunity,
         "low_areas": low_areas,
         "high_areas": high_areas,
         "low_fran": low_fran,

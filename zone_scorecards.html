@@ -1744,18 +1744,34 @@ function wsBlMonths(e){
   for(let m=a-2; m<=a; m++) if(m>=1 && m<=MONTHS.length) out.push(m);
   return out;
 }
+// thresholds: ascending cutoffs a value must meet/exceed to earn the next tier.
+// 4 cutoffs = the official 1-5 star bands (generate_reports.py STAR_THRESHOLDS);
+// 2 cutoffs = a 3-band (red/amber/green) read for sentiment metrics with no
+// official star mapping, mapped onto the same tier-1/3/5 pill colors. rev=true
+// means lower is better (OSAT is a dissatisfaction rate).
 const WS_COMP_META = [
   {key:'all', arr:null,    label:'Overall',   kind:'star', color:'#A62932'},
-  {key:'cw',  arr:'aw',    label:'Win Score', kind:'num',  color:COMP_COLORS.cw},
-  {key:'cs',  arr:'as',    label:'Speed',     kind:'num',  color:COMP_COLORS.cs},
+  {key:'cw',  arr:'aw',    label:'Win Score', kind:'num',  color:COMP_COLORS.cw, thresholds:[49,60,66,71]},
+  {key:'cs',  arr:'as',    label:'Speed',     kind:'num',  color:COMP_COLORS.cs, thresholds:[40,60,70,80]},
   {key:'cb',  arr:'cb',    label:'Brand',     kind:'star', color:COMP_COLORS.cb},
-  {key:'ch',  arr:'ah',    label:'Hutbot',    kind:'pct',  color:COMP_COLORS.ch},
+  {key:'ch',  arr:'ah',    label:'Hutbot',    kind:'pct',  color:COMP_COLORS.ch, thresholds:[80,85,90,95]},
   {key:'cf',  arr:'cf',    label:'FSCC',      kind:'star', color:COMP_COLORS.cf},
-  {key:'ct',  arr:'ct',    label:'Taste',     kind:'pct',  color:COMP_COLORS.ct, mul:100},
-  {key:'accuracy', arr:'accuracy', label:'Accuracy',   kind:'pct',  color:COMP_COLORS.accuracy, mul:100},
-  {key:'speed360', arr:'speed360', label:'XM Speed',   kind:'pct',  color:COMP_COLORS.speed360, mul:100},
-  {key:'osat',     arr:'osat',     label:'OSAT B2B',   kind:'pct',  color:COMP_COLORS.osat, mul:100},
+  {key:'ct',  arr:'ct',    label:'Taste',     kind:'pct',  color:COMP_COLORS.ct, mul:100, thresholds:[20,40]},
+  {key:'accuracy', arr:'accuracy', label:'Accuracy',   kind:'pct',  color:COMP_COLORS.accuracy, mul:100, thresholds:[20,40]},
+  {key:'speed360', arr:'speed360', label:'XM Speed',   kind:'pct',  color:COMP_COLORS.speed360, mul:100, thresholds:[20,40]},
+  {key:'osat',     arr:'osat',     label:'OSAT B2B',   kind:'pct',  color:COMP_COLORS.osat, mul:100, thresholds:[20,40], rev:true},
 ];
+function wsPillTier(displayVal, thresholds, rev){
+  if(displayVal==null || !thresholds) return null;
+  if(thresholds.length===4){
+    let tier=1;
+    for(let i=0;i<4;i++){ if(displayVal>=thresholds[i]) tier=i+2; }
+    return tier;
+  }
+  const [lo,hi] = thresholds;
+  if(rev) return displayVal<=lo ? 5 : displayVal<=hi ? 3 : 1;
+  return displayVal>=hi ? 5 : displayVal>=lo ? 3 : 1;
+}
 function wsActualAvg(store, arr, months){
   if(!store) return null;
   const vals = [];
@@ -1789,8 +1805,12 @@ function wsCellHTML(c, v, withDelta, bl){
   if(v==null || v==='') return '<span style="color:var(--muted)">\u2014</span>';
   let h;
   if(c.kind==='star') h = '<span class="sc '+scoreClass(v)+'">'+v.toFixed(2)+'</span>';
-  else if(c.kind==='pct') h = '<span style="font-family:IBM Plex Mono;font-size:10px;">'+((c.mul||1)*v).toFixed(1)+'%</span>';
-  else if(c.kind==='num') h = '<span style="font-family:IBM Plex Mono;font-size:10px;">'+v.toFixed(1)+'</span>';
+  else if(c.kind==='pct' || c.kind==='num'){
+    const disp = (c.mul||1)*v;
+    const txt = disp.toFixed(1) + (c.kind==='pct' ? '%' : '');
+    const tier = wsPillTier(disp, c.thresholds, c.rev);
+    h = tier!=null ? '<span class="sc '+scoreClass(tier)+'" style="width:auto;padding:2px 7px;">'+txt+'</span>' : '<span style="font-family:IBM Plex Mono;font-size:10px;">'+txt+'</span>';
+  }
   else h = '<span style="font-family:IBM Plex Mono;font-size:10px;color:'+wsTextColor(v)+';font-weight:600;">'+esc(v)+'</span>';
   if(withDelta && bl!=null && (c.kind==='star'||c.kind==='num'||c.kind==='pct')){
     const dv = (v - bl) * (c.mul||1);
@@ -1806,7 +1826,7 @@ function wsMetrics(store, e){
     if(c.arr===null){
       const bl = e.baseline_score;
       const vals = [30,60,90].map(per=> p[per] ? p[per].score : null);
-      return {label:c.label, color:c.color, kind:c.kind, bl, vals};
+      return {label:c.label, color:c.color, kind:c.kind, mul:c.mul, thresholds:c.thresholds, rev:c.rev, bl, vals};
     }
     const bl = c.kind==='txt' ? wsActualLast(store,c.arr,blM) : wsActualAvg(store,c.arr,blM);
     const vals = [30,60,90].map(per=>{
@@ -1814,7 +1834,7 @@ function wsMetrics(store, e){
       if(!pm.length) return null;
       return c.kind==='txt' ? wsActualLast(store,c.arr,pm) : wsActualAvg(store,c.arr,pm);
     });
-    return {label:c.label, color:c.color, kind:c.kind, bl, vals};
+    return {label:c.label, color:c.color, kind:c.kind, mul:c.mul, thresholds:c.thresholds, rev:c.rev, bl, vals};
   });
 }
 function wsComponentHTML(store, e){
@@ -1877,7 +1897,12 @@ function wsGrpCellHTML(c, val, withDelta, bl){
   if(c.kind==='txt') return wsDistHTML(val);
   let h;
   if(c.kind==='star') h = '<span class="sc '+scoreClass(val)+'">'+val.toFixed(2)+'</span>';
-  else if(c.kind==='pct') h = '<span style="font-family:IBM Plex Mono;font-size:10px;">'+((c.mul||1)*val).toFixed(1)+'%</span>';
+  else if(c.kind==='pct' || c.kind==='num'){
+    const disp = (c.mul||1)*val;
+    const txt = disp.toFixed(1) + (c.kind==='pct' ? '%' : '');
+    const tier = wsPillTier(disp, c.thresholds, c.rev);
+    h = tier!=null ? '<span class="sc '+scoreClass(tier)+'" style="width:auto;padding:2px 7px;">'+txt+'</span>' : '<span style="font-family:IBM Plex Mono;font-size:10px;">'+txt+'</span>';
+  }
   else h = '<span style="font-family:IBM Plex Mono;font-size:10px;">'+val.toFixed(1)+'</span>';
   if(withDelta && bl!=null){
     const dv = (val - bl) * (c.mul||1);

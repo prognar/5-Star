@@ -212,24 +212,26 @@ LEVER_PRIORITY = ["Rack (staging)", "Hutbot adoption", "Make-line speed",
                   "Late delivery", "Outages", "Negative survey", "Accuracy"]
 
 
-# ─── 5-Star scoring mechanics (confirmed vs data: 100% band fit) ───────────
+# ─── 5-Star scoring mechanics (official bands, confirmed 2026-10) ──────────
 # Overall 5-Star = 0.35*Win + 0.30*Speed + 0.20*HB + 0.075*Brand + 0.075*FSCC.
 # Win / Speed / Hutbot are graded from a monthly % through discrete bands:
-#   Win:   <42 / 42-49 / 49-55 / 55-62 / >=62
-#   Speed: <35 / 35-44 / 44-53 / 53-70 / >=70   (share out-the-door <=18min)
+#   Win:   <49 / 49-60 / 60-66 / 66-71 / >=71
+#   Speed: <40 / 40-60 / 60-70 / 70-80 / >=80   (share out-the-door <=18min)
 #   HB:    <80 / 80-85 / 85-90 / 90-95 / >=95
 # Brand/Core + FSCC are 3rd-party audits (7.5% each) and are not %-banded.
+# Mirrored in fz_dashboard.html as PCT_BAND_THRESHOLDS -- keep both in sync.
 STAR_THRESHOLDS = {
-    "WIN":   {"col": "WIN_SCORE_ACTUAL",  "t": [42, 49, 55, 62], "w": 0.35, "label": "Win Score"},
-    "SPEED": {"col": "SPEED_ACTUAL",      "t": [35, 44, 53, 70], "w": 0.30, "label": "Speed"},
+    "WIN":   {"col": "WIN_SCORE_ACTUAL",  "t": [49, 60, 66, 71], "w": 0.35, "label": "Win Score"},
+    "SPEED": {"col": "SPEED_ACTUAL",      "t": [40, 60, 70, 80], "w": 0.30, "label": "Speed"},
     "HB":    {"col": "HB_ONTIME_ACTUAL",  "t": [80, 85, 90, 95], "w": 0.20, "label": "Hutbot"},
 }
 
 
 def _latest_metric(store_months, col):
-    if col not in store_months.columns:
+    if col not in store_months.columns or "MONTHNUM" not in store_months.columns:
         return None
-    v = pd.to_numeric(store_months[col], errors="coerce")
+    sm = store_months.sort_values("MONTHNUM")
+    v = pd.to_numeric(sm[col], errors="coerce")
     v = v[v.notna()]
     return float(v.iloc[-1]) if len(v) else None
 
@@ -947,11 +949,14 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         if s is not None:
             df_lookup[(sid, mn)] = (s, t)
 
-    # Variable group: workshop stores with baseline + follow-up
+    # Variable group: workshop stores with baseline + follow-up.
+    # Boot Camps aren't exclusively Tier 1 -- some Tier 2/3 stores attend too --
+    # so track each attendee's baseline tier for the by-tier breakout below.
     ws_store_set = set(e["store"] for e in past_bc)
     var_baselines = []
     var_latests = []
     var_deltas = []
+    var_tiers = []
 
     for e in past_bc:
         if e["baseline_score"] is None or not e["post_scores"]:
@@ -962,6 +967,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         var_baselines.append(bm)
         var_latests.append(lt)
         var_deltas.append(lt - bm)
+        var_tiers.append(e.get("baseline_tier"))
 
     n_var = len(var_baselines)
     if n_var == 0:
@@ -970,10 +976,11 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
     n_improved = sum(1 for d in var_deltas if d >= 0)
     n_not_improved = n_var - n_improved
 
-    # Control group: tier 1 stores in zone that did NOT attend a workshop
+    # Control group: stores in zone that did NOT attend a Boot Camp, at any tier.
     ctrl_baselines = []
     ctrl_latests = []
     ctrl_deltas = []
+    ctrl_tiers = []
 
     for sid in zone_df["CHAINED_STORE_ID"].unique():
         if sid in ws_store_set:
@@ -988,11 +995,8 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
                     bl_scores.append((s, t))
         if not bl_scores:
             continue
-        # Must be tier 1 at baseline (boot camp target)
         ctrl_bm = round(sum(x[0] for x in bl_scores) / len(bl_scores), 2)
         ctrl_tier = bl_scores[-1][1]
-        if ctrl_tier != 1:
-            continue
         # Control latest
         lt_key = (sid, last_m)
         if lt_key not in df_lookup:
@@ -1003,19 +1007,47 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         ctrl_baselines.append(ctrl_bm)
         ctrl_latests.append(lt_s)
         ctrl_deltas.append(lt_s - ctrl_bm)
+        ctrl_tiers.append(ctrl_tier)
 
-    ctrl_n = len(ctrl_baselines)
-    ctrl_data = None
-    if ctrl_n > 0:
-        ctrl_n_improved = sum(1 for d in ctrl_deltas if d >= 0)
-        ctrl_data = {
-            "n": ctrl_n,
-            "n_improved": ctrl_n_improved,
-            "n_not_improved": ctrl_n - ctrl_n_improved,
-            "avg_baseline": round(sum(ctrl_baselines) / ctrl_n, 2),
-            "avg_latest": round(sum(ctrl_latests) / ctrl_n, 2),
-            "avg_delta": round(sum(ctrl_deltas) / ctrl_n, 3),
+    def _group_stats(baselines, latests, deltas):
+        n = len(baselines)
+        if n == 0:
+            return None
+        n_imp = sum(1 for d in deltas if d >= 0)
+        return {
+            "n": n,
+            "n_improved": n_imp,
+            "n_not_improved": n - n_imp,
+            "avg_baseline": round(sum(baselines) / n, 2),
+            "avg_latest": round(sum(latests) / n, 2),
+            "avg_delta": round(sum(deltas) / n, 3),
         }
+
+    # Tier 1 only (boot camp's traditional target tier) -- used for the overall control.
+    t1_ctrl_baselines = [b for b, t in zip(ctrl_baselines, ctrl_tiers) if t == 1]
+    t1_ctrl_latests = [b for b, t in zip(ctrl_latests, ctrl_tiers) if t == 1]
+    t1_ctrl_deltas = [b for b, t in zip(ctrl_deltas, ctrl_tiers) if t == 1]
+    ctrl_data = _group_stats(t1_ctrl_baselines, t1_ctrl_latests, t1_ctrl_deltas)
+
+    # By-tier breakout: Boot Camp attendees vs. non-attending control, within each tier.
+    by_tier = {}
+    for t in (1, 2, 3):
+        t_var = _group_stats(
+            [b for b, tt in zip(var_baselines, var_tiers) if tt == t],
+            [b for b, tt in zip(var_latests, var_tiers) if tt == t],
+            [b for b, tt in zip(var_deltas, var_tiers) if tt == t],
+        )
+        t_ctrl = _group_stats(
+            [b for b, tt in zip(ctrl_baselines, ctrl_tiers) if tt == t],
+            [b for b, tt in zip(ctrl_latests, ctrl_tiers) if tt == t],
+            [b for b, tt in zip(ctrl_deltas, ctrl_tiers) if tt == t],
+        )
+        if t_var is None and t_ctrl is None:
+            continue
+        t_lift = None
+        if t_var is not None and t_ctrl is not None:
+            t_lift = round(t_var["avg_delta"] - t_ctrl["avg_delta"], 3)
+        by_tier[str(t)] = {"var": t_var, "control": t_ctrl, "lift": t_lift}
 
     # Unique workshop count
     n_workshops = len({e.get("workshop_id") for e in past_bc if e.get("workshop_id")}) or len(past_bc)
@@ -1036,12 +1068,15 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         "n_future": n_future,
         "trajectory": {
             "n": n_var,
+            "n_improved": n_improved,
+            "n_not_improved": n_not_improved,
             "avg_baseline": round(sum(var_baselines) / n_var, 2),
             "avg_latest": round(sum(var_latests) / n_var, 2),
             "avg_delta": avg_delta,
         },
         "control": ctrl_data,
         "lift": lift,
+        "by_tier": by_tier,
         "baseline_period": f"M{last_m - 1}",
         "latest_period": last_label,
     }
@@ -1085,6 +1120,13 @@ def filter_analysis_data(df):
     last = MONTH_NAMES.get(available[-1], f"M{available[-1]}")
     print(f"  Filtered to {first}-{last} 2026 active with scores: {len(filtered):,} rows")
     print(f"  Months detected: {available}")
+
+    # Sort chronologically per store so any downstream ".iloc[-1]" (e.g. the
+    # "latest month" lookup in compute_next_star) reliably means the latest
+    # MONTH, not just the last row in file order (rows are not month-ordered
+    # in the source CSV — this caused next-star % to show a stale mid-year
+    # value instead of the true latest month's actual).
+    filtered = filtered.sort_values(["CHAINED_STORE_ID", "MONTHNUM"]).reset_index(drop=True)
     return filtered
 
 
@@ -2197,12 +2239,12 @@ def load_alignment_data():
 # a franchisee, instead of being embedded in fz_dashboard.html up front.
 DETAIL_STORE_FIELDS = [
     "cw", "cs", "cb", "ch", "cf", "ct", "accuracy", "speed360", "osat",
-    "lv", "top", "lg", "ns", "p",
+    "lv", "top", "lg", "ns", "p", "aw", "as", "ah",
 ]
 _DETAIL_FIELD_DEFAULT = {
     "cw": [], "cs": [], "cb": [], "ch": [], "cf": [], "ct": [],
     "accuracy": [], "speed360": [], "osat": [], "lv": [],
-    "top": "", "lg": {}, "ns": {}, "p": {},
+    "top": "", "lg": {}, "ns": {}, "p": {}, "aw": [], "as": [], "ah": [],
 }
 
 

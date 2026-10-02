@@ -48,7 +48,18 @@ Weights: Win 0.35 · Speed 0.30 · Hutbot On Time 0.20 · Brand 0.075 · FSCC 0.
 | Brand | `BRAND_ACTUAL`, `BRAND_STAR` | Adherence to Pizza Hut brand standards. | % provided; star mapped | A | WAVG |
 | Hutbot On Time | `HB_ONTIME_ACTUAL`, `HB_ONTIME_STAR` | Execution of required routines on time — % of routines completed on time. | % provided; star mapped | A | WAVG |
 
-Star thresholds (locked): Speed `[35, 44, 53, 70]`, Win `[42, 49, 55, 62]`, HB `[80, 85, 90, 95]`.
+Star thresholds (locked, confirmed 2026-10): each metric's monthly % is graded 1-5 at these cutoffs
+(1 = below the first value, 5 = at/above the last):
+
+| Metric | 1★ | 2★ | 3★ | 4★ | 5★ |
+|---|---|---|---|---|---|
+| Win Score | <49% | 49–60% | 60–66% | 66–71% | ≥71% |
+| Speed | <40% | 40–60% | 60–70% | 70–80% | ≥80% |
+| Hutbot On Time | <80% | 80–85% | 85–90% | 90–95% | ≥95% |
+
+As arrays: Win `[49, 60, 66, 71]`, Speed `[40, 60, 70, 80]`, HB `[80, 85, 90, 95]`.
+Defined in `generate_reports.py` (`STAR_THRESHOLDS`) and mirrored in `fz_dashboard.html`
+(`PCT_BAND_THRESHOLDS`) for the Franchisee Dashboard's % Actual toggle — keep both in sync.
 
 ## 2. Customer / survey scores
 

@@ -1529,14 +1529,17 @@ def compute_single_zone(zone_df, workshops=None):
     bootcamp_data.sort(key=lambda x: x["n_t1"], reverse=True)
 
     # Tier 1 Opportunity tracking (Boot Camp Opportunities section).
-    # "Start of year" / "Now" reuse the exact same single-month tier counts as the
-    # Overview tab's tier-flow numbers (t1_start/t1_end below), so this section never
-    # disagrees with Overview. The had/upcoming/no-bootcamp buckets split the "now"
-    # population (latest month, single-month tier) and always sum to it exactly.
-    # Use the same store set as flows["endCounts"] (stores present in both the first
-    # and last period months) so the buckets below always sum to exactly t1_end.
-    _merged = flows["merged"]
-    t1_now_ids = set(_merged.loc[_merged["tier_last"] == 1, "CHAINED_STORE_ID"])
+    # "Now" and the had/upcoming/no-bootcamp split all use the 3-month trailing
+    # average (_tier_base, computed above) -- the SAME definition Bootcamp
+    # targeting already uses -- so a store only counts as Tier 1 "now" if its
+    # latest-3-months average is actually below threshold, not just its single
+    # latest month. "Start" mirrors this with an analogous 3-month average over
+    # the first 3 months of the period, for an apples-to-apples comparison.
+    start_months = PERIOD_MONTHS[:3] if len(PERIOD_MONTHS) >= 3 else PERIOD_MONTHS
+    _start_avg = zone_df[zone_df["MONTHNUM"].isin(start_months)].groupby("CHAINED_STORE_ID")["OVERALL_FIVESTAR"].mean()
+    t1_begin_ids = {sid for sid, avg in _start_avg.items() if classify_tier(avg) == 1}
+
+    t1_now_ids = set(may_df.loc[may_df["_tier_base"] == 1, "CHAINED_STORE_ID"])
 
     bc_entries = (workshops or {}).get("boot_camp", [])
     bc_past_stores = {e["store"] for e in bc_entries if e.get("status") in ("past", "current")}
@@ -1550,18 +1553,19 @@ def compute_single_zone(zone_df, workshops=None):
     no_bc_list = []
     for _, r in no_bc_rows.iterrows():
         sid_b = str(r["CHAINED_STORE_ID"])
+        bl_avg = _bl_avg.get(r["CHAINED_STORE_ID"])
         no_bc_list.append({
             "s": sid_b.zfill(5) if sid_b.isdigit() else sid_b,
             "a": str(r.get("FAREADESC", "")) if pd.notna(r.get("FAREADESC")) else "",
             "f": str(r.get("CURR_FRAN_OWNER_NM", "")) if pd.notna(r.get("CURR_FRAN_OWNER_NM")) else "",
             "d": str(r.get("NIELSENDMADESC", "")) if pd.notna(r.get("NIELSENDMADESC")) else "",
-            "score": round(float(r["OVERALL_FIVESTAR"]), 2) if pd.notna(r["OVERALL_FIVESTAR"]) else None,
+            "score": round(float(bl_avg), 2) if bl_avg is not None and pd.notna(bl_avg) else None,
         })
     no_bc_list.sort(key=lambda x: (x["a"], x["score"] if x["score"] is not None else 99))
 
     t1_opportunity = {
-        "start": t1_start,
-        "now": t1_end,
+        "start": len(t1_begin_ids),
+        "now": len(t1_now_ids),
         "had_bootcamp": len(t1_had_bootcamp),
         "upcoming": len(t1_upcoming_bootcamp),
         "no_bootcamp": len(t1_no_bootcamp),

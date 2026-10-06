@@ -996,7 +996,10 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         if not bl_scores:
             continue
         ctrl_bm = round(sum(x[0] for x in bl_scores) / len(bl_scores), 2)
-        ctrl_tier = bl_scores[-1][1]
+        # Tier from the 3-month trailing average itself (not the single latest
+        # month) -- matches the Tier 1 Opportunity section's definition so a
+        # store's tier bucket never disagrees between the two features.
+        ctrl_tier = classify_tier(ctrl_bm)
         # Control latest
         lt_key = (sid, last_m)
         if lt_key not in df_lookup:
@@ -1599,6 +1602,44 @@ def compute_single_zone(zone_df, workshops=None):
             r["n"] = int(r["n"])
             r["avg"] = round(float(r["avg"]), 2)
 
+    # Per-store Boot Camp attended/control fact (for Boot Camp Effectiveness
+    # tables elsewhere -- Zone Scorecards, Leadership Summary, FZ Dashboard --
+    # all read off this same per-store fact so the numbers never disagree).
+    # Attended: baseline/latest/tier come from that store's most recent Boot
+    # Camp. Control (never attended): baseline = 3-month trailing average
+    # ending at the latest period, tier from that average, latest = latest month.
+    _bc_by_store = {}
+    for _e in (workshops or {}).get("boot_camp", []):
+        if _e.get("status") != "past":
+            continue
+        _sid_e = _e.get("store")
+        if _sid_e is None:
+            continue
+        _prev = _bc_by_store.get(_sid_e)
+        if _prev is None or (_e.get("date") or "") >= (_prev.get("date") or ""):
+            _bc_by_store[_sid_e] = _e
+
+    def _bc_fact(sid, store_months):
+        _bc_entry = _bc_by_store.get(sid)
+        if _bc_entry is not None and _bc_entry.get("baseline_score") is not None and _bc_entry.get("post_scores"):
+            _latest_post = max(_bc_entry["post_scores"], key=lambda x: x["period"])
+            return {
+                "att": True,
+                "bl": _bc_entry["baseline_score"],
+                "lt": _latest_post["score"],
+                "tier": _bc_entry.get("baseline_tier"),
+            }
+        _ctrl_scores = []
+        for _bm in range(last_m - 2, last_m + 1):
+            _sub = store_months[store_months["MONTHNUM"] == _bm]
+            if len(_sub) > 0 and pd.notna(_sub["OVERALL_FIVESTAR"].iloc[0]):
+                _ctrl_scores.append(float(_sub["OVERALL_FIVESTAR"].iloc[0]))
+        _ctrl_bl = round(sum(_ctrl_scores) / len(_ctrl_scores), 2) if _ctrl_scores else None
+        _ctrl_tier = classify_tier(_ctrl_bl) if _ctrl_bl is not None else None
+        _lt_sub = store_months[store_months["MONTHNUM"] == last_m]
+        _ctrl_lt = float(_lt_sub["OVERALL_FIVESTAR"].iloc[0]) if len(_lt_sub) > 0 and pd.notna(_lt_sub["OVERALL_FIVESTAR"].iloc[0]) else None
+        return {"att": False, "bl": _ctrl_bl, "lt": _ctrl_lt, "tier": _ctrl_tier}
+
     # Per-store detail for the "Portfolio" tab
     store_ids = may_df["CHAINED_STORE_ID"].unique()
     stores_data = []
@@ -1818,6 +1859,7 @@ def compute_single_zone(zone_df, workshops=None):
             "cu": cons_under,
             "fscc": fscc_fails,
             "brand": brand_fails,
+            "bc": _bc_fact(sid, store_months),
         }
         # Add monthly scores as m1..mN
         for m in PERIOD_MONTHS:
@@ -2286,6 +2328,7 @@ def _build_fop_store_list(stores, store_detail):
             "speed360_latest": s.get("speed360_latest"),
             "osat_avg": s.get("osat_avg"),
             "osat_latest": s.get("osat_latest"),
+            "bc": s.get("bc"),
         })
         if sid not in store_detail:
             store_detail[sid] = {k: s.get(k, _DETAIL_FIELD_DEFAULT[k]) for k in DETAIL_STORE_FIELDS}
@@ -4324,6 +4367,17 @@ def main(no_cache=False, run_date=None):
 
     # Compute workshop effectiveness and attach to nat_data
     nat_data["workshop_effectiveness"] = compute_workshop_effectiveness(df, workshops_by_oa)
+
+    # National Boot Camp effectiveness, broken out by tier -- reuses the same
+    # simple baseline/latest/by_tier model as the Zone Scorecards table (not
+    # the monthly-lift trajectory model above), applied across all OAs combined,
+    # so leadership sees the same tier-level read as the zone drill-down.
+    _all_boot_national = []
+    for _oa, _odata in workshops_by_oa.items():
+        _all_boot_national.extend(_odata.get("boot_camp", []))
+    _nat_boot_eff = compute_zone_workshop_effectiveness(df, {"boot_camp": _all_boot_national})
+    if _nat_boot_eff:
+        nat_data["workshop_effectiveness"]["boot_camp"] = _nat_boot_eff
 
     # Compute Rising Star targeting data
     rising_data = compute_rising_star_data(df, workshops_by_oa)

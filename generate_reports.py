@@ -1609,11 +1609,15 @@ def compute_single_zone(zone_df, workshops=None):
     # Camp. Control (never attended): baseline = 3-month trailing average
     # ending at the latest period, tier from that average, latest = latest month.
     _bc_by_store = {}
+    _bc_future_stores = set()
     for _e in (workshops or {}).get("boot_camp", []):
-        if _e.get("status") != "past":
-            continue
         _sid_e = _e.get("store")
         if _sid_e is None:
+            continue
+        if _e.get("status") == "future":
+            _bc_future_stores.add(_sid_e)
+            continue
+        if _e.get("status") != "past":
             continue
         _prev = _bc_by_store.get(_sid_e)
         if _prev is None or (_e.get("date") or "") >= (_prev.get("date") or ""):
@@ -1867,6 +1871,8 @@ def compute_single_zone(zone_df, workshops=None):
             "fscc": fscc_fails,
             "brand": brand_fails,
             "bc": _bc_fact(sid, store_months),
+            "bch": sid in _bc_by_store,
+            "bcs": sid in _bc_future_stores,
         }
         # Add monthly scores as m1..mN
         for m in PERIOD_MONTHS:
@@ -2336,6 +2342,8 @@ def _build_fop_store_list(stores, store_detail):
             "osat_avg": s.get("osat_avg"),
             "osat_latest": s.get("osat_latest"),
             "bc": s.get("bc"),
+            "bch": s.get("bch", False),
+            "bcs": s.get("bcs", False),
         })
         if sid not in store_detail:
             store_detail[sid] = {k: s.get(k, _DETAIL_FIELD_DEFAULT[k]) for k in DETAIL_STORE_FIELDS}

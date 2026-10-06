@@ -283,7 +283,7 @@
 <section id="tierGoalSection" style="display:none;">
   <h2>Tier Progress</h2>
   <p class="h2-sub" id="tierGoalSub"></p>
-  <div class="goals" id="tierGoalCards" style="grid-template-columns:repeat(2,1fr);"></div>
+  <div class="goals" id="tierGoalCards" style="grid-template-columns:repeat(3,1fr);"></div>
 </section>
 
 <section id="bcEffSection" style="display:none;">
@@ -727,11 +727,20 @@ function renderTierGoals(stores, scopeLabel){
   sec.style.display = '';
   document.getElementById('tierGoalSub').textContent = MONTHS[0] + ' → ' + MONTHS[MONTHS.length-1] + ' within ' + scopeLabel + '. Annual targets: Tier 1 −50%, Tier 3 +50%.';
   const goals = [
-    {tag:'Tier 1 Reduction', big:`${stats.t1ReductionPct>=0?'−':'+'}${Math.abs(stats.t1ReductionPct)}%`, target:`${stats.t1ReductionPct>=0?'−':'+'}${Math.abs(stats.t1ReductionPct)}% (${stats.t1s} → ${stats.t1e} stores) · Annual target: −50%`, progress:(stats.t1ReductionPct/50)*100},
-    {tag:'Tier 3 Growth', big:`${stats.t3GrowthPct>=0?'+':'−'}${Math.abs(stats.t3GrowthPct)}%`, target:`${stats.t3GrowthPct>=0?'+':'−'}${Math.abs(stats.t3GrowthPct)}% (${stats.t3s} → ${stats.t3e} stores) · Annual target: +50%`, progress:(stats.t3GrowthPct/50)*100},
+    {tag:'Tier 1 Reduction', big:`${Math.round((stats.t1ReductionPct/50)*100)}%`, target:`${stats.t1ReductionPct>=0?'−':'+'}${Math.abs(stats.t1ReductionPct)}% (${stats.t1s} → ${stats.t1e} stores) · Annual target: −50%`, progress:(stats.t1ReductionPct/50)*100},
+    {tag:'Tier 3 Growth', big:`${Math.round((stats.t3GrowthPct/50)*100)}%`, target:`${stats.t3GrowthPct>=0?'+':'−'}${Math.abs(stats.t3GrowthPct)}% (${stats.t3s} → ${stats.t3e} stores) · Annual target: +50%`, progress:(stats.t3GrowthPct/50)*100},
+    {tag:'Stores Moved Up', big:`${stats.movedUp}`, target:`${stats.movedDown} moved down`, plain:true},
   ];
   let h = '';
   goals.forEach(g=>{
+    if(g.plain){
+      h += `<div class="goal-card" style="border-top-color:#276b4d">
+        <div class="tag">${g.tag}</div>
+        <div class="big" style="color:#276b4d">${g.big}</div>
+        <div class="target">${g.target}</div>
+      </div>`;
+      return;
+    }
     const col = progressColor(g.progress);
     const barW = Math.max(4, Math.min(100, g.progress));
     h += `<div class="goal-card" style="border-top-color:${col}">
@@ -739,7 +748,7 @@ function renderTierGoals(stores, scopeLabel){
       <div class="big" style="color:${col}">${g.big}</div>
       <div class="target">${g.target}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${barW}%; background:${col};"></div></div>
-      <div class="progress-lbl">${Math.round(g.progress)}% of annual goal, at ${MONTHS.length}-mo pace · ${stats.movedUp} moved up / ${stats.movedDown} moved down</div>
+      <div class="progress-lbl">${Math.round(g.progress)}% of annual goal, at ${MONTHS.length}-mo pace</div>
     </div>`;
   });
   document.getElementById('tierGoalCards').innerHTML = h;

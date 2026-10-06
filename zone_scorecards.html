@@ -2508,10 +2508,18 @@ function renderZone(oaName){
   const goals = [
     {tag:'Tier 1 Reduction', big:`${Math.round((d.t1_reduction_pct/50)*100)}%`, target:`\u2212${Math.abs(d.t1_reduction_pct)}% (${t1s} \u2192 ${t1e} stores) | Annual target: \u221250%`, progress:(d.t1_reduction_pct/50)*100},
     {tag:'Tier 3 Growth', big:`${Math.round((d.t3_growth_pct/50)*100)}%`, target:`+${d.t3_growth_pct}% (${t3s} \u2192 ${t3e} stores) | Annual target: +50%`, progress:(d.t3_growth_pct/50)*100},
-    {tag:'Stores Moved Up', big:`${Math.round((d.moved_up/75)*100)}%`, target:`${d.moved_up} moved up | Target: 75 (gross) | ${d.moved_down} moved down`, progress:(d.moved_up/75)*100},
+    {tag:'Stores Moved Up', big:`${d.moved_up}`, target:`${d.moved_down} moved down`, plain:true},
   ];
   let goalHTML='';
   goals.forEach(g=>{
+    if(g.plain){
+      goalHTML += `<div class="goal-card" style="border-top-color:#276b4d">
+        <div class="tag">${g.tag}</div>
+        <div class="big" style="color:#276b4d">${g.big}</div>
+        <div class="target">${g.target}</div>
+      </div>`;
+      return;
+    }
     const col = progressColor(g.progress);
     const barW = Math.max(4, Math.min(100, g.progress));
     goalHTML += `<div class="goal-card" style="border-top-color:${col}">

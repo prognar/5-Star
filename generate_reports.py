@@ -1621,14 +1621,21 @@ def compute_single_zone(zone_df, workshops=None):
 
     def _bc_fact(sid, store_months):
         _bc_entry = _bc_by_store.get(sid)
-        if _bc_entry is not None and _bc_entry.get("baseline_score") is not None and _bc_entry.get("post_scores"):
-            _latest_post = max(_bc_entry["post_scores"], key=lambda x: x["period"])
-            return {
-                "att": True,
-                "bl": _bc_entry["baseline_score"],
-                "lt": _latest_post["score"],
-                "tier": _bc_entry.get("baseline_tier"),
-            }
+        if _bc_entry is not None:
+            if _bc_entry.get("baseline_score") is not None and _bc_entry.get("post_scores"):
+                _latest_post = max(_bc_entry["post_scores"], key=lambda x: x["period"])
+                return {
+                    "att": True,
+                    "bl": _bc_entry["baseline_score"],
+                    "lt": _latest_post["score"],
+                    "tier": _bc_entry.get("baseline_tier"),
+                }
+            # Attended, but no usable baseline/follow-up yet (too recent to have
+            # a closed-out 30-day checkpoint) -- exclude from both attended and
+            # control, matching compute_zone_workshop_effectiveness's ws_store_set
+            # exclusion (Zone Scorecards / Leadership Summary). A store that did
+            # attend is never a valid "no workshop" control, even without data yet.
+            return None
         _ctrl_scores = []
         for _bm in range(last_m - 2, last_m + 1):
             _sub = store_months[store_months["MONTHNUM"] == _bm]

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Franchisee Dashboard — Jan – Aug 2026</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   
   :root{
@@ -1688,8 +1689,20 @@ function selectQuintileStores(q){
   updateExportCount();
 }
 
+// A row hidden by the search/region/area filters keeps whatever checked
+// state it had (so re-showing it later doesn't silently lose a selection),
+// but that means a hidden row's checkbox can still read "checked" even
+// though it's not part of what's visibly selected right now. Both the count
+// and the actual export only ever look at visible rows, so what you see
+// selected is exactly what gets exported — a hidden store never sneaks in.
+function _visibleCheckedBoxes(){
+  return Array.from(document.querySelectorAll('#storeBody tr'))
+    .filter(tr => tr.style.display !== 'none')
+    .map(tr => tr.querySelector('.store-select-cb'))
+    .filter(cb => cb);
+}
 function updateExportCount(){
-  const boxes = Array.from(document.querySelectorAll('.store-select-cb'));
+  const boxes = _visibleCheckedBoxes();
   const checked = boxes.filter(cb => cb.checked).length;
   const el = document.getElementById('exportCount');
   if(el) el.textContent = checked + ' of ' + boxes.length + ' selected';
@@ -1698,7 +1711,7 @@ function updateExportCount(){
 }
 
 function exportSelectedCardsPNG(){
-  const ids = new Set(Array.from(document.querySelectorAll('.store-select-cb:checked')).map(cb => cb.dataset.store));
+  const ids = new Set(_visibleCheckedBoxes().filter(cb => cb.checked).map(cb => cb.dataset.store));
   if(!ids.size){
     alert('Select at least one store to export.');
     return;
@@ -2530,6 +2543,9 @@ function switchTab(tab){
     var parts = String(base || 'card').replace(/[\\/:*?"<>|#]/g, '_').trim();
     return (parts || 'card') + '_' + String(s && s.s != null ? s.s : 'x') + '.png';
   }
+  function safeBase(base){
+    return String(base || 'cards').replace(/[\\/:*?"<>|#]/g, '_').trim() || 'cards';
+  }
   /* fz card writer — reuses the page's global helpers. */
   function fzScoreMode(mode, store){
     var ls = sLatest(store);
@@ -2600,7 +2616,15 @@ function switchTab(tab){
     if(!stores || !stores.length){ err('exportCardsPNG: empty store list'); return; }
     var host = hostEl();
     var i = 0;
-    log('PNG export starting: ' + stores.length + ' store(s)');
+    // A single card still downloads directly as one PNG. Multiple cards are
+    // bundled into one .zip instead of N separate downloads -- browsers
+    // silently block most automatic downloads after the first one or two in
+    // a row, so firing off dozens/hundreds of individual PNG downloads was
+    // only ever actually delivering a handful of them.
+    var single = stores.length === 1;
+    var zip = single ? null : (window.JSZip ? new JSZip() : null);
+    if(!single && !zip){ err('exportCardsPNG: JSZip failed to load; cannot bundle ' + stores.length + ' cards'); alert('Could not load the zip library \u2014 check your connection and try again.'); return; }
+    log('PNG export starting: ' + stores.length + ' store(s)' + (single ? '' : ' (zip)'));
     var toast = document.getElementById('_pngToast');
     if(!toast){
       toast = document.createElement('div');
@@ -2609,17 +2633,37 @@ function switchTab(tab){
       document.body.appendChild(toast);
     }
     function toastSet(t){ toast.textContent = t; toast.style.display = t ? 'block' : 'none'; }
-    toastSet('Exporting ' + stores.length + ' ...');
+    toastSet((single ? 'Exporting ' : 'Building ') + stores.length + (single ? ' ...' : ' cards into a zip...'));
+    function finish(){
+      host.innerHTML = '';
+      if(single){ toastSet(''); log('PNG export complete: 1 store'); return; }
+      toastSet('Zipping ' + stores.length + ' images \u2026');
+      zip.generateAsync({type:'blob'}).then(function(blob){
+        dlBlob(blob, safeBase(base) + '_' + stores.length + '_cards.zip');
+        toastSet('');
+        log('PNG export complete: ' + stores.length + ' store(s) (zip)');
+      }, function(e){
+        err('Zip generation failed:', e);
+        toastSet('');
+        alert('Zip generation failed \u2014 see console for details.');
+      });
+    }
     function next(){
-      if(i >= stores.length){ host.innerHTML = ''; toastSet(''); log('PNG export complete: ' + stores.length + ' store(s)'); return; }
+      if(i >= stores.length){ finish(); return; }
       var s = stores[i];
       toastSet((i + 1) + ' / ' + stores.length + ' \u00b7 #' + s.s);
       host.innerHTML = fzCardHTML(s);
       var el = host.firstElementChild;
       if(!el){ err('PNG export: no card element for store #' + s.s); i++; setTimeout(next, 60); return; }
       settle(function(){
-        try { elToBlob(el, 2, function(blob){ dlBlob(blob, safeName(base, s)); i++; setTimeout(next, 300); }); }
-        catch(e){ err('PNG export failed for #' + s.s + ':', e); i++; setTimeout(next, 300); }
+        try {
+          elToBlob(el, 2, function(blob){
+            if(!blob){ err('PNG export: blank blob for #' + s.s); i++; setTimeout(next, 100); return; }
+            if(single){ dlBlob(blob, safeName(base, s)); i++; setTimeout(next, 100); }
+            else { zip.file(safeName(base, s), blob); i++; setTimeout(next, 60); }
+          });
+        }
+        catch(e){ err('PNG export failed for #' + s.s + ':', e); i++; setTimeout(next, 100); }
       });
     }
     next();

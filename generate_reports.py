@@ -106,6 +106,20 @@ STAR_COLORS = {
 }
 BINDING_ORDER = ["WIN_SCORE_STAR", "SPEED_STAR", "BRAND_STAR", "HB_ONTIME_STAR", "FSCC_STAR"]
 
+# Full component spec for workshop-effectiveness component breakdowns: the
+# five 5-Star pillar scores (0-5 scale) plus the four XM360/Taste sentiment
+# metrics (0-1 fraction, displayed as %). Lets a Workshops-tab row drill down
+# into which specific component is driving (or not) the gap between an
+# attended group and its tier-matched control. Each tuple is
+# (source column in zone_df, JSON key, display label, "star"|"pct").
+WORKSHOP_COMPONENT_SPEC = (
+    [(col, col, STAR_LABELS[col], "star") for col in STAR_COLS]
+    + [("TASTE_SCORE", "ct", "Taste", "pct"),
+       ("ACCURACY_SCORE", "accuracy", "Accuracy", "pct"),
+       ("SPEED_SCORE", "speed360", "XM Speed", "pct"),
+       ("OSAT_SCORE", "osat", "OSAT B2B", "pct")]
+)
+
 TIER_COLORS = {1: "#a3122a", 2: "#c07f1f", 3: "#276b4d"}
 TIER_NAMES = {1: "Bootcamp", 2: "Rising Star", 3: "Top Tier"}
 
@@ -960,36 +974,87 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
     return result
 
 
-def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
-    """Compute boot camp workshop effectiveness for a single zone.
-    Compares workshop stores vs tier-matched control stores within the zone."""
+def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="boot_camp", target_tier=1):
+    """Compute workshop effectiveness (Boot Camp or Rising Star) for a single
+    zone or national roll-up. Compares workshop stores vs tier-matched control
+    stores, including a per-component (5-Star pillars + XM360/Taste) baseline-
+    vs-latest breakdown for the attended and control groups -- both overall
+    and broken out by tier -- so a drill-down can show which specific
+    component is driving (or not) the gap between the two groups.
+
+    workshop_key: which workshop list to read off zone_workshops ("boot_camp"
+    or "rising_star").
+    target_tier: the tier this workshop type is nominally aimed at (Boot Camp
+    -> 1, Rising Star -> 2) -- used only to pick which tier's control group
+    anchors the top-level "overall control" row; the by-tier breakout always
+    covers all three tiers regardless of attendee mix.
+    """
     last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
     last_label = MONTH_LABELS[-1] if MONTH_LABELS else str(last_m)
 
-    bc_entries = zone_workshops.get("boot_camp", [])
+    bc_entries = zone_workshops.get(workshop_key, [])
     past_bc = [e for e in bc_entries if e["status"] == "past"]
 
     if not past_bc:
         return None
 
-    # Build score lookup for this zone only
+    # Build score + component lookup for this zone only
     df_lookup = {}
     for _, row in zone_df.iterrows():
         sid = str(row["CHAINED_STORE_ID"])
         mn = int(row["MONTHNUM"])
         s = float(row["OVERALL_FIVESTAR"]) if pd.notna(row["OVERALL_FIVESTAR"]) else None
         t = int(row["_tier"]) if pd.notna(row.get("_tier")) else None
+        comps = {}
+        for src_col, key, _label, _kind in WORKSHOP_COMPONENT_SPEC:
+            v = pd.to_numeric(row.get(src_col), errors="coerce") if src_col in zone_df.columns else None
+            comps[key] = float(v) if v is not None and pd.notna(v) else None
         if s is not None:
-            df_lookup[(sid, mn)] = (s, t)
+            df_lookup[(sid, mn)] = (s, t, comps)
+
+    def _avg_components(sid, months):
+        sums, counts = {}, {}
+        for m in months:
+            rec = df_lookup.get((sid, m))
+            if not rec:
+                continue
+            for k, v in rec[2].items():
+                if v is not None:
+                    sums[k] = sums.get(k, 0.0) + v
+                    counts[k] = counts.get(k, 0) + 1
+        return {k: sums[k] / counts[k] for k in sums}
+
+    def _component_group_avg(dicts):
+        sums, counts = {}, {}
+        for d in dicts:
+            for k, v in d.items():
+                if v is not None:
+                    sums[k] = sums.get(k, 0.0) + v
+                    counts[k] = counts.get(k, 0) + 1
+        return {k: round(sums[k] / counts[k], 4) for k in sums}
+
+    def _component_rows(bl_dicts, lt_dicts):
+        bl_avg = _component_group_avg(bl_dicts)
+        lt_avg = _component_group_avg(lt_dicts)
+        rows = {}
+        for _src, key, label, kind in WORKSHOP_COMPONENT_SPEC:
+            b = bl_avg.get(key)
+            l = lt_avg.get(key)
+            rows[key] = {
+                "label": label,
+                "kind": kind,
+                "baseline": round(b, 4) if b is not None else None,
+                "latest": round(l, 4) if l is not None else None,
+                "delta": round(l - b, 4) if (b is not None and l is not None) else None,
+            }
+        return rows
 
     # Variable group: workshop stores with baseline + follow-up.
-    # Boot Camps aren't exclusively Tier 1 -- some Tier 2/3 stores attend too --
+    # Workshops aren't exclusively aimed at one tier -- other tiers attend too --
     # so track each attendee's baseline tier for the by-tier breakout below.
     ws_store_set = set(e["store"] for e in past_bc)
-    var_baselines = []
-    var_latests = []
-    var_deltas = []
-    var_tiers = []
+    var_baselines, var_latests, var_deltas, var_tiers = [], [], [], []
+    var_bl_comps, var_lt_comps = [], []
 
     for e in past_bc:
         if e["baseline_score"] is None or not e["post_scores"]:
@@ -1001,15 +1066,18 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         var_latests.append(lt)
         var_deltas.append(lt - bm)
         var_tiers.append(e.get("baseline_tier"))
+        bl_months_e = [e["baseline_month"] - 2, e["baseline_month"] - 1, e["baseline_month"]]
+        var_bl_comps.append(_avg_components(e.get("store"), bl_months_e))
+        var_lt_comps.append(_avg_components(e.get("store"), latest_post.get("months") or []))
 
     n_var = len(var_baselines)
 
     # Total attended, regardless of whether they've reached a measurable
     # (30-day+) follow-up yet -- separate from n_var above, which only counts
     # the subset old enough to have a closed-out checkpoint. Lets each row
-    # report "ever had a Boot Camp" and "reached 30+ days" (measurable)
+    # report "ever had a workshop" and "reached 30+ days" (measurable)
     # separately instead of silently dropping the too-recent ones. One row
-    # per store (its most recent Boot Camp, if it had more than one).
+    # per store (its most recent workshop of this type, if it had more than one).
     _latest_past_by_store = {}
     for e in past_bc:
         sid = e.get("store")
@@ -1027,11 +1095,9 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
     n_improved = sum(1 for d in var_deltas if d >= 0)
     n_not_improved = n_var - n_improved
 
-    # Control group: stores in zone that did NOT attend a Boot Camp, at any tier.
-    ctrl_baselines = []
-    ctrl_latests = []
-    ctrl_deltas = []
-    ctrl_tiers = []
+    # Control group: stores in zone that did NOT attend this workshop type, at any tier.
+    ctrl_baselines, ctrl_latests, ctrl_deltas, ctrl_tiers = [], [], [], []
+    ctrl_bl_comps, ctrl_lt_comps = [], []
 
     for sid in zone_df["CHAINED_STORE_ID"].unique():
         if sid in ws_store_set:
@@ -1041,7 +1107,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         for bm in range(last_m - 2, last_m + 1):
             key = (sid, bm)
             if key in df_lookup:
-                s, t = df_lookup[key]
+                s, t, _c = df_lookup[key]
                 if s is not None:
                     bl_scores.append((s, t))
         if not bl_scores:
@@ -1055,15 +1121,17 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         lt_key = (sid, last_m)
         if lt_key not in df_lookup:
             continue
-        lt_s, _ = df_lookup[lt_key]
+        lt_s, _t2, _c2 = df_lookup[lt_key]
         if lt_s is None:
             continue
         ctrl_baselines.append(ctrl_bm)
         ctrl_latests.append(lt_s)
         ctrl_deltas.append(lt_s - ctrl_bm)
         ctrl_tiers.append(ctrl_tier)
+        ctrl_bl_comps.append(_avg_components(sid, list(range(last_m - 2, last_m + 1))))
+        ctrl_lt_comps.append(_avg_components(sid, [last_m]))
 
-    def _group_stats(baselines, latests, deltas):
+    def _group_stats(baselines, latests, deltas, bl_comps, lt_comps):
         n = len(baselines)
         if n == 0:
             return None
@@ -1075,15 +1143,25 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
             "avg_baseline": round(sum(baselines) / n, 2),
             "avg_latest": round(sum(latests) / n, 2),
             "avg_delta": round(sum(deltas) / n, 3),
+            "components": _component_rows(bl_comps, lt_comps),
         }
 
-    # Tier 1 only (boot camp's traditional target tier) -- used for the overall control.
-    t1_ctrl_baselines = [b for b, t in zip(ctrl_baselines, ctrl_tiers) if t == 1]
-    t1_ctrl_latests = [b for b, t in zip(ctrl_latests, ctrl_tiers) if t == 1]
-    t1_ctrl_deltas = [b for b, t in zip(ctrl_deltas, ctrl_tiers) if t == 1]
-    ctrl_data = _group_stats(t1_ctrl_baselines, t1_ctrl_latests, t1_ctrl_deltas)
+    def _filter_by_tier(items, tiers, tier):
+        return [x for x, t in zip(items, tiers) if t == tier]
 
-    # By-tier breakout: Boot Camp attendees vs. non-attending control, within each tier.
+    # Overall control: the target tier's peers only (Boot Camp -> Tier 1,
+    # Rising Star -> Tier 2) -- that's the comparison that matters for "did
+    # the workshop help the stores it's meant for," even though attendees and
+    # the by-tier breakout below cover all three tiers.
+    ctrl_data = _group_stats(
+        _filter_by_tier(ctrl_baselines, ctrl_tiers, target_tier),
+        _filter_by_tier(ctrl_latests, ctrl_tiers, target_tier),
+        _filter_by_tier(ctrl_deltas, ctrl_tiers, target_tier),
+        _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier),
+        _filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier),
+    )
+
+    # By-tier breakout: attendees vs. non-attending control, within each tier.
     # A tier can have attendees who haven't reached a measurable checkpoint yet
     # (total_attended > 0, t_var is None) -- still shown, just with the
     # measurable stats blank, rather than silently dropping the row.
@@ -1091,14 +1169,18 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
     for t in (1, 2, 3):
         t_total_attended = sum(1 for tt in total_attended_tiers if tt == t)
         t_var = _group_stats(
-            [b for b, tt in zip(var_baselines, var_tiers) if tt == t],
-            [b for b, tt in zip(var_latests, var_tiers) if tt == t],
-            [b for b, tt in zip(var_deltas, var_tiers) if tt == t],
+            _filter_by_tier(var_baselines, var_tiers, t),
+            _filter_by_tier(var_latests, var_tiers, t),
+            _filter_by_tier(var_deltas, var_tiers, t),
+            _filter_by_tier(var_bl_comps, var_tiers, t),
+            _filter_by_tier(var_lt_comps, var_tiers, t),
         )
         t_ctrl = _group_stats(
-            [b for b, tt in zip(ctrl_baselines, ctrl_tiers) if tt == t],
-            [b for b, tt in zip(ctrl_latests, ctrl_tiers) if tt == t],
-            [b for b, tt in zip(ctrl_deltas, ctrl_tiers) if tt == t],
+            _filter_by_tier(ctrl_baselines, ctrl_tiers, t),
+            _filter_by_tier(ctrl_latests, ctrl_tiers, t),
+            _filter_by_tier(ctrl_deltas, ctrl_tiers, t),
+            _filter_by_tier(ctrl_bl_comps, ctrl_tiers, t),
+            _filter_by_tier(ctrl_lt_comps, ctrl_tiers, t),
         )
         if t_var is None and t_ctrl is None and t_total_attended == 0:
             continue
@@ -1117,6 +1199,18 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
     if ctrl_data and ctrl_data["n"] > 0 and avg_delta is not None:
         lift = round(avg_delta - ctrl_data["avg_delta"], 3)
 
+    trajectory = {
+        "n": n_var,
+        "n_improved": n_improved,
+        "n_not_improved": n_not_improved,
+        "avg_baseline": round(sum(var_baselines) / n_var, 2) if n_var else None,
+        "avg_latest": round(sum(var_latests) / n_var, 2) if n_var else None,
+        "avg_delta": avg_delta,
+        "total_attended": total_attended,
+    }
+    if n_var:
+        trajectory["components"] = _component_rows(var_bl_comps, var_lt_comps)
+
     return {
         "n_workshops": n_workshops,
         "n_stores": n_var,
@@ -1125,15 +1219,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         "total_workshopped": len(past_bc),
         "total_attended": total_attended,
         "n_future": n_future,
-        "trajectory": {
-            "n": n_var,
-            "n_improved": n_improved,
-            "n_not_improved": n_not_improved,
-            "avg_baseline": round(sum(var_baselines) / n_var, 2) if n_var else None,
-            "avg_latest": round(sum(var_latests) / n_var, 2) if n_var else None,
-            "avg_delta": avg_delta,
-            "total_attended": total_attended,
-        },
+        "trajectory": trajectory,
         "control": ctrl_data,
         "lift": lift,
         "by_tier": by_tier,
@@ -4890,9 +4976,18 @@ def main(no_cache=False, run_date=None):
     _all_boot_national = []
     for _oa, _odata in workshops_by_oa.items():
         _all_boot_national.extend(_odata.get("boot_camp", []))
-    _nat_boot_eff = compute_zone_workshop_effectiveness(df, {"boot_camp": _all_boot_national})
+    _nat_boot_eff = compute_zone_workshop_effectiveness(df, {"boot_camp": _all_boot_national}, workshop_key="boot_camp", target_tier=1)
     if _nat_boot_eff:
         nat_data["workshop_effectiveness"]["boot_camp"] = _nat_boot_eff
+
+    # Same tier-level model for Rising Star (Rising Star's nominal target is
+    # Tier 2, not Tier 1 -- see tierNames in leadership_summary.html).
+    _all_rising_national = []
+    for _oa, _odata in workshops_by_oa.items():
+        _all_rising_national.extend(_odata.get("rising_star", []))
+    _nat_rising_eff = compute_zone_workshop_effectiveness(df, {"rising_star": _all_rising_national}, workshop_key="rising_star", target_tier=2)
+    if _nat_rising_eff:
+        nat_data["workshop_effectiveness"]["rising_star"] = _nat_rising_eff
 
     # Compute Rising Star targeting data
     rising_data = compute_rising_star_data(df, workshops_by_oa)

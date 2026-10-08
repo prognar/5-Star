@@ -1041,29 +1041,42 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         return {k: sums[k] / counts[k] for k in sums}
 
     def _component_group_avg(dicts):
+        """Returns (averages, counts) -- counts is the number of restaurants
+        with non-null data for each component key, which can differ component
+        to component (e.g. XM360 fields are missing more often than 5-Star
+        pillars) and is surfaced in the UI as a per-cell tooltip."""
         sums, counts = {}, {}
         for d in dicts:
             for k, v in d.items():
                 if v is not None:
                     sums[k] = sums.get(k, 0.0) + v
                     counts[k] = counts.get(k, 0) + 1
-        return {k: round(sums[k] / counts[k], 4) for k in sums}
+        avgs = {k: round(sums[k] / counts[k], 4) for k in sums}
+        return avgs, counts
 
     def _component_rows(bl_dicts, period_dicts):
         """period_dicts: {30: [...], 60: [...], 90: [...]} of per-store component
         dicts for that follow-up window (var groups: each store's own 30/60/90-day
         checkpoint; control groups: the same single current-snapshot list repeated
         for all three, since controls have no workshop date to anchor a window to)."""
-        bl_avg = _component_group_avg(bl_dicts)
-        period_avgs = {p: _component_group_avg(period_dicts[p]) for p in (30, 60, 90)}
+        bl_avg, bl_n = _component_group_avg(bl_dicts)
+        period_avgs, period_n = {}, {}
+        for p in (30, 60, 90):
+            period_avgs[p], period_n[p] = _component_group_avg(period_dicts[p])
         rows = {}
         for _src, key, label, kind in WORKSHOP_COMPONENT_SPEC:
             b = bl_avg.get(key)
-            row = {"label": label, "kind": kind, "baseline": round(b, 4) if b is not None else None}
+            row = {
+                "label": label,
+                "kind": kind,
+                "baseline": round(b, 4) if b is not None else None,
+                "n_baseline": bl_n.get(key, 0),
+            }
             for p in (30, 60, 90):
                 v = period_avgs[p].get(key)
                 row[f"p{p}"] = round(v, 4) if v is not None else None
                 row[f"d{p}"] = round(v - b, 4) if (v is not None and b is not None) else None
+                row[f"n{p}"] = period_n[p].get(key, 0)
             rows[key] = row
         return rows
 
@@ -1074,8 +1087,8 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         """Overall-only baseline-vs-latest SSSG, mirroring avg_baseline/avg_latest's
         own definition (each store's own baseline window vs. its own latest
         checkpoint for var; the fixed current window for control)."""
-        bl_avg = _component_group_avg(bl_dicts).get("SSSG")
-        lt_avg = _component_group_avg(lt_dicts).get("SSSG")
+        bl_avg = _component_group_avg(bl_dicts)[0].get("SSSG")
+        lt_avg = _component_group_avg(lt_dicts)[0].get("SSSG")
         n_bl = sum(1 for d in bl_dicts if d.get("SSSG") is not None)
         n_lt = sum(1 for d in lt_dicts if d.get("SSSG") is not None)
         if n_bl == 0 and n_lt == 0:

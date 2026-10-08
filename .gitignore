@@ -6,6 +6,9 @@
 .env
 connections.toml
 
+# LLM summary cache -- local scratch, regenerates on demand
+_summaries.json
+
 # Logo backup (keep original out of the public tree; PHLogo.png is the tracked asset)
 PHLogo_original_red.png
 

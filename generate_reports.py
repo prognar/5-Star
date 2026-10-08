@@ -6,10 +6,16 @@ import os
 import sys
 import csv
 import hashlib
+import subprocess
+import time
+import uuid
+import requests
 from pathlib import Path
 from scipy.stats import pearsonr
 
-# Optional Snowflake connector
+# Optional Snowflake connector (externalbrowser/SSO fallback path only -- the
+# primary path below uses a stored Programmatic Access Token over the REST
+# API instead, which never needs a browser).
 try:
     import snowflake.connector
     HAS_SNOWFLAKE = True
@@ -54,6 +60,11 @@ PERIODS = []  # set dynamically from data
 MONTH_LABELS = []  # set dynamically from data
 PERIOD_MONTHS = []  # month numbers [1..N] detected from data
 REPORT_YEAR = 2026  # set dynamically from data
+CLOSED_SINCE_JAN = []  # stores with real Jan activity whose current STATUSDESC != Open;
+# captured in filter_analysis_data() BEFORE the STATUSDESC=='Open' mask runs, because that
+# mask is keyed off each store's CURRENT status (same value on every historical row, not a
+# true as-of-month value) -- a store that has since closed gets its January row dropped too,
+# so it's invisible to any "present in Jan, absent later" diff done on the filtered data.
 
 # OA -> Zone name lookup (OAs.xlsx, "15 Zone" column). Falls back to the OA's
 # own name if the file is missing or an OA isn't listed, so reports never blank
@@ -140,6 +151,14 @@ SNOWFLAKE_CONNECTION_NAME = os.environ.get("SNOWFLAKE_CONNECTION_NAME", "")
 # known isn't possible here (this runs before any data is loaded), so the
 # source query's year filter is a plain setting -- bump this each January.
 FIVESTAR_SQL_YEAR = os.environ.get("FIVESTAR_SQL_YEAR", "Y2026")
+
+# Preferred Snowflake auth: a Programmatic Access Token, DPAPI-encrypted at
+# rest (tied to this Windows user + machine) by C:\projects\snowflake\store_pat.ps1,
+# queried over the SQL REST API. No browser/SSO prompt ever, unlike the
+# connections.toml externalbrowser fallback below -- this is the same
+# mechanism this machine's other Snowflake tooling already relies on.
+SNOWFLAKE_PAT_FILE = Path(os.environ.get("LOCALAPPDATA", "")) / "snowflake" / "pat.txt"
+SNOWFLAKE_ROLE = os.environ.get("SNOWFLAKE_ROLE", "PH_USER_DATASCIENCE")
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -984,7 +1003,25 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         var_tiers.append(e.get("baseline_tier"))
 
     n_var = len(var_baselines)
-    if n_var == 0:
+
+    # Total attended, regardless of whether they've reached a measurable
+    # (30-day+) follow-up yet -- separate from n_var above, which only counts
+    # the subset old enough to have a closed-out checkpoint. Lets each row
+    # report "ever had a Boot Camp" and "reached 30+ days" (measurable)
+    # separately instead of silently dropping the too-recent ones. One row
+    # per store (its most recent Boot Camp, if it had more than one).
+    _latest_past_by_store = {}
+    for e in past_bc:
+        sid = e.get("store")
+        if sid is None:
+            continue
+        prev = _latest_past_by_store.get(sid)
+        if prev is None or (e.get("date") or "") >= (prev.get("date") or ""):
+            _latest_past_by_store[sid] = e
+    total_attended = len(_latest_past_by_store)
+    total_attended_tiers = [e.get("baseline_tier") for e in _latest_past_by_store.values()]
+
+    if n_var == 0 and total_attended == 0:
         return None
 
     n_improved = sum(1 for d in var_deltas if d >= 0)
@@ -1047,8 +1084,12 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
     ctrl_data = _group_stats(t1_ctrl_baselines, t1_ctrl_latests, t1_ctrl_deltas)
 
     # By-tier breakout: Boot Camp attendees vs. non-attending control, within each tier.
+    # A tier can have attendees who haven't reached a measurable checkpoint yet
+    # (total_attended > 0, t_var is None) -- still shown, just with the
+    # measurable stats blank, rather than silently dropping the row.
     by_tier = {}
     for t in (1, 2, 3):
+        t_total_attended = sum(1 for tt in total_attended_tiers if tt == t)
         t_var = _group_stats(
             [b for b, tt in zip(var_baselines, var_tiers) if tt == t],
             [b for b, tt in zip(var_latests, var_tiers) if tt == t],
@@ -1059,21 +1100,21 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
             [b for b, tt in zip(ctrl_latests, ctrl_tiers) if tt == t],
             [b for b, tt in zip(ctrl_deltas, ctrl_tiers) if tt == t],
         )
-        if t_var is None and t_ctrl is None:
+        if t_var is None and t_ctrl is None and t_total_attended == 0:
             continue
         t_lift = None
         if t_var is not None and t_ctrl is not None:
             t_lift = round(t_var["avg_delta"] - t_ctrl["avg_delta"], 3)
-        by_tier[str(t)] = {"var": t_var, "control": t_ctrl, "lift": t_lift}
+        by_tier[str(t)] = {"var": t_var, "control": t_ctrl, "lift": t_lift, "total_attended": t_total_attended}
 
     # Unique workshop count
     n_workshops = len({e.get("workshop_id") for e in past_bc if e.get("workshop_id")}) or len(past_bc)
     future_bc = [e for e in bc_entries if e["status"] == "future"]
     n_future = len({e.get("workshop_id") for e in future_bc if e.get("workshop_id")}) or len(future_bc)
 
-    avg_delta = round(sum(var_deltas) / n_var, 3)
+    avg_delta = round(sum(var_deltas) / n_var, 3) if n_var else None
     lift = None
-    if ctrl_data and ctrl_data["n"] > 0:
+    if ctrl_data and ctrl_data["n"] > 0 and avg_delta is not None:
         lift = round(avg_delta - ctrl_data["avg_delta"], 3)
 
     return {
@@ -1082,14 +1123,16 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
         "n_improved": n_improved,
         "n_not_improved": n_not_improved,
         "total_workshopped": len(past_bc),
+        "total_attended": total_attended,
         "n_future": n_future,
         "trajectory": {
             "n": n_var,
             "n_improved": n_improved,
             "n_not_improved": n_not_improved,
-            "avg_baseline": round(sum(var_baselines) / n_var, 2),
-            "avg_latest": round(sum(var_latests) / n_var, 2),
+            "avg_baseline": round(sum(var_baselines) / n_var, 2) if n_var else None,
+            "avg_latest": round(sum(var_latests) / n_var, 2) if n_var else None,
             "avg_delta": avg_delta,
+            "total_attended": total_attended,
         },
         "control": ctrl_data,
         "lift": lift,
@@ -1102,10 +1145,50 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops):
 def filter_analysis_data(df):
     """Filter to active stores Jan-Dec 2026 with valid 5-Star scores.
     Detects available months and sets global PERIODS, MONTH_LABELS, PERIOD_MONTHS, REPORT_YEAR."""
-    global PERIODS, MONTH_LABELS, PERIOD_MONTHS, REPORT_YEAR
+    global PERIODS, MONTH_LABELS, PERIOD_MONTHS, REPORT_YEAR, CLOSED_SINCE_JAN
 
     df = df.copy()
     df["_year"] = df["YEARNO"].astype(str).str.extract(r"(\d{4})").astype(float)
+
+    # Capture real closures BEFORE the STATUSDESC=='Open' mask below drops them.
+    # STATUSDESC reflects each store's CURRENT status (same value repeated on every
+    # historical row), so a store that has since closed would otherwise vanish from
+    # `filtered` entirely -- including its January baseline row -- making it
+    # impossible to detect as "closed" from the filtered data alone.
+    jan_mask = (df["_year"] == 2026) & (df["MONTHNUM"] == 1) & (df["OVERALL_FIVESTAR"].notna())
+    jan_df_raw = df[jan_mask]
+    closed_raw = jan_df_raw[jan_df_raw["STATUSDESC"] != "Open"]
+    # The source view often leaves OPX_FOP/OPX_DIRECTOR/FAREADESC blank for
+    # closed stores (org-hierarchy fields appear to be derived from a
+    # current-roster join upstream). Every franchisee maps to exactly one
+    # FOP/Director among still-Open stores, so backfill from that instead of
+    # leaving these stores unattributable in the FOP/Director drill-downs.
+    _open_df = df[df["STATUSDESC"] == "Open"]
+    _fran_fop = _open_df.groupby("CURR_FRAN_OWNER_NM")["FOP"].first()
+    _fran_dir = _open_df.groupby("CURR_FRAN_OWNER_NM")["DIRECTOR"].first()
+    _fran_area = _open_df.groupby("CURR_FRAN_OWNER_NM")["FAREADESC"].first()
+    CLOSED_SINCE_JAN.clear()
+    for sid, grp in closed_raw.groupby("CHAINED_STORE_ID"):
+        last = grp.iloc[-1]
+        fran = str(last.get("CURR_FRAN_OWNER_NM", "")) if pd.notna(last.get("CURR_FRAN_OWNER_NM")) else ""
+        fop = str(last.get("FOP", "")) if pd.notna(last.get("FOP")) else ""
+        dir_ = str(last.get("DIRECTOR", "")) if pd.notna(last.get("DIRECTOR")) else ""
+        area = str(last.get("FAREADESC", "")) if pd.notna(last.get("FAREADESC")) else ""
+        if not fop and fran in _fran_fop.index and pd.notna(_fran_fop[fran]):
+            fop = str(_fran_fop[fran])
+        if not dir_ and fran in _fran_dir.index and pd.notna(_fran_dir[fran]):
+            dir_ = str(_fran_dir[fran])
+        if (not area or area == "N/A") and fran in _fran_area.index and pd.notna(_fran_area[fran]):
+            area = str(_fran_area[fran])
+        CLOSED_SINCE_JAN.append({
+            "s": str(sid),
+            "status": str(last.get("STATUSDESC", "")) if pd.notna(last.get("STATUSDESC")) else "",
+            "f": fran,
+            "oa": str(last.get("OPX_OA", "")) if pd.notna(last.get("OPX_OA")) else "",
+            "fop": fop,
+            "dir": dir_,
+            "a": area,
+        })
 
     mask = (
         (df["STATUSDESC"] == "Open")
@@ -1644,16 +1727,23 @@ def compute_single_zone(zone_df, workshops=None):
                 _latest_post = max(_bc_entry["post_scores"], key=lambda x: x["period"])
                 return {
                     "att": True,
+                    "measurable": True,
                     "bl": _bc_entry["baseline_score"],
                     "lt": _latest_post["score"],
                     "tier": _bc_entry.get("baseline_tier"),
                 }
             # Attended, but no usable baseline/follow-up yet (too recent to have
-            # a closed-out 30-day checkpoint) -- exclude from both attended and
-            # control, matching compute_zone_workshop_effectiveness's ws_store_set
-            # exclusion (Zone Scorecards / Leadership Summary). A store that did
-            # attend is never a valid "no workshop" control, even without data yet.
-            return None
+            # a closed-out 30-day checkpoint). Still counts toward "attended" --
+            # just not toward the measurable improved/not-improved/avg stats
+            # (bl/lt stay null so averages can't accidentally include it) -- and
+            # never as a "no workshop" control either.
+            return {
+                "att": True,
+                "measurable": False,
+                "bl": None,
+                "lt": None,
+                "tier": _bc_entry.get("baseline_tier"),
+            }
         _ctrl_scores = []
         for _bm in range(last_m - 2, last_m + 1):
             _sub = store_months[store_months["MONTHNUM"] == _bm]
@@ -1663,10 +1753,21 @@ def compute_single_zone(zone_df, workshops=None):
         _ctrl_tier = classify_tier(_ctrl_bl) if _ctrl_bl is not None else None
         _lt_sub = store_months[store_months["MONTHNUM"] == last_m]
         _ctrl_lt = float(_lt_sub["OVERALL_FIVESTAR"].iloc[0]) if len(_lt_sub) > 0 and pd.notna(_lt_sub["OVERALL_FIVESTAR"].iloc[0]) else None
-        return {"att": False, "bl": _ctrl_bl, "lt": _ctrl_lt, "tier": _ctrl_tier}
+        return {"att": False, "measurable": True, "bl": _ctrl_bl, "lt": _ctrl_lt, "tier": _ctrl_tier}
 
     # Per-store detail for the "Portfolio" tab
     store_ids = may_df["CHAINED_STORE_ID"].unique()
+
+    # Stores that had real January activity but are no longer Open as of the
+    # current data pull (permanently/temporarily closed, etc.) -- needed so the
+    # "Stores Moved Up" card can separate genuine tier movement from stores that
+    # closed. Sourced from CLOSED_SINCE_JAN (captured in filter_analysis_data()
+    # before the STATUSDESC=='Open' mask drops them from zone_df entirely), not
+    # from a "present in Jan / absent in latest month" diff against zone_df --
+    # that diff can never catch these, since a closed store's January row never
+    # makes it into zone_df in the first place.
+    closed_stores = [c for c in CLOSED_SINCE_JAN if c["oa"] == oa]
+
     stores_data = []
     for sid in store_ids:
         store_months = zone_df[zone_df["CHAINED_STORE_ID"] == sid]
@@ -1966,6 +2067,8 @@ def compute_single_zone(zone_df, workshops=None):
         "binding_tbl": binding_tbl,
         "avg_by_tier": avg_by_tier,
         "bootcamp_areas": bootcamp_data,
+        "closed_stores": closed_stores,
+        "n_closed": len(closed_stores),
         "t1_opportunity": t1_opportunity,
         "low_areas": low_areas,
         "high_areas": high_areas,
@@ -2382,9 +2485,11 @@ def compute_fop_data(df, zones_data):
 
     # Collect all stores with FOP from all zones
     all_stores = []
+    closed_stores = []
     for oa, z in zones_data.items():
         for s in z.get("stores", []):
             all_stores.append(s)
+        closed_stores.extend(z.get("closed_stores", []))
 
     if not all_stores:
         print("  No stores found for FOP data")
@@ -2601,7 +2706,8 @@ def compute_fop_data(df, zones_data):
     return {"fops": fop_data, "directors": sorted(director_data.keys()),
             "directorData": director_data, "overviewData": overview_data,
             "quintiles": quintiles, "store_quintiles": store_quintiles,
-            "store_growth": store_growth, "store_detail": store_detail}
+            "store_growth": store_growth, "store_detail": store_detail,
+            "closed_stores": closed_stores}
 
 
 # ─── LLM Summaries ─────────────────────────────────────────────────────────
@@ -3467,45 +3573,149 @@ AND CURR_FRAN_OWNER_NM <> 'PIZZA HUT OF AMERICA, LLC. (PHI01-060010)'
 """
 
 
+_SNOWFLAKE_PAT_CACHE = {}  # memoized per run -- decrypt once, not once per query
+
+
+def _get_snowflake_pat():
+    """Decrypt the DPAPI-protected Programmatic Access Token at
+    SNOWFLAKE_PAT_FILE via a short PowerShell call (mirrors snow.ps1's own
+    decrypt logic exactly). Returns the plaintext token, or None if the file
+    doesn't exist or decryption fails for any reason (wrong machine/user,
+    PowerShell unavailable, etc.) -- callers fall back to other auth."""
+    if "pat" in _SNOWFLAKE_PAT_CACHE:
+        return _SNOWFLAKE_PAT_CACHE["pat"]
+    token = None
+    if SNOWFLAKE_PAT_FILE.exists():
+        try:
+            ps_cmd = (
+                "$secure = Get-Content -LiteralPath '" + str(SNOWFLAKE_PAT_FILE) + "' | ConvertTo-SecureString; "
+                "$bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure); "
+                "try { [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } "
+                "finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                capture_output=True, text=True, timeout=15,
+            )
+            token = result.stdout.strip() or None
+            if token is None and result.stderr:
+                print(f"  Could not decrypt stored Snowflake PAT: {result.stderr.strip()}")
+        except Exception as e:
+            print(f"  Could not decrypt stored Snowflake PAT: {e}")
+    _SNOWFLAKE_PAT_CACHE["pat"] = token
+    return token
+
+
+def _snowflake_pat_query_df(sql, params=None):
+    """Run a query via Snowflake's SQL REST API using the stored PAT -- no
+    browser/connector involved at all. Returns a DataFrame, or None if no PAT
+    is available or the request fails (caller tries the next auth path)."""
+    pat = _get_snowflake_pat()
+    if not pat:
+        return None
+    if params:
+        # Targeted replace, not sql % params -- the connector's own pyformat
+        # placeholders (%(name)s) are the only thing we're substituting here,
+        # and a blind % would choke on any literal "%" elsewhere in the SQL
+        # (e.g. a LIKE 'FOO%' wildcard, as ALIGNMENT_SQL has).
+        for k, v in params.items():
+            sql = sql.replace(f"%({k})s", f"'{v}'")
+    headers = {
+        "Authorization": f"Bearer {pat}",
+        "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "generate_reports/1.0",
+    }
+    account = SNOWFLAKE_ACCOUNT or "lj10919.us-east-1"
+    base_url = f"https://{account}.snowflakecomputing.com/api/v2/statements"
+    body = {
+        "statement": sql,
+        "timeout": 600,
+        "warehouse": SNOWFLAKE_WAREHOUSE or "PROD_ANALYTIC_WH",
+        "role": SNOWFLAKE_ROLE,
+        "database": SNOWFLAKE_DATABASE or "DATASCIENCE",
+        "schema": SNOWFLAKE_SCHEMA or "AXC1195",
+    }
+    try:
+        resp = requests.post(
+            base_url, headers=headers, json=body,
+            params={"requestId": str(uuid.uuid4()), "async": "false"}, timeout=55,
+        )
+        if resp.status_code == 202:
+            handle = resp.json()["statementHandle"]
+            poll_url = f"{base_url}/{handle}"
+            deadline = time.time() + 600
+            while True:
+                resp = requests.get(poll_url, headers=headers, timeout=30)
+                if resp.status_code == 202:
+                    if time.time() > deadline:
+                        raise TimeoutError(f"statement {handle} still running after 600s")
+                    time.sleep(1)
+                    continue
+                break
+        if not resp.ok:
+            raise RuntimeError(f"{resp.status_code} {resp.reason}: {resp.text}")
+        data = resp.json()
+        meta = data["resultSetMetaData"]
+        cols = [c["name"] for c in meta["rowType"]]
+        rows = list(data.get("data", []))
+        handle = data.get("statementHandle")
+        partitions = meta.get("partitionInfo", [])
+        if handle and len(partitions) > 1:
+            for i in range(1, len(partitions)):
+                part_resp = requests.get(f"{base_url}/{handle}", headers=headers, params={"partition": i}, timeout=600)
+                if not part_resp.ok:
+                    raise RuntimeError(f"{part_resp.status_code} {part_resp.reason}: {part_resp.text}")
+                rows.extend(part_resp.json().get("data", []))
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        print(f"  Snowflake PAT query failed: {e}")
+        return None
+
+
 def _snowflake_query_df(sql, params=None, label=""):
     """Run a query and return a DataFrame (string CHAINED_STORE_ID, if that
     column is present, so a NUMBER-typed column can't silently drop leading
-    zeros). Returns None if Snowflake isn't reachable, the query fails, or it
-    returns nothing -- callers should fall back to their manual CSV in that
-    case, not fail the run."""
-    conn = _snowflake_connect()
-    if conn is None:
-        return None
+    zeros). Tries the PAT/REST path first (no browser ever), then falls back
+    to the connections.toml/env-var connector path. Returns None if nothing
+    works or the query returns no rows -- callers fall back to a manual CSV
+    in that case, not fail the run."""
     if label:
         print(f"  Pulling {label} from Snowflake...")
-    try:
-        cur = conn.cursor()
-        cur.execute(sql, params or {})
-        try:
-            df = cur.fetch_pandas_all()
-        except Exception:
-            rows = cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            df = pd.DataFrame(rows, columns=cols)
-        cur.close()
-        conn.close()
-        if df.empty:
-            print("  Snowflake returned 0 rows; falling back to CSV")
+    df = _snowflake_pat_query_df(sql, params)
+    if df is None:
+        conn = _snowflake_connect()
+        if conn is None:
             return None
-        df.columns = [str(c).upper() for c in df.columns]
-        if "CHAINED_STORE_ID" in df.columns:
-            df["CHAINED_STORE_ID"] = df["CHAINED_STORE_ID"].apply(
-                lambda v: None if pd.isna(v) else (str(int(v)) if isinstance(v, float) else str(v).strip())
-            )
-        print(f"  {len(df):,} rows pulled from Snowflake")
-        return df
-    except Exception as e:
-        print(f"  Snowflake query failed: {e}; falling back to CSV")
         try:
+            cur = conn.cursor()
+            cur.execute(sql, params or {})
+            try:
+                df = cur.fetch_pandas_all()
+            except Exception:
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                df = pd.DataFrame(rows, columns=cols)
+            cur.close()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  Snowflake query failed: {e}; falling back to CSV")
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None
+    if df.empty:
+        print("  Snowflake returned 0 rows; falling back to CSV")
         return None
+    df.columns = [str(c).upper() for c in df.columns]
+    if "CHAINED_STORE_ID" in df.columns:
+        df["CHAINED_STORE_ID"] = df["CHAINED_STORE_ID"].apply(
+            lambda v: None if pd.isna(v) else (str(int(v)) if isinstance(v, float) else str(v).strip())
+        )
+    print(f"  {len(df):,} rows pulled from Snowflake")
+    return df
 
 
 def load_5star_from_snowflake():

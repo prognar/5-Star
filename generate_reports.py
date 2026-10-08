@@ -106,14 +106,20 @@ STAR_COLORS = {
 }
 BINDING_ORDER = ["WIN_SCORE_STAR", "SPEED_STAR", "BRAND_STAR", "HB_ONTIME_STAR", "FSCC_STAR"]
 
-# Full component spec for workshop-effectiveness component breakdowns: the
-# five 5-Star pillar scores (0-5 scale) plus the four XM360/Taste sentiment
-# metrics (0-1 fraction, displayed as %). Lets a Workshops-tab row drill down
-# into which specific component is driving (or not) the gap between an
-# attended group and its tier-matched control. Each tuple is
-# (source column in zone_df, JSON key, display label, "star"|"pct").
+# Full component spec for workshop-effectiveness component breakdowns: Win
+# Score/Speed/Hutbot use their actual metric (0-100%, ACTUAL_COLS) rather than
+# the 0-5 star grade -- Brand and FSCC don't have a comparable numeric actual
+# (categorical/count-based), so those two stay on the star scale -- plus the
+# four XM360/Taste sentiment metrics (0-1 fraction, displayed as %). Lets a
+# Workshops-tab row drill down into which specific component is driving (or
+# not) the gap between an attended group and its tier-matched control. Each
+# tuple is (source column in zone_df, JSON key, display label, "star"|"pct100"|"pct").
 WORKSHOP_COMPONENT_SPEC = (
-    [(col, col, STAR_LABELS[col], "star") for col in STAR_COLS]
+    [("WIN_SCORE_ACTUAL", "WIN_SCORE_ACTUAL", "Win Score", "pct100"),
+     ("SPEED_ACTUAL", "SPEED_ACTUAL", "Speed", "pct100"),
+     ("BRAND_STAR", "BRAND_STAR", STAR_LABELS["BRAND_STAR"], "star"),
+     ("HB_ONTIME_ACTUAL", "HB_ONTIME_ACTUAL", "Hutbot", "pct100"),
+     ("FSCC_STAR", "FSCC_STAR", STAR_LABELS["FSCC_STAR"], "star")]
     + [("TASTE_SCORE", "ct", "Taste", "pct"),
        ("ACCURACY_SCORE", "accuracy", "Accuracy", "pct"),
        ("SPEED_SCORE", "speed360", "XM Speed", "pct"),
@@ -1033,28 +1039,34 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
                     counts[k] = counts.get(k, 0) + 1
         return {k: round(sums[k] / counts[k], 4) for k in sums}
 
-    def _component_rows(bl_dicts, lt_dicts):
+    def _component_rows(bl_dicts, period_dicts):
+        """period_dicts: {30: [...], 60: [...], 90: [...]} of per-store component
+        dicts for that follow-up window (var groups: each store's own 30/60/90-day
+        checkpoint; control groups: the same single current-snapshot list repeated
+        for all three, since controls have no workshop date to anchor a window to)."""
         bl_avg = _component_group_avg(bl_dicts)
-        lt_avg = _component_group_avg(lt_dicts)
+        period_avgs = {p: _component_group_avg(period_dicts[p]) for p in (30, 60, 90)}
         rows = {}
         for _src, key, label, kind in WORKSHOP_COMPONENT_SPEC:
             b = bl_avg.get(key)
-            l = lt_avg.get(key)
-            rows[key] = {
-                "label": label,
-                "kind": kind,
-                "baseline": round(b, 4) if b is not None else None,
-                "latest": round(l, 4) if l is not None else None,
-                "delta": round(l - b, 4) if (b is not None and l is not None) else None,
-            }
+            row = {"label": label, "kind": kind, "baseline": round(b, 4) if b is not None else None}
+            for p in (30, 60, 90):
+                v = period_avgs[p].get(key)
+                row[f"p{p}"] = round(v, 4) if v is not None else None
+                row[f"d{p}"] = round(v - b, 4) if (v is not None and b is not None) else None
+            rows[key] = row
         return rows
+
+    def _ctrl_periods(lt_dicts):
+        return {30: lt_dicts, 60: lt_dicts, 90: lt_dicts}
 
     # Variable group: workshop stores with baseline + follow-up.
     # Workshops aren't exclusively aimed at one tier -- other tiers attend too --
     # so track each attendee's baseline tier for the by-tier breakout below.
     ws_store_set = set(e["store"] for e in past_bc)
     var_baselines, var_latests, var_deltas, var_tiers = [], [], [], []
-    var_bl_comps, var_lt_comps = [], []
+    var_bl_comps = []
+    var_period_comps = {30: [], 60: [], 90: []}
 
     for e in past_bc:
         if e["baseline_score"] is None or not e["post_scores"]:
@@ -1066,9 +1078,13 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         var_latests.append(lt)
         var_deltas.append(lt - bm)
         var_tiers.append(e.get("baseline_tier"))
+        sid_e = e.get("store")
         bl_months_e = [e["baseline_month"] - 2, e["baseline_month"] - 1, e["baseline_month"]]
-        var_bl_comps.append(_avg_components(e.get("store"), bl_months_e))
-        var_lt_comps.append(_avg_components(e.get("store"), latest_post.get("months") or []))
+        var_bl_comps.append(_avg_components(sid_e, bl_months_e))
+        posts_by_period = {x["period"]: x for x in e["post_scores"]}
+        for p in (30, 60, 90):
+            pe = posts_by_period.get(p)
+            var_period_comps[p].append(_avg_components(sid_e, pe["months"]) if pe else {})
 
     n_var = len(var_baselines)
 
@@ -1131,7 +1147,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         ctrl_bl_comps.append(_avg_components(sid, list(range(last_m - 2, last_m + 1))))
         ctrl_lt_comps.append(_avg_components(sid, [last_m]))
 
-    def _group_stats(baselines, latests, deltas, bl_comps, lt_comps):
+    def _group_stats(baselines, latests, deltas, bl_comps, period_comps):
         n = len(baselines)
         if n == 0:
             return None
@@ -1143,7 +1159,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
             "avg_baseline": round(sum(baselines) / n, 2),
             "avg_latest": round(sum(latests) / n, 2),
             "avg_delta": round(sum(deltas) / n, 3),
-            "components": _component_rows(bl_comps, lt_comps),
+            "components": _component_rows(bl_comps, period_comps),
         }
 
     def _filter_by_tier(items, tiers, tier):
@@ -1158,7 +1174,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         _filter_by_tier(ctrl_latests, ctrl_tiers, target_tier),
         _filter_by_tier(ctrl_deltas, ctrl_tiers, target_tier),
         _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier),
-        _filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier),
+        _ctrl_periods(_filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier)),
     )
 
     # By-tier breakout: attendees vs. non-attending control, within each tier.
@@ -1173,14 +1189,14 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
             _filter_by_tier(var_latests, var_tiers, t),
             _filter_by_tier(var_deltas, var_tiers, t),
             _filter_by_tier(var_bl_comps, var_tiers, t),
-            _filter_by_tier(var_lt_comps, var_tiers, t),
+            {p: _filter_by_tier(var_period_comps[p], var_tiers, t) for p in (30, 60, 90)},
         )
         t_ctrl = _group_stats(
             _filter_by_tier(ctrl_baselines, ctrl_tiers, t),
             _filter_by_tier(ctrl_latests, ctrl_tiers, t),
             _filter_by_tier(ctrl_deltas, ctrl_tiers, t),
             _filter_by_tier(ctrl_bl_comps, ctrl_tiers, t),
-            _filter_by_tier(ctrl_lt_comps, ctrl_tiers, t),
+            _ctrl_periods(_filter_by_tier(ctrl_lt_comps, ctrl_tiers, t)),
         )
         if t_var is None and t_ctrl is None and t_total_attended == 0:
             continue
@@ -1209,7 +1225,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         "total_attended": total_attended,
     }
     if n_var:
-        trajectory["components"] = _component_rows(var_bl_comps, var_lt_comps)
+        trajectory["components"] = _component_rows(var_bl_comps, var_period_comps)
 
     return {
         "n_workshops": n_workshops,

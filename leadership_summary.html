@@ -737,25 +737,29 @@ function wsCompDeltaStr(v, kind){
 }
 function wsComponentPanelHTML(components){
   if(!components) return '<div style="padding:6px 8px;color:var(--muted);font-size:11px;">No component data available.</div>';
+  // Restaurant count per checkpoint column, for the header tooltip -- max
+  // across components (individual components can run slightly lower when a
+  // metric like Taste/Accuracy is missing for some stores).
+  const restTip = n => (n||0)+' restaurant'+(n===1?'':'s')+' with data at this checkpoint';
+  const colCount = field => Math.max(0, ...WS_COMP_ORDER.map(k => (components[k] && components[k][field]) || 0));
   let h = '<div style="padding:8px 10px;background:var(--card);">';
   h += '<div style="font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">5-Star &amp; XM360 component breakdown · Win/Speed/Hutbot shown as actual metrics, Brand/FSCC as star score</div>';
   h += '<table style="width:100%;font-size:11px;"><thead><tr>';
   h += '<th style="text-align:left;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;">Component</th>';
-  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;">BL</th>';
-  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;">30d</th>';
-  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;">60d</th>';
-  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;">90d</th>';
+  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;cursor:help;" title="'+esc(restTip(colCount('n_baseline')))+'">BL</th>';
+  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;cursor:help;" title="'+esc(restTip(colCount('n30')))+'">30d</th>';
+  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;cursor:help;" title="'+esc(restTip(colCount('n60')))+'">60d</th>';
+  h += '<th style="text-align:right;padding:3px 6px;color:var(--muted);font-family:IBM Plex Mono;font-size:9px;text-transform:uppercase;cursor:help;" title="'+esc(restTip(colCount('n90')))+'">90d</th>';
   h += '</tr></thead><tbody>';
-  const restTip = n => (n||0)+' restaurant'+(n===1?'':'s')+' with data for this component';
   WS_COMP_ORDER.forEach(k=>{
     const row = components[k];
     if(!row) return;
     h += '<tr><td style="padding:3px 6px;">'+esc(row.label)+'</td>'
-      + '<td style="text-align:right;padding:3px 6px;font-family:IBM Plex Mono;cursor:help;" title="'+esc(restTip(row.n_baseline))+'">'+wsCompFmt(row.baseline, row.kind)+'</td>';
+      + '<td style="text-align:right;padding:3px 6px;font-family:IBM Plex Mono;">'+wsCompFmt(row.baseline, row.kind)+'</td>';
     [30,60,90].forEach(p=>{
-      const v = row['p'+p], d = row['d'+p], n = row['n'+p];
+      const v = row['p'+p], d = row['d'+p];
       const dColor = d>0 ? 'color:#276b4d' : d<0 ? 'color:#a3122a' : 'color:var(--muted)';
-      h += '<td style="text-align:right;padding:3px 6px;font-family:IBM Plex Mono;cursor:help;" title="'+esc(restTip(n))+'">'+wsCompFmt(v, row.kind)
+      h += '<td style="text-align:right;padding:3px 6px;font-family:IBM Plex Mono;">'+wsCompFmt(v, row.kind)
         + (d!=null ? ' <span style="font-size:9px;'+dColor+'">'+wsCompDeltaStr(d, row.kind)+'</span>' : '')
         + '</td>';
     });
@@ -791,7 +795,19 @@ function renderWorkshopEff(containerId, data, label, color){
 
   let h = '<div style="margin-top:20px;"><h3 style="font-family:Oswald,sans-serif;font-weight:600;font-size:18px;text-transform:uppercase;letter-spacing:.03em;color:'+(color||'var(--text)')+';margin:0 0 12px;border-left:4px solid '+(color||'var(--muted)')+';padding-left:10px;">'+label+'</h3>';
 
-  h += '<table><thead><tr><th></th>' + (hasTotal ? '<th style="text-align:right">Had '+label+'</th>' : '') + '<th style="text-align:right">'+(hasTotal?'Measurable (30+d)':'n')+'</th><th style="text-align:right">Improved</th><th style="text-align:right">Not Improved</th><th style="text-align:right">Avg BL</th><th style="text-align:right">Avg Latest</th><th style="text-align:right">Avg \u0394</th></tr></thead><tbody>';
+  const sssgTip = 'Same-store sales growth \u2014 Overall only (not broken out by tier). Noisier than the 5-Star/XM360 signal and only available for stores with 12+ months tenure (needs a year-ago comparable), so sample size is lower than the columns to the left.';
+  function sssgCells(grp){
+    if(!grp || !grp.sssg){
+      return '<td style="text-align:right;color:var(--muted)">\u2014</td><td style="text-align:right;color:var(--muted)">\u2014</td><td style="text-align:right;color:var(--muted)">\u2014</td>';
+    }
+    const s = grp.sssg;
+    const fmtPct = v => v==null ? '\u2014' : (v>=0?'+':'') + (v*100).toFixed(1)+'%';
+    return '<td style="text-align:right;">'+fmtPct(s.baseline)+'</td>'
+      + '<td style="text-align:right;">'+fmtPct(s.latest)+'</td>'
+      + '<td style="text-align:right;'+deltaColor(s.delta)+';font-weight:600">'+fmtPct(s.delta)+'</td>';
+  }
+
+  h += '<table><thead><tr><th></th>' + (hasTotal ? '<th style="text-align:right">Had '+label+'</th>' : '') + '<th style="text-align:right">'+(hasTotal?'Measurable (30+d)':'n')+'</th><th style="text-align:right">Improved</th><th style="text-align:right">Not Improved</th><th style="text-align:right">Avg BL</th><th style="text-align:right">Avg Latest</th><th style="text-align:right">Avg \u0394</th><th style="text-align:right;cursor:help;" title="'+esc(sssgTip)+'">SSSG BL</th><th style="text-align:right;cursor:help;" title="'+esc(sssgTip)+'">SSSG Latest</th><th style="text-align:right;cursor:help;" title="'+esc(sssgTip)+'">SSSG \u0394</th></tr></thead><tbody>';
 
   // Worked stores row
   if(t.n){
@@ -804,10 +820,11 @@ function renderWorkshopEff(containerId, data, label, color){
     h += '<td style="text-align:right">'+t.avg_baseline.toFixed(2)+'</td>';
     h += '<td style="text-align:right">'+t.avg_latest.toFixed(2)+'</td>';
     h += '<td style="text-align:right;'+deltaColor(t.avg_delta)+';font-weight:600">'+fmtDelta(t.avg_delta)+'</td>';
+    h += sssgCells(t);
     h += '</tr>';
     h += wsCompDetailRow(rid, t.components);
   } else if(hasTotal && data.total_attended){
-    h += '<tr><td class="name" style="font-weight:600">Workshopped</td><td style="text-align:right;font-weight:600">'+data.total_attended+'</td><td colspan="5" style="color:var(--muted)">none old enough to measure yet</td></tr>';
+    h += '<tr><td class="name" style="font-weight:600">Workshopped</td><td style="text-align:right;font-weight:600">'+data.total_attended+'</td><td colspan="8" style="color:var(--muted)">none old enough to measure yet</td></tr>';
   }
 
   // Control row
@@ -821,6 +838,7 @@ function renderWorkshopEff(containerId, data, label, color){
     h += '<td style="text-align:right">'+c.avg_baseline.toFixed(2)+'</td>';
     h += '<td style="text-align:right">'+c.avg_latest.toFixed(2)+'</td>';
     h += '<td style="text-align:right;'+deltaColor(c.avg_delta)+'">'+fmtDelta(c.avg_delta)+'</td>';
+    h += sssgCells(c);
     h += '</tr>';
     h += wsCompDetailRow(rid, c.components);
   }
@@ -879,31 +897,6 @@ function renderWorkshopEff(containerId, data, label, color){
     h += '<strong style="color:var(--text)">Workshop lift vs control:</strong> ';
     h += liftDiff != null ? '<span style="'+deltaColor(liftDiff)+';font-weight:600">'+fmtDelta(liftDiff)+'</span> ' : '';
     h += '('+data.n_improved+' improved out of '+t.n+' workshopped vs '+c.n_improved+' out of '+c.n+' control)';
-    h += '</div>';
-  }
-
-  // Sales growth (SSSG) -- Overall only, not broken out by tier: noisier than
-  // the 5-Star/XM360 signal above and only available for stores with 12+
-  // months of tenure (needs a year-ago comparable), so sample sizes are lower.
-  if(t.sssg || (c && c.sssg)){
-    const fmtPct = v => v==null ? '—' : (v>=0?'+':'') + (v*100).toFixed(1)+'%';
-    const pctColor = v => v>0 ? 'color:#276b4d' : v<0 ? 'color:#a3122a' : '';
-    h += '<div style="margin-top:8px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px;">';
-    h += '<strong style="color:var(--text)">Sales Growth (SSSG):</strong> ';
-    if(t.sssg){
-      h += 'Workshopped '+fmtPct(t.sssg.baseline)+' → '+fmtPct(t.sssg.latest)
-        + ' (<span style="'+pctColor(t.sssg.delta)+';font-weight:600">'+fmtPct(t.sssg.delta)+'</span>, '+t.sssg.n_latest+' stores w/ 12+ mo tenure)';
-    } else {
-      h += 'No workshopped stores with 12+ months tenure to measure.';
-    }
-    if(c && c.sssg){
-      h += ' vs Control '+fmtPct(c.sssg.baseline)+' → '+fmtPct(c.sssg.latest)
-        + ' (<span style="'+pctColor(c.sssg.delta)+';font-weight:600">'+fmtPct(c.sssg.delta)+'</span>, '+c.sssg.n_latest+' stores)';
-      if(t.sssg && t.sssg.delta!=null && c.sssg.delta!=null){
-        const sssgLift = t.sssg.delta - c.sssg.delta;
-        h += ' — lift: <span style="'+pctColor(sssgLift)+';font-weight:600">'+fmtPct(sssgLift)+'</span>';
-      }
-    }
     h += '</div>';
   }
 

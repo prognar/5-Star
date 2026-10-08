@@ -38,9 +38,9 @@
   .h2-sub{font-size:12.5px; color:var(--muted); margin:0 0 18px;}
   .goals{display:grid; grid-template-columns:repeat(4,1fr); gap:16px;}
   .goal-card{background:var(--card); border:1px solid var(--line); border-top:4px solid var(--line); padding:18px;}
-  .goal-card .tag{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;}
-  .goal-card .big{font-family:'Oswald',sans-serif; font-size:27px; font-weight:600; margin:6px 0 2px;}
-  .goal-card .target{font-size:11.5px; color:var(--muted);}
+  .tag{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;}
+  .big{font-family:'Oswald',sans-serif; font-size:27px; font-weight:600; margin:6px 0 2px;}
+  .target{font-size:11.5px; color:var(--muted);}
   .bar-track{height:6px; background:var(--line); margin-top:10px; overflow:hidden; border-radius:3px;}
   .bar-fill{height:100%; border-radius:3px;}
   .progress-lbl{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); margin-top:5px; text-align:right;}
@@ -853,8 +853,8 @@ function renderTierGoals(stores, scopeLabel, closedFilterFn){
         </div>
         <div style="font-size:12px;line-height:1.9;">
           <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--pine);margin-right:6px;"></span>Had Boot Camp — ${cov.hadCount}</div>
-          <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--gold);margin-right:6px;"></span>Scheduled Boot Camp — ${cov.schedCount}</div>
-          <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--cardinal);margin-right:6px;"></span>Need Boot Camp — ${cov.needCount}</div>
+          <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--gold);margin-right:6px;"></span>Scheduled BC — ${cov.schedCount}</div>
+          <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--cardinal);margin-right:6px;"></span>Need BC — ${cov.needCount}</div>
         </div>
       </div>
       <div class="target" style="margin-top:10px;">${cov.covered} of ${cov.nowT1Total} stores currently Tier 1 (latest 3-mo avg) have had or have a Boot Camp scheduled · Goal: 100% coverage</div>

@@ -1015,6 +1015,16 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         for src_col, key, _label, _kind in WORKSHOP_COMPONENT_SPEC:
             v = pd.to_numeric(row.get(src_col), errors="coerce") if src_col in zone_df.columns else None
             comps[key] = float(v) if v is not None and pd.notna(v) else None
+        # Same-store sales growth (SSSG) -- Overall-only (not part of the by-tier
+        # component breakdown): a noisier, sales-side complement to the 5-Star/
+        # XM360 quality signal above, and only available for stores with 12+
+        # months of tenure (needs a year-ago comparable), so coverage is lower.
+        sssg_v = pd.to_numeric(row.get("SSSG"), errors="coerce") if "SSSG" in zone_df.columns else None
+        if sssg_v is not None and pd.notna(sssg_v):
+            _lo, _hi = GROWTH_RATIO_BAND
+            comps["SSSG"] = float(max(_lo - 1.0, min(_hi - 1.0, sssg_v)))
+        else:
+            comps["SSSG"] = None
         if s is not None:
             df_lookup[(sid, mn)] = (s, t, comps)
 
@@ -1060,12 +1070,30 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
     def _ctrl_periods(lt_dicts):
         return {30: lt_dicts, 60: lt_dicts, 90: lt_dicts}
 
+    def _sssg_pair(bl_dicts, lt_dicts):
+        """Overall-only baseline-vs-latest SSSG, mirroring avg_baseline/avg_latest's
+        own definition (each store's own baseline window vs. its own latest
+        checkpoint for var; the fixed current window for control)."""
+        bl_avg = _component_group_avg(bl_dicts).get("SSSG")
+        lt_avg = _component_group_avg(lt_dicts).get("SSSG")
+        n_bl = sum(1 for d in bl_dicts if d.get("SSSG") is not None)
+        n_lt = sum(1 for d in lt_dicts if d.get("SSSG") is not None)
+        if n_bl == 0 and n_lt == 0:
+            return None
+        return {
+            "baseline": bl_avg,
+            "latest": lt_avg,
+            "delta": round(lt_avg - bl_avg, 4) if (bl_avg is not None and lt_avg is not None) else None,
+            "n_baseline": n_bl,
+            "n_latest": n_lt,
+        }
+
     # Variable group: workshop stores with baseline + follow-up.
     # Workshops aren't exclusively aimed at one tier -- other tiers attend too --
     # so track each attendee's baseline tier for the by-tier breakout below.
     ws_store_set = set(e["store"] for e in past_bc)
     var_baselines, var_latests, var_deltas, var_tiers = [], [], [], []
-    var_bl_comps = []
+    var_bl_comps, var_lt_comps = [], []
     var_period_comps = {30: [], 60: [], 90: []}
 
     for e in past_bc:
@@ -1081,6 +1109,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         sid_e = e.get("store")
         bl_months_e = [e["baseline_month"] - 2, e["baseline_month"] - 1, e["baseline_month"]]
         var_bl_comps.append(_avg_components(sid_e, bl_months_e))
+        var_lt_comps.append(_avg_components(sid_e, latest_post.get("months") or []))
         posts_by_period = {x["period"]: x for x in e["post_scores"]}
         for p in (30, 60, 90):
             pe = posts_by_period.get(p)
@@ -1176,6 +1205,11 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier),
         _ctrl_periods(_filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier)),
     )
+    if ctrl_data:
+        ctrl_data["sssg"] = _sssg_pair(
+            _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier),
+            _filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier),
+        )
 
     # By-tier breakout: attendees vs. non-attending control, within each tier.
     # A tier can have attendees who haven't reached a measurable checkpoint yet
@@ -1226,6 +1260,7 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
     }
     if n_var:
         trajectory["components"] = _component_rows(var_bl_comps, var_period_comps)
+        trajectory["sssg"] = _sssg_pair(var_bl_comps, var_lt_comps)
 
     return {
         "n_workshops": n_workshops,

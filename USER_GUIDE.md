@@ -10,7 +10,8 @@ Four HTML dashboards, generated from `5-Star.csv` and optional `Workshops.csv`. 
 
 - **Python 3.9+**, plus the `anthropic` package (`pip install anthropic`) if you want AI-generated summaries
 - **(Optional) Claude API access** — set `ANTHROPIC_API_KEY` (or run `ant auth login`) to enable AI-generated narrative summaries. Without it, data-driven fallback summaries are used and reports always have content.
-- **Monthly CSV** — the script auto-detects which months are present in the CSV and adjusts all labels, sparklines, and scoring windows accordingly. No month references are hardcoded.
+- **(Optional) Snowflake access** — set `SNOWFLAKE_CONNECTION_NAME` (or `SNOWFLAKE_ACCOUNT`/`SNOWFLAKE_USER`/`SNOWFLAKE_PASSWORD`) in `.env` to pull `5-Star full.csv`'s data live instead of reading it from disk — see "Exporting Data from Snowflake" below. Without it, the script reads the CSV exactly as before.
+- **Monthly CSV** — the script auto-detects which months are present in the data (Snowflake or CSV) and adjusts all labels, sparklines, and scoring windows accordingly. No month references are hardcoded.
 
 ### Required Files
 
@@ -41,10 +42,30 @@ Summaries are cached in `_summaries.json`. Delete this file to force regeneratio
 
 ### Exporting Data from Snowflake
 
-Run these queries and save the results as CSVs in the `Reporting` folder.
+**As of 2026-10, `5-Star.csv` no longer has to be pulled and saved by hand.**
+`generate_reports.py` tries Snowflake first every run (`load_5star_from_snowflake()`,
+running the exact query below against `AXC1195.FXT_DASHBOARD_BASE_MONTHLY`) and
+only falls back to reading `5-Star full.csv` from disk if Snowflake isn't
+reachable. To enable the automatic path, set one of these in `.env`:
+
+- `SNOWFLAKE_CONNECTION_NAME=<profile name>` — reuses an existing profile from
+  `~/.snowflake/connections.toml` (whatever the Snowflake CLI already uses on
+  this machine). This is the easiest option if `snow sql` already works for you.
+- Or the explicit `SNOWFLAKE_ACCOUNT` / `SNOWFLAKE_USER` / `SNOWFLAKE_PASSWORD`
+  (plus optional `SNOWFLAKE_WAREHOUSE` / `SNOWFLAKE_DATABASE` / `SNOWFLAKE_SCHEMA`) env vars.
+
+Neither set → it silently falls back to the manual CSV below, so the old
+workflow still works unchanged if you'd rather keep pulling it by hand (or
+need to hand-edit the extract before loading it). The connection attempt is
+capped at 15 seconds (`login_timeout`) so a scheduled/unattended run can never
+hang waiting on an interactive SSO prompt — it just falls back to the CSV.
+
+The query itself lives in `generate_reports.py` as `FIVESTAR_SQL` — edit it
+there (not here) if the schema changes, so the code and the docs can't drift
+apart. Still useful for a one-off manual pull:
 
 <details>
-<summary><code>5-Star.csv</code> — store-month scores</summary>
+<summary><code>5-Star full.csv</code> — store-month scores (<code>FIVESTAR_SQL</code> in <code>generate_reports.py</code>)</summary>
 
 ```sql
 SELECT
@@ -52,38 +73,84 @@ SELECT
     ,YEARNO
     ,MONTHNUM
     ,STATUSDESC
-    ,NIELSENDMADESC AS DMA
-    ,CURR_FRAN_OWNER_NM AS FRANCHISEE
-    ,FREGIONDESC AS REGION_COACH
-    ,FAREADESC AS AREA_COACH
-    ,CONCEPTDESC AS CONCEPT
+    ,NIELSENDMADESC
+    ,CURR_FRAN_OWNER_NM
+    ,FREGIONDESC
+    ,FAREADESC
+    ,CONCEPTDESC
     ,LATITUDE
     ,LONGITUDE
-    ,OPX_OA AS OA
-    ,OPX_FOP AS FOP
-    ,OPX_DIRECTOR AS DIRECTOR
-    ,CY_SS_SALES_TNS AS SALES
-    ,LY_SS_SALES_TNS AS SALES_LY
-    ,DIV0(CY_SS_SALES_TNS,LY_SS_SALES_TNS) AS SSSG
-    ,CY_SS_TRANS AS TRANSACTIONS
-    ,LY_SS_TRANS AS TRANSACTIONS_LY
-    ,DIV0(CY_SS_TRANS,LY_SS_TRANS) AS SSTG
-    ,OVERALL_FIVESTAR AS FIVESTAR
+    ,POLL_COUNT
+    ,OPX_OA
+    ,OPX_FOP
+    ,OPX_DIRECTOR
+    ,FAREADESC AS AREA
+    ,FREGIONDESC AS REGION
+    ,CY_SS_SALES_TNS
+    ,LY_SS_SALES_TNS
+    ,CY_SS_TRANS
+    ,LY_SS_TRANS
+    ,CY_TOTAL_NET_SALES
+    ,DAAS_DELIVERIES
+    ,INTERNAL_DELIVERIES
+    ,DIGITAL_ORDERSOURCE
+    ,NON_DIGITAL_ORDERSOURCE
+    ,PROD_TIME
+    ,DEL_TIME
+    ,MAKE_TIME
+    ,DEL_RACK_TIME
+    ,PROD_TIME_CNT
+    ,DEL_TIME_CNT
+    ,DEL_RACK_TIME_CNT
+    ,TOT_DEL_CNT
+    ,DEL_LESS_30
+    ,DEL_GRT_45
+    ,PROMISE_TIME_WITHIN_10
+    ,MAKE_LESS_4
+    ,ORD_MARKED_DEL_ON_RETURN
+    ,PROD_LESS_15
+    ,NON_DEL_RACK_TIME_CNT
+    ,NON_DEL_RACK_TIME
+    ,NON_DEL_PROD_LESS_15
+    ,NON_DEL_PROD_TIME
+    ,NON_DEL_MAKE_TIME
+    ,TOT_NON_DEL_CNT
+    ,SUM_OUT_THE_DOOR_TIME
+    ,TOT_DEL_OUT_THE_DOOR_TIME_CNT
+    ,OUT_THE_DOOR_TIME_LT_18_CNT
+    ,NON_DEL_MAKE_TIME_LT_4_CNT
+    ,DRIVE_TIME
+    ,TOT_DEL_DRIVE_TIME_CNT
+    ,TOT_NON_DEL_PROD_TIME_CNT
+    ,TOT_DEL_BTN_5_120_CNT
+    ,AVAIL_CO_HOURS
+    ,AVAIL_DEL_HOURS
+    ,WEB_DEACTIVATIONS
+    ,PRODUCT_OUTAGES
+    ,CANCELS_MADE_AMT
+    ,CANCELS_NOTMADE_AMT
+    ,OVERALL_FIVESTAR
     ,SPEED_ACTUAL
     ,SPEED_STAR
     ,WIN_SCORE_ACTUAL
     ,WIN_SCORE_STAR
     ,BRAND_ACTUAL
     ,BRAND_STAR
-    ,HB_ONTIME_ACTUAL AS HUTBOT_ACTUAL
-    ,HB_ONTIME_STAR AS HUTBOT_STAR
+    ,HB_ONTIME_ACTUAL
+    ,HB_ONTIME_STAR
     ,FSCC_ACTUAL
     ,FSCC_STAR
+    ,TASTE_SCORE
+    ,ACCURACY_SCORE
+    ,SPEED_SCORE
+    ,OSAT_SCORE
+    ,RGM_FLG
 FROM AXC1195.FXT_DASHBOARD_BASE_MONTHLY
-WHERE YEARNO = '2026'
-  AND CURR_FRAN_OWNER_NM <> 'PIZZA HUT OF AMERICA, LLC. (PHI01-060010)'
-ORDER BY CHAINED_STORE_ID, YEARNO, MONTHNUM;
+WHERE YEARNO = 'Y2026' --bump each January (or set FIVESTAR_SQL_YEAR env var)
+AND CURR_FRAN_OWNER_NM <> 'PIZZA HUT OF AMERICA, LLC. (PHI01-060010)' --exclude Equity stores
 ```
+
+Save as `5-Star full.csv` in the `Reporting` folder if pulling manually.
 
 </details>
 

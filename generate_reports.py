@@ -130,6 +130,16 @@ SNOWFLAKE_WAREHOUSE = os.environ.get("SNOWFLAKE_WAREHOUSE", "")
 SNOWFLAKE_DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "")
 SNOWFLAKE_SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "")
 SNOWFLAKE_ENABLED = all([SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD])
+# A named connection from ~/.snowflake/connections.toml (the file the Snowflake
+# CLI / connector already reads) -- lets this script reuse whatever connection
+# is already set up on the machine without needing SNOWFLAKE_ACCOUNT/USER/
+# PASSWORD at all. Blank means "use the connector's own default resolution"
+# (its own default-connection-name logic, or the sole entry in the file).
+SNOWFLAKE_CONNECTION_NAME = os.environ.get("SNOWFLAKE_CONNECTION_NAME", "")
+# Pulled directly from the data each run once PERIOD_MONTHS/REPORT_YEAR are
+# known isn't possible here (this runs before any data is loaded), so the
+# source query's year filter is a plain setting -- bump this each January.
+FIVESTAR_SQL_YEAR = os.environ.get("FIVESTAR_SQL_YEAR", "Y2026")
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -402,12 +412,16 @@ def compute_store_levers(store_months):
 # ─── Data Loading ──────────────────────────────────────────────────────────
 
 def load_data():
-    print("Loading 5-Star.csv...")
-    df = pd.read_csv(
-        FIVESTAR_CSV,
-        low_memory=False,
-        dtype={"CHAINED_STORE_ID": str},
-    )
+    df = load_5star_from_snowflake()
+    if df is not None:
+        print("  (source: Snowflake)")
+    else:
+        print("Loading 5-Star.csv...")
+        df = pd.read_csv(
+            FIVESTAR_CSV,
+            low_memory=False,
+            dtype={"CHAINED_STORE_ID": str},
+        )
     # Parse numeric columns
     for c in ["MONTHNUM"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -2221,10 +2235,13 @@ def load_alignment_data():
     fz_dashboard.html. Missing org-hierarchy fields (stores not yet mapped in
     OPX_ALIGNMENT) are surfaced as "Unassigned" rather than blank.
     """
-    if not ALIGNMENT_CSV.exists():
-        return []
-
-    df = pd.read_csv(ALIGNMENT_CSV)
+    df = load_alignment_from_snowflake()
+    if df is not None:
+        print("  (source: Snowflake)")
+    else:
+        if not ALIGNMENT_CSV.exists():
+            return []
+        df = pd.read_csv(ALIGNMENT_CSV)
     df = df[df["CHAINED_STORE_ID"].notna()]
 
     # Same franchisee-name normalization applied to the main 5-Star pipeline
@@ -2268,7 +2285,7 @@ def load_alignment_data():
             "fs": _num(r.get("FIVESTAR_AVG_3MO")),
             "tier": _txt(r.get("TIER"), "Unrated"),
         })
-    print(f"  Loaded {len(rows)} stores from Alignment.csv")
+    print(f"  Loaded {len(rows)} stores for Alignment")
 
     # Every open store should have a Zone/OA (the SQL already resolves Zone
     # from AXC1195.MANUAL_ZONE_OVERRIDES ∪ STORE_ZONE_MAP and derives OA from
@@ -3292,26 +3309,64 @@ def summarize_fops(fop_data, no_cache=False):
 
 # ─── Snowflake Integration ──────────────────────────────────────────────────
 
-def query_snowflake(sql, params=None):
-    """Execute a query against Snowflake and return results as a list of dicts.
-    Returns None if Snowflake is not configured or the connector is missing.
+def _snowflake_connect():
+    """Open a Snowflake connection, preferring whatever is already set up on
+    this machine so routine runs need zero new credential handling:
+      1. A named connection from ~/.snowflake/connections.toml (SNOWFLAKE_CONNECTION_NAME,
+         or the connector's own default-connection resolution if that's blank).
+      2. Explicit SNOWFLAKE_ACCOUNT/USER/PASSWORD env vars (.env or shell).
+    Returns None (never raises) if neither path works, so callers can fall
+    back to a manual CSV without the whole run failing.
     """
-    if not SNOWFLAKE_ENABLED:
-        print("  Snowflake not configured (set SNOWFLAKE_ACCOUNT/USER/PASSWORD)")
-        return None
     if not HAS_SNOWFLAKE:
         print("  snowflake-connector-python not installed; run: pip install snowflake-connector-python")
         return None
+    # login_timeout bounds this to a fast failure instead of hanging the whole
+    # run -- a connections.toml default profile using browser/SSO auth would
+    # otherwise block forever waiting for an interactive login that can never
+    # happen in an unattended/scheduled run.
+    if SNOWFLAKE_CONNECTION_NAME:
+        try:
+            # client_store_temporary_credential caches the externalbrowser SSO
+            # session (Windows Credential Manager) so only the FIRST connection
+            # after it expires pops a browser login -- every run in between
+            # reuses the cached token silently. Needs a longer login_timeout
+            # than the password path since that first browser round-trip isn't
+            # instant.
+            return snowflake.connector.connect(
+                connection_name=SNOWFLAKE_CONNECTION_NAME,
+                database=SNOWFLAKE_DATABASE or None,
+                schema=SNOWFLAKE_SCHEMA or None,
+                warehouse=SNOWFLAKE_WAREHOUSE or None,
+                client_store_temporary_credential=True,
+                login_timeout=60,
+            )
+        except Exception as e:
+            print(f"  Snowflake connections.toml profile '{SNOWFLAKE_CONNECTION_NAME}' failed: {e}")
+    if SNOWFLAKE_ENABLED:
+        try:
+            return snowflake.connector.connect(
+                account=SNOWFLAKE_ACCOUNT,
+                user=SNOWFLAKE_USER,
+                password=SNOWFLAKE_PASSWORD,
+                warehouse=SNOWFLAKE_WAREHOUSE or None,
+                database=SNOWFLAKE_DATABASE or None,
+                schema=SNOWFLAKE_SCHEMA or None,
+                login_timeout=15,
+            )
+        except Exception as e:
+            print(f"  Snowflake env-var connection failed: {e}")
+    return None
 
+
+def query_snowflake(sql, params=None):
+    """Execute a query against Snowflake and return results as a list of dicts.
+    Returns None if Snowflake is not configured/reachable or the connector is missing.
+    """
+    conn = _snowflake_connect()
+    if conn is None:
+        return None
     try:
-        conn = snowflake.connector.connect(
-            account=SNOWFLAKE_ACCOUNT,
-            user=SNOWFLAKE_USER,
-            password=SNOWFLAKE_PASSWORD,
-            warehouse=SNOWFLAKE_WAREHOUSE or None,
-            database=SNOWFLAKE_DATABASE or None,
-            schema=SNOWFLAKE_SCHEMA or None,
-        )
         cur = conn.cursor()
         cur.execute(sql, params or [])
         rows = cur.fetchall()
@@ -3323,6 +3378,241 @@ def query_snowflake(sql, params=None):
     except Exception as e:
         print(f"  Snowflake query failed: {e}")
         return None
+
+
+# The exact store-month extract this reporting suite is built around. Kept
+# here (not a .sql file) so the query and the columns generate_reports.py
+# expects can never silently drift apart -- change this, not a separate file.
+FIVESTAR_SQL = """
+SELECT
+    CHAINED_STORE_ID
+    ,YEARNO
+    ,MONTHNUM
+    ,STATUSDESC
+    ,NIELSENDMADESC
+    ,CURR_FRAN_OWNER_NM
+    ,FREGIONDESC
+    ,FAREADESC
+    ,CONCEPTDESC
+    ,LATITUDE
+    ,LONGITUDE
+    ,POLL_COUNT
+    ,OPX_OA
+    ,OPX_FOP
+    ,OPX_DIRECTOR
+    ,FAREADESC AS AREA
+    ,FREGIONDESC AS REGION
+    ,CY_SS_SALES_TNS
+    ,LY_SS_SALES_TNS
+    ,CY_SS_TRANS
+    ,LY_SS_TRANS
+    ,CY_TOTAL_NET_SALES
+    ,DAAS_DELIVERIES
+    ,INTERNAL_DELIVERIES
+    ,DIGITAL_ORDERSOURCE
+    ,NON_DIGITAL_ORDERSOURCE
+    ,PROD_TIME
+    ,DEL_TIME
+    ,MAKE_TIME
+    ,DEL_RACK_TIME
+    ,PROD_TIME_CNT
+    ,DEL_TIME_CNT
+    ,DEL_RACK_TIME_CNT
+    ,TOT_DEL_CNT
+    ,DEL_LESS_30
+    ,DEL_GRT_45
+    ,PROMISE_TIME_WITHIN_10
+    ,MAKE_LESS_4
+    ,ORD_MARKED_DEL_ON_RETURN
+    ,PROD_LESS_15
+    ,NON_DEL_RACK_TIME_CNT
+    ,NON_DEL_RACK_TIME
+    ,NON_DEL_PROD_LESS_15
+    ,NON_DEL_PROD_TIME
+    ,NON_DEL_MAKE_TIME
+    ,TOT_NON_DEL_CNT
+    ,SUM_OUT_THE_DOOR_TIME
+    ,TOT_DEL_OUT_THE_DOOR_TIME_CNT
+    ,OUT_THE_DOOR_TIME_LT_18_CNT
+    ,NON_DEL_MAKE_TIME_LT_4_CNT
+    ,DRIVE_TIME
+    ,TOT_DEL_DRIVE_TIME_CNT
+    ,TOT_NON_DEL_PROD_TIME_CNT
+    ,TOT_DEL_BTN_5_120_CNT
+    ,AVAIL_CO_HOURS
+    ,AVAIL_DEL_HOURS
+    ,WEB_DEACTIVATIONS
+    ,PRODUCT_OUTAGES
+    ,CANCELS_MADE_AMT
+    ,CANCELS_NOTMADE_AMT
+    ,OVERALL_FIVESTAR
+    ,SPEED_ACTUAL
+    ,SPEED_STAR
+    ,WIN_SCORE_ACTUAL
+    ,WIN_SCORE_STAR
+    ,BRAND_ACTUAL
+    ,BRAND_STAR
+    ,HB_ONTIME_ACTUAL
+    ,HB_ONTIME_STAR
+    ,FSCC_ACTUAL
+    ,FSCC_STAR
+    ,TASTE_SCORE
+    ,ACCURACY_SCORE
+    ,SPEED_SCORE
+    ,OSAT_SCORE
+    ,RGM_FLG
+FROM AXC1195.FXT_DASHBOARD_BASE_MONTHLY
+WHERE YEARNO = %(report_year)s
+AND CURR_FRAN_OWNER_NM <> 'PIZZA HUT OF AMERICA, LLC. (PHI01-060010)'
+"""
+
+
+def _snowflake_query_df(sql, params=None, label=""):
+    """Run a query and return a DataFrame (string CHAINED_STORE_ID, if that
+    column is present, so a NUMBER-typed column can't silently drop leading
+    zeros). Returns None if Snowflake isn't reachable, the query fails, or it
+    returns nothing -- callers should fall back to their manual CSV in that
+    case, not fail the run."""
+    conn = _snowflake_connect()
+    if conn is None:
+        return None
+    if label:
+        print(f"  Pulling {label} from Snowflake...")
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params or {})
+        try:
+            df = cur.fetch_pandas_all()
+        except Exception:
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+            df = pd.DataFrame(rows, columns=cols)
+        cur.close()
+        conn.close()
+        if df.empty:
+            print("  Snowflake returned 0 rows; falling back to CSV")
+            return None
+        df.columns = [str(c).upper() for c in df.columns]
+        if "CHAINED_STORE_ID" in df.columns:
+            df["CHAINED_STORE_ID"] = df["CHAINED_STORE_ID"].apply(
+                lambda v: None if pd.isna(v) else (str(int(v)) if isinstance(v, float) else str(v).strip())
+            )
+        print(f"  {len(df):,} rows pulled from Snowflake")
+        return df
+    except Exception as e:
+        print(f"  Snowflake query failed: {e}; falling back to CSV")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return None
+
+
+def load_5star_from_snowflake():
+    """Pull the store-month extract straight from Snowflake (FIVESTAR_SQL),
+    replacing the manual "run the query, save as 5-Star full.csv" step.
+    Returns a DataFrame, or None if Snowflake isn't reachable -- callers
+    should fall back to the manual CSV in that case, not fail the run."""
+    return _snowflake_query_df(
+        FIVESTAR_SQL, {"report_year": FIVESTAR_SQL_YEAR},
+        "5-Star data (AXC1195.FXT_DASHBOARD_BASE_MONTHLY)",
+    )
+
+
+# Alignment pull: rolling 3-month 5-Star average/tier (computed from each
+# store's own latest filled month, not today's calendar month -- a gap month
+# just isn't in the window, so the average divides by however many of the
+# last 3 months actually exist) joined to org-hierarchy (OPX_ALIGNMENT) and
+# the store directory (DSC.ALIGN_DIM_V1).
+ALIGNMENT_SQL = """
+WITH MONTH_LOOKUP AS (
+    SELECT * FROM VALUES
+        ('JANUARY',1),('FEBRUARY',2),('MARCH',3),('APRIL',4),
+        ('MAY',5),('JUNE',6),('JULY',7),('AUGUST',8),
+        ('SEPTEMBER',9),('OCTOBER',10),('NOVEMBER',11),('DECEMBER',12)
+    AS T(MONTHNAME, MONTHNO)
+),
+
+FIVESTAR_MONTHLY AS (
+    SELECT DISTINCT
+         V.CHAINED_STORE_ID
+        ,V.YEARNO
+        ,V.MONTHNAME
+        ,V.OVERALL_FIVESTAR
+        ,CAST(REPLACE(V.YEARNO, 'Y', '') AS INT) * 12 + ML.MONTHNO AS MONTH_SEQ
+    FROM AXC1195.VW_FIVESTAR_SUMMARY V
+    JOIN MONTH_LOOKUP ML
+        ON V.MONTHNAME = ML.MONTHNAME
+),
+
+LATEST_SEQ AS (
+    -- each store's own latest FILLED month, not today's calendar month
+    SELECT
+         CHAINED_STORE_ID
+        ,MAX(MONTH_SEQ) AS LATEST_MONTH_SEQ
+    FROM FIVESTAR_MONTHLY
+    WHERE OVERALL_FIVESTAR IS NOT NULL
+    GROUP BY ALL
+),
+
+FIVESTAR_3MO AS (
+    -- only rows that actually exist within [latest-2, latest] survive --
+    -- a gap month just isn't there, so AVG naturally divides by
+    -- however many real months fall in that window (1, 2, or 3)
+    SELECT
+         F.CHAINED_STORE_ID
+        ,ROUND(AVG(F.OVERALL_FIVESTAR), 2) AS FIVESTAR_AVG_3MO
+    FROM FIVESTAR_MONTHLY F
+    JOIN LATEST_SEQ L
+        ON F.CHAINED_STORE_ID = L.CHAINED_STORE_ID
+       AND F.MONTH_SEQ BETWEEN L.LATEST_MONTH_SEQ - 2 AND L.LATEST_MONTH_SEQ
+    WHERE F.OVERALL_FIVESTAR IS NOT NULL
+    GROUP BY ALL
+)
+
+SELECT
+     A.CHAINED_STORE_ID
+    ,A.CURR_FRAN_OWNER_NM AS FRANCHISEE
+    ,OA.OA
+    ,OA.ZONE
+    ,OA.FOP_NAME
+    ,OA.DIRECTOR_NAME
+    ,A.NIELSENDMADESC AS DMA
+    ,A.FREGIONDESC AS REGION
+    ,A.FAREADESC AS AREA
+    ,A.RESTMAILADDR1
+    ,A.RESTMAILCITYNM AS CITY
+    ,A.RESTMAILSTATEID AS STATE
+    ,A.LATITUDE
+    ,A.LONGITUDE
+    ,FS.FIVESTAR_AVG_3MO
+    ,CASE
+        WHEN FS.FIVESTAR_AVG_3MO >= 4   THEN 'Tier 3'
+        WHEN FS.FIVESTAR_AVG_3MO >= 2.5 THEN 'Tier 2'
+        WHEN FS.FIVESTAR_AVG_3MO IS NOT NULL THEN 'Tier 1'
+        ELSE NULL
+     END AS TIER
+
+FROM DSC.ALIGN_DIM_V1 A
+
+LEFT JOIN FIVESTAR_3MO FS
+    ON A.CHAINED_STORE_ID = FS.CHAINED_STORE_ID
+
+LEFT JOIN DATASCIENCE.AXC1195.OPX_ALIGNMENT OA
+    ON A.CHAINED_STORE_ID = OA.CHAINED_STORE_ID
+
+WHERE A.OWNERID <> 'L'
+  AND A.CURR_FRAN_OWNER_NM NOT LIKE 'PIZZA HUT%'
+  AND A.STATUSDESC = 'Open'
+"""
+
+
+def load_alignment_from_snowflake():
+    """Pull the store alignment/org-hierarchy table straight from Snowflake
+    (ALIGNMENT_SQL), replacing the manual "run the query, save as
+    Alignment.csv" step. Returns a DataFrame, or None if Snowflake isn't
+    reachable -- callers should fall back to the manual CSV in that case."""
+    return _snowflake_query_df(ALIGNMENT_SQL, None, "Alignment data (DSC.ALIGN_DIM_V1)")
 
 
 def enrich_with_snowflake(df):

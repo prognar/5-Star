@@ -293,7 +293,7 @@
     <button type="button" id="newT1Toggle" onclick="toggleNewT1Detail()" style="background:none;border:none;cursor:pointer;padding:6px 0;font-family:Oswald,sans-serif;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;">
       <span id="newT1Chev">&#9660;</span> <span id="newT1Head"></span>
     </button>
-    <p class="h2-sub" style="margin:2px 0 8px;">Stores that fell into Tier 1 after Jan and haven't had a Boot Camp held or scheduled yet — these are outside the original goal but still need action.</p>
+    <p class="h2-sub" style="margin:2px 0 8px;">Stores that are Tier 1 right now (latest 3-month average) and have never had a Boot Camp or have one scheduled.</p>
     <div id="newT1Table"></div>
   </div>
 </section>
@@ -750,17 +750,13 @@ function avg3mo(s, endIdx){
 }
 // Tier 1 Boot Camp coverage: of stores that are Tier 1 RIGHT NOW (latest
 // 3-month trailing average), how many have had or have a Boot Camp
-// scheduled? Separately, flag the slice of that current population that
-// wasn't Tier 1 back in Jan -- new churn-in the Jan baseline
-// wouldn't have known to target -- so there's still a worklist for "new
-// Tier 1 stores we haven't gotten to yet" even though the main coverage
-// number is based on the current population, not the frozen Jan cohort.
+// scheduled? needBcStores is the worklist of the remainder -- current Tier 1
+// stores that have never had a Boot Camp and don't have one scheduled --
+// which by construction always matches needCount.
 function tier1CoverageStats(stores){
   const n = MONTHS.length;
   const nowT1 = [];
-  const janT1Ids = new Set();
   (stores||[]).forEach(s=>{
-    if(tierOf(avg3mo(s, Math.min(3, n))) === 1) janT1Ids.add(s.s);
     if(tierOf(avg3mo(s, n)) === 1) nowT1.push(s);
   });
   if(!nowT1.length) return null;
@@ -768,8 +764,7 @@ function tier1CoverageStats(stores){
   const schedCount = nowT1.filter(s=>!s.bch && s.bcs).length;
   const needCount = nowT1.length - hadCount - schedCount;
   const covered = hadCount + schedCount;
-  const newT1 = nowT1.filter(s=>!janT1Ids.has(s.s));
-  const newT1Needed = newT1.filter(s=>!s.bch && !s.bcs);
+  const needBcStores = nowT1.filter(s=>!s.bch && !s.bcs);
   return {
     nowT1Total: nowT1.length,
     covered,
@@ -777,9 +772,27 @@ function tier1CoverageStats(stores){
     schedCount,
     needCount,
     pct: Math.round(covered/nowT1.length*100),
-    newT1Total: newT1.length,
-    newT1Needed: newT1Needed.sort((a,b)=>(a.a||'').localeCompare(b.a||'')),
+    needBcStores,
   };
+}
+// Store->OA lookup, sourced from ALIGNMENT_DATA (the Alignment tab's data,
+// the only place a real per-store OA assignment lives -- the per-store
+// records elsewhere in this file key "oa"/"o" to the FOP, not the OA who
+// actually runs Boot Camps). IDs are normalized (leading zeros stripped)
+// since ALIGNMENT_DATA zero-pads to 6 digits and the stores list here does not.
+let _alignOaByStore = null;
+function _normStoreId(sid){
+  const s = String(sid||'').replace(/^0+/, '');
+  return s === '' ? '0' : s;
+}
+function alignOaFor(sid){
+  if(!_alignOaByStore){
+    _alignOaByStore = new Map();
+    (typeof ALIGNMENT_DATA !== 'undefined' ? ALIGNMENT_DATA : []).forEach(r=>{
+      if(r && r.s) _alignOaByStore.set(_normStoreId(r.s), r.oa || '');
+    });
+  }
+  return _alignOaByStore.get(_normStoreId(sid)) || '';
 }
 let _newT1Expanded = false;
 function toggleNewT1Detail(){
@@ -861,30 +874,66 @@ function renderTierGoals(stores, scopeLabel, closedFilterFn){
     `;
   }
 
-  // New Tier 1 entrants since Jan still needing a Boot Camp -- drives
-  // action on churn the original Jan cohort goal doesn't cover.
-  const newT1Sec = document.getElementById('newT1Section');
-  if(!cov || !cov.newT1Needed.length){
-    newT1Sec.style.display = 'none';
+  // Current Tier 1 stores that still need a Boot Camp (never had one, none
+  // scheduled) -- always matches the Coverage card's "Need BC" count.
+  const needBcSec = document.getElementById('newT1Section');
+  if(!cov || !cov.needBcStores.length){
+    needBcSec.style.display = 'none';
   } else {
-    newT1Sec.style.display = '';
-    const headColor = cov.newT1Needed.length > 0 ? '#a3122a' : '#276b4d';
+    needBcSec.style.display = '';
     document.getElementById('newT1Head').innerHTML =
-      '<span style="color:' + headColor + ';">' + cov.newT1Needed.length + ' new Tier 1 store' + (cov.newT1Needed.length===1?'':'s') + '</span> since Jan still need'
-      + (cov.newT1Needed.length===1?'s':'') + ' a Boot Camp (' + cov.newT1Total + ' new entrant' + (cov.newT1Total===1?'':'s') + ' total)';
-    let tt = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;"><thead><tr style="border-bottom:1px solid var(--line);">';
-    ['Store','Area','DMA','Franchisee','Score'].forEach((hh,i)=>{
-      tt += '<th style="text-align:' + (i===4?'right':'left') + ';padding:6px 8px;font-family:IBM Plex Mono;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">' + hh + '</th>';
-    });
-    tt += '</tr></thead><tbody>';
-    cov.newT1Needed.forEach(s=>{
-      const score = avg3mo(s, MONTHS.length);
-      tt += '<tr style="border-bottom:1px solid var(--line);"><td style="padding:6px 8px;">' + esc(s.s) + '</td><td style="padding:6px 8px;">' + esc(s.a||'') + '</td><td style="padding:6px 8px;">' + esc(s.d||'') + '</td><td style="padding:6px 8px;">' + esc(s.f||'') + '</td><td style="text-align:right;padding:6px 8px;color:#a3122a;font-weight:600;">' + (score!=null?score.toFixed(2):'—') + '</td></tr>';
-    });
-    tt += '</tbody></table>';
-    document.getElementById('newT1Table').innerHTML = tt;
+      '<span style="color:#a3122a;">' + cov.needBcStores.length + ' Tier 1 store' + (cov.needBcStores.length===1?'':'s') + '</span> still need'
+      + (cov.needBcStores.length===1?'s':'') + ' a Boot Camp';
+    _needBcRows = cov.needBcStores.map(s=>({
+      s: s.s, a: s.a||'', d: s.d||'', f: s.f||'', oa: alignOaFor(s.s), score: avg3mo(s, MONTHS.length),
+    }));
     applyNewT1ExpandState();
+    renderNeedBcTable();
   }
+}
+
+// Sortable Need-BC table -- click a header to sort by it, click again to flip direction.
+const NEED_BC_COLS = [
+  {key:'s', label:'Store', align:'left'},
+  {key:'a', label:'Area', align:'left'},
+  {key:'d', label:'DMA', align:'left'},
+  {key:'f', label:'Franchisee', align:'left'},
+  {key:'oa', label:'OA', align:'left'},
+  {key:'score', label:'Score', align:'right'},
+];
+let _needBcRows = [];
+let _needBcSort = {key:'a', dir:1};
+function sortNeedBc(key){
+  _needBcSort = _needBcSort.key === key ? {key, dir:-_needBcSort.dir} : {key, dir:1};
+  renderNeedBcTable();
+}
+function renderNeedBcTable(){
+  const {key, dir} = _needBcSort;
+  const rows = [..._needBcRows].sort((x,y)=>{
+    const va = x[key], vb = y[key];
+    if(typeof va === 'number' || typeof vb === 'number'){
+      return ((va==null?-Infinity:va) - (vb==null?-Infinity:vb)) * dir;
+    }
+    return String(va||'').localeCompare(String(vb||'')) * dir;
+  });
+  let tt = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;"><thead><tr style="border-bottom:1px solid var(--line);">';
+  NEED_BC_COLS.forEach(c=>{
+    const arrow = key === c.key ? (dir===1?' &#9650;':' &#9660;') : '';
+    tt += '<th onclick="sortNeedBc(\'' + c.key + '\')" style="cursor:pointer;user-select:none;text-align:' + c.align + ';padding:6px 8px;font-family:IBM Plex Mono;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">' + c.label + arrow + '</th>';
+  });
+  tt += '</tr></thead><tbody>';
+  rows.forEach(r=>{
+    tt += '<tr style="border-bottom:1px solid var(--line);">'
+      + '<td style="padding:6px 8px;">' + esc(r.s) + '</td>'
+      + '<td style="padding:6px 8px;">' + esc(r.a) + '</td>'
+      + '<td style="padding:6px 8px;">' + esc(r.d) + '</td>'
+      + '<td style="padding:6px 8px;">' + esc(r.f) + '</td>'
+      + '<td style="padding:6px 8px;">' + esc(r.oa) + '</td>'
+      + '<td style="text-align:right;padding:6px 8px;color:#a3122a;font-weight:600;">' + (r.score!=null?r.score.toFixed(2):'—') + '</td>'
+      + '</tr>';
+  });
+  tt += '</tbody></table>';
+  document.getElementById('newT1Table').innerHTML = tt;
 }
 
 // ─── Boot Camp Effectiveness (attended vs. tier-matched control) ─────────

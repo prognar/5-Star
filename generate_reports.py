@@ -55,7 +55,7 @@ if _ENV_FILE.exists():
 
 TIER_THRESHOLD = 2.5  # T1 < 2.5, T2 >= 2.5 & < 4.0, T3 >= 4.0
 DEFAULT_THRESHOLD = 2.0  # < 2.0 is a "Failure to Satisfy" per brand standards
-MAX_INCLUDE_MONTH = 8  # 5-Star + taste data is valid through Aug 2026; ignore Sep+ placeholders
+MAX_INCLUDE_MONTH = 9  # 5-Star + taste data is valid through Sep 2026; ignore Oct+ placeholders
 PERIODS = []  # set dynamically from data
 MONTH_LABELS = []  # set dynamically from data
 PERIOD_MONTHS = []  # month numbers [1..N] detected from data

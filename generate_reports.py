@@ -1779,15 +1779,18 @@ def compute_single_zone(zone_df, workshops=None):
     bootcamp_data.sort(key=lambda x: x["n_t1"], reverse=True)
 
     # Tier 1 Opportunity tracking (Boot Camp Opportunities section).
-    # "Now" and the had/upcoming/no-bootcamp split all use the 3-month trailing
-    # average (_tier_base, computed above) -- the SAME definition Bootcamp
-    # targeting already uses -- so a store only counts as Tier 1 "now" if its
-    # latest-3-months average is actually below threshold, not just its single
-    # latest month. "Start" mirrors this with an analogous 3-month average over
-    # the first 3 months of the period, for an apples-to-apples comparison.
-    start_months = PERIOD_MONTHS[:3] if len(PERIOD_MONTHS) >= 3 else PERIOD_MONTHS
-    _start_avg = zone_df[zone_df["MONTHNUM"].isin(start_months)].groupby("CHAINED_STORE_ID")["OVERALL_FIVESTAR"].mean()
-    t1_begin_ids = {sid for sid, avg in _start_avg.items() if classify_tier(avg) == 1}
+    # "Start" uses the single January score (_tier, same definition as the
+    # Overview tab's Tier 1 Reduction card) so the two tabs' starting counts
+    # always agree -- confirmed 2026-10 after a reported mismatch (Overview
+    # showed 126/93 for Sarah Heitz/Sergio Villasenor, Boot Camp tab showed
+    # 112/80) traced to this section instead using a Jan-Mar 3-month average.
+    # "Now" and the had/upcoming/no-bootcamp split deliberately still use the
+    # 3-month trailing average (_tier_base, computed above) -- the SAME
+    # definition Bootcamp targeting itself uses -- so a store only counts as
+    # Tier 1 "now" if its latest-3-months average is actually below threshold,
+    # not just its single latest month. This means "now" can differ from the
+    # Overview tab's single-latest-month count; the Boot Camp tab explains why.
+    t1_begin_ids = set(jan_df.loc[jan_df["_tier"] == 1, "CHAINED_STORE_ID"])
 
     t1_now_ids = set(may_df.loc[may_df["_tier_base"] == 1, "CHAINED_STORE_ID"])
 

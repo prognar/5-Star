@@ -1657,6 +1657,96 @@ def compute_zone_scorecards(df, workshops_by_oa=None):
     return zones
 
 
+def _fmt_component_delta(delta, kind):
+    sign = "+" if delta >= 0 else ""
+    if kind == "star":
+        return f"{sign}{delta:.2f} stars"
+    if kind == "pct100":
+        return f"{sign}{delta:.1f} pts"
+    if kind == "pct":
+        return f"{sign}{delta * 100:.1f} pts"
+    return f"{sign}{delta:.2f}"
+
+
+def build_bootcamp_insight(t1, eff):
+    """Deterministic, positively-framed narrative for the Boot Camps tab's
+    'Where to Focus' section: explains the Overview-vs-Boot-Camp Tier 1
+    definitions, whether Boot Camp attendees are actually improving vs. a
+    tier-matched control, how much coverage gap remains, and which component
+    is moving the needle most -- all from numbers already computed above, no
+    LLM call (cheaper, instant, and consistent tone every run)."""
+    if not t1 or not t1.get("now"):
+        return None
+
+    now = t1["now"]
+    had = t1.get("had_bootcamp", 0)
+    upcoming = t1.get("upcoming", 0)
+    gap = t1.get("no_bootcamp", 0)
+    covered = had + upcoming
+    coverage_pct = round(covered / now * 100) if now else 0
+
+    lines = []
+
+    # Coverage standing -- always framed forward, never as a failure.
+    if gap == 0:
+        lines.append(f"Every current Tier 1 store ({now}) has had or has a Boot Camp scheduled — full coverage.")
+    else:
+        s_store = "s" if gap != 1 else ""
+        s_need = "s" if gap == 1 else ""
+        lines.append(
+            f"{coverage_pct}% of the {now} stores currently in Tier 1 have had or have a Boot Camp scheduled "
+            f"({had} completed, {upcoming} upcoming) — {gap} store{s_store} still need{s_need} one scheduled "
+            f"to close the gap."
+        )
+
+    # Is it working? -- lift vs. a tier-matched control group.
+    traj = (eff or {}).get("trajectory") or {}
+    lift = (eff or {}).get("lift")
+    n_var = traj.get("n") or 0
+    if lift is not None and n_var:
+        s_attendee = "" if n_var == 1 else "s"
+        if lift > 0.01:
+            lines.append(
+                f"It's working: the {n_var} store{s_attendee} measurable so far moved {lift:+.2f} stars more "
+                f"than a tier-matched control group that didn't attend — Boot Camp is making a real difference here."
+            )
+        elif lift < -0.01:
+            lines.append(
+                f"Room to grow: the {n_var} measurable attendee{s_attendee} moved {-lift:.2f} stars less than the "
+                f"tier-matched control group so far — worth a closer look at what's covered in these sessions."
+            )
+        else:
+            lines.append(
+                f"Early read: the {n_var} measurable attendee{s_attendee} are tracking about even with the "
+                f"tier-matched control group so far — give it another checkpoint before reading in."
+            )
+    elif gap > 0:
+        lines.append("None of this tier's attendees have reached a measurable checkpoint yet — check back after 30+ days.")
+
+    # Driver -- which component moved most (prefers the longest available
+    # checkpoint: 90d, then 60d, then 30d) among this tier's attendees.
+    comps = traj.get("components") or {}
+    best_label, best_delta, best_kind = None, None, None
+    for row in comps.values():
+        d = row.get("d90")
+        if d is None:
+            d = row.get("d60")
+        if d is None:
+            d = row.get("d30")
+        if d is None:
+            continue
+        if best_delta is None or d > best_delta:
+            best_label, best_delta, best_kind = row.get("label"), d, row.get("kind")
+    if best_label is not None:
+        dstr = _fmt_component_delta(best_delta, best_kind)
+        if best_delta > 0:
+            lines.append(f"{best_label} is the standout driver so far, up {dstr} since baseline — worth spotlighting in the next Boot Camp.")
+        else:
+            lines.append(f"{best_label} moved the least ({dstr}) of the components tracked — a good focus area for the next session.")
+
+    return {"coverage_pct": coverage_pct, "lift": lift, "lines": lines}
+
+
 def compute_single_zone(zone_df, workshops=None):
     """Compute data for a single OA zone."""
     if workshops is None:
@@ -2201,6 +2291,8 @@ def compute_single_zone(zone_df, workshops=None):
         r["CHAINED_STORE_ID"] = sid_b
         r["delta"] = round(float(r["delta"]), 2)
 
+    _bc_eff = compute_zone_workshop_effectiveness(zone_df, workshops)
+
     return {
         "oa": oa,
         "zone": zone_name_for(oa),
@@ -2234,7 +2326,8 @@ def compute_single_zone(zone_df, workshops=None):
         "n_at_risk": n_at_risk,
         "n_t1_watch": n_t1_watch,
         "workshops": workshops,
-        "workshop_effectiveness": compute_zone_workshop_effectiveness(zone_df, workshops),
+        "workshop_effectiveness": _bc_eff,
+        "bootcamp_insight": build_bootcamp_insight(t1_opportunity, _bc_eff),
     }
 
 

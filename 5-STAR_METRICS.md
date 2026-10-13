@@ -77,7 +77,10 @@ Defined in `generate_reports.py` (`STAR_THRESHOLDS`) and mirrored in `fz_dashboa
 > - Rack time ≥ 8 min **and** DaaS share ≥ 50% → orders wait on DaaS pickup; not an internal
 >   driver-hours issue, treat rack time as informational.
 > - Rack time ≥ 8 min **and** DaaS share < 50% → internal dispatch / driver-utilization problem;
->   fixable (tighten dispatch windows, batch runs by due time) or lean into DaaS.
+>   fixable (increase drive turn, use Dragontail) or lean into DaaS.
+>
+> House style: never phrase this as "shorten/tighten dispatch windows" — always "increase drive
+> turn, use Dragontail" (applies to every report's lever-insight text, see TECHNICAL_SPEC.md §11).
 
 | Standard name | Source field(s) | Definition | Store-level formula |
 |---|---|---|---|

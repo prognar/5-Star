@@ -66,26 +66,204 @@ CLOSED_SINCE_JAN = []  # stores with real Jan activity whose current STATUSDESC 
 # true as-of-month value) -- a store that has since closed gets its January row dropped too,
 # so it's invisible to any "present in Jan, absent later" diff done on the filtered data.
 
-# OA -> Zone name lookup (OAs.xlsx, "15 Zone" column). Falls back to the OA's
-# own name if the file is missing or an OA isn't listed, so reports never blank
-# out a zone label — they just show the OA name as before.
+# OA -> Zone name lookups (OAs.xlsx, "15 Zone" / "24 Zone" columns). The 24
+# Zone is the current org structure -- every OA has one, 1:1. The 15 Zone is
+# the legacy structure being phased out as new OAs are hired to split off
+# pieces of it: 9 of the 24 OA rows have a blank "15 Zone" (new positions with
+# no legacy equivalent) -- those OAs' stores simply don't roll up into any
+# 15-zone view (confirmed intentional 2026-10, not a data gap: "they have no
+# place in the 15 zone setup"). zone_name_for() falls back to the OA's own
+# name if the file is missing or an OA isn't listed, so reports never blank
+# out a zone label -- they just show the OA name as before.
 OA_ZONE_FILE = BASE_DIR / "OAs.xlsx"
-OA_ZONE_MAP = {}
+OA_ZONE_MAP = {}       # OA -> 15 Zone (legacy; omitted for OAs with none)
 if OA_ZONE_FILE.exists():
     try:
-        _oaz = pd.read_excel(OA_ZONE_FILE, usecols=["OA", "15 Zone"])
+        _oaz = pd.read_excel(OA_ZONE_FILE, usecols=["OA", "15 Zone", "24 Zone"])
         for _, _r in _oaz.iterrows():
             _oa_name = str(_r["OA"]).strip() if pd.notna(_r["OA"]) else ""
-            _zone_name = str(_r["15 Zone"]).strip() if pd.notna(_r["15 Zone"]) else ""
-            if _oa_name and _zone_name:
-                OA_ZONE_MAP[_oa_name] = _zone_name
+            _zone15 = str(_r["15 Zone"]).strip() if pd.notna(_r["15 Zone"]) else ""
+            if _oa_name and _zone15:
+                OA_ZONE_MAP[_oa_name] = _zone15
     except (ValueError, KeyError, OSError):
         print("  WARNING: Could not read OA->Zone mapping from OAs.xlsx")
 
 
 def zone_name_for(oa):
-    """Map an OA's personal name to its Zone name (falls back to the OA name)."""
+    """Map an OA's personal name to its legacy 15-Zone name (falls back to the OA name).
+    Used only for flavor text in LLM-narrative prompts -- the 15/24 zone
+    toggle itself (zone_scorecards.html, leadership_summary.html's Zone
+    Ranking) is driven by compute_zone_display_views(), not this lookup."""
     return OA_ZONE_MAP.get(str(oa).strip(), oa) if oa else oa
+
+
+# ─── 15/24 zone toggle: authoritative per-store assignment files ──────────
+#
+# Snowflake's OPX_ALIGNMENT table (and therefore Alignment.csv, pulled live
+# from it) does NOT yet reflect the real 24-zone store split -- confirmed
+# 2026-10, it still only carries the 15 legacy OAs with zero stores moved to
+# any new 24-zone OA. So the 15/24 toggle is instead driven by two files
+# provided directly as the real per-store ground truth:
+#   - "Alignments - 15 zones.csv": CHAINED_STORE_ID, ZONE, OA (15-zone, as-is)
+#   - "zone_assignments_24_option2.csv": STORE_ID, ZONE (numeric id),
+#     ZONE_NAME -- no OA column, so ZONE24_NAME_TO_OA below supplies it.
+# Confirmed 2026-10: 4695 stores, 24 zones (150-249 stores each), 95
+# franchisees -- a complete, real split, not a placeholder/future-state one.
+ZONE24_NAME_TO_OA = {
+    "Houston/SE Texas": "AKM Shaju",
+    "Pacific Northwest": "OPEN",
+    "DFW West": "Danielle Hudson",
+    "Carolinas East": "Derron Spencer",
+    "Florida Gulf": "Dustin Patton",
+    "Central Plains": "Finley Klement",
+    "Desert Southwest": "Hellen Lobaccaro",
+    "Deep South": "Jesse White",
+    "Southern California": "Jiselle Medina",
+    "OH Valley East": "Kathleen Basbagill",
+    "Mid-South": "Michael Grant",
+    "Gulf Coast": "Paul Inacio",
+    "OH Valley West": "Sarah Heitz",
+    "Upper Midwest": "Sergio Villasenor",
+    "Northeast Metro": "Tim King",
+    "Missouri/Illinois": "Stanton Hughes",
+    "Mountain West/Denver": "Emily Curry",
+    "Jacksonville/N Florida": "Victoria Viera",
+    "Appalachia": "OPEN",
+    "Carolinas West": "Andera Fallin",
+    "Northern Plains": "Sydney Shore",
+    "Northern California": "OPEN",
+    "San Antonio/W Texas": "Rick Torres",
+    "DFW East": "Michael Waiki",
+}
+# zone_assignments_24_option2.csv's own ZONE_NAME strings for 2 zones were
+# renamed from what the business actually calls them (confirmed 2026-10) --
+# normalize back to the correct display names right after loading.
+ZONE24_NAME_FIXES = {"Austin": "San Antonio/W Texas", "DC/Baltimore": "Appalachia"}
+
+# An OA name that should always display as "OPEN" (resigned/vacant), applied
+# wherever an OA name is read out of an assignment file -- e.g. the 15-zone
+# file ("Alignments - 15 zones.csv") still carries Cellesha Steel's name on
+# her old stores; the 24-zone file never did (ZONE24_NAME_TO_OA already maps
+# her old zone straight to "OPEN"). Display-only -- never affects grouping.
+OA_DISPLAY_ALIAS = {"Cellesha Steel": "OPEN"}
+
+
+def _normalize_sid(x):
+    """Canonical store-id key for joining across files that zero-pad to
+    different widths (or not at all) -- strip, drop a trailing '.0' from a
+    float-read column, then drop leading zeros so '014380' and '14380' match."""
+    s = str(x).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    try:
+        return str(int(s))
+    except (ValueError, TypeError):
+        return s
+
+
+def load_store_zone_assignments():
+    """Load the authoritative per-store zone/OA assignment for both toggle
+    granularities. Returns (zone24_map, zone15_map), each
+    {normalized_store_id: (zone_name, oa_name)}."""
+    zone24_map = {}
+    path24 = BASE_DIR / "zone_assignments_24_option2.csv"
+    if path24.exists():
+        z = pd.read_csv(path24, dtype=str)
+        z["ZONE_NAME"] = z["ZONE_NAME"].str.strip().replace(ZONE24_NAME_FIXES)
+        for _, r in z.iterrows():
+            zone = str(r["ZONE_NAME"]).strip()
+            oa = ZONE24_NAME_TO_OA.get(zone, zone)
+            zone24_map[_normalize_sid(r["STORE_ID"])] = (zone, oa)
+    else:
+        print("  WARNING: zone_assignments_24_option2.csv not found -- 24-zone toggle will be empty")
+
+    zone15_map = {}
+    path15 = BASE_DIR / "Alignments - 15 zones.csv"
+    if path15.exists():
+        z = pd.read_csv(path15, dtype=str)
+        for _, r in z.iterrows():
+            if pd.isna(r.get("OA")) or pd.isna(r.get("ZONE")):
+                continue
+            oa = str(r["OA"]).strip()
+            oa = OA_DISPLAY_ALIAS.get(oa, oa)
+            zone15_map[_normalize_sid(r["CHAINED_STORE_ID"])] = (str(r["ZONE"]).strip(), oa)
+    else:
+        print("  WARNING: Alignments - 15 zones.csv not found -- 15-zone toggle will be empty")
+
+    return zone24_map, zone15_map
+
+
+def compute_zone_display_views(df, workshops_by_oa, zone24_map, zone15_map):
+    """Build the 15/24 zone-toggle display data for zone_scorecards.html,
+    grouping stores by the authoritative assignment files (not live OPX_OA --
+    see module comment above). Returns (zones_24, zones_15), each keyed by
+    zone name, in the same shape compute_single_zone always returns."""
+    flat_ws = {"boot_camp": [], "rising_star": []}
+    for _odata in (workshops_by_oa or {}).values():
+        for tk in ("boot_camp", "rising_star"):
+            flat_ws[tk].extend((_odata or {}).get(tk, []))
+
+    def _build(assignment_map, fixed_oa_per_zone):
+        tagged = df.copy()
+        tagged["_zsid"] = tagged["CHAINED_STORE_ID"].map(_normalize_sid)
+        tagged["_zone"] = tagged["_zsid"].map(lambda s: assignment_map.get(s, (None, None))[0])
+        tagged["_zone_oa"] = tagged["_zsid"].map(lambda s: assignment_map.get(s, (None, None))[1])
+        matched = tagged[tagged["_zone"].notna()]
+
+        zones = {}
+        for zone_name, group_df in matched.groupby("_zone"):
+            member_store_ids = set(group_df["_zsid"].unique())
+            if fixed_oa_per_zone:
+                oa_label = ZONE24_NAME_TO_OA.get(zone_name, zone_name)
+                member_oas = [oa_label]
+            else:
+                member_oas = sorted(set(group_df["_zone_oa"].dropna().unique()))
+                oa_label = ", ".join(member_oas) if member_oas else zone_name
+
+            zone_workshops = {
+                tk: [e for e in flat_ws[tk] if _normalize_sid(e.get("store", "")) in member_store_ids]
+                for tk in ("boot_camp", "rising_star")
+            }
+            for tk in ("boot_camp", "rising_star"):
+                lst = zone_workshops[tk]
+                zone_workshops[f"n_{tk}_past"] = len({e.get("workshop_id") for e in lst if e["status"] == "past" and e.get("workshop_id")})
+                zone_workshops[f"n_{tk}_future"] = len({e.get("workshop_id") for e in lst if e["status"] == "future" and e.get("workshop_id")})
+
+            z = compute_single_zone(
+                group_df.drop(columns=["_zsid", "_zone", "_zone_oa"]),
+                zone_workshops, zone_key=zone_name, member_oas=member_oas or [oa_label]
+            )
+            if z:
+                z["oa"] = oa_label
+                zones[zone_name] = z
+        return zones
+
+    zones_24 = _build(zone24_map, fixed_oa_per_zone=True)
+    zones_15 = _build(zone15_map, fixed_oa_per_zone=False)
+    return zones_24, zones_15
+
+
+def _zone_rank_row_from_full(z):
+    """Lightweight Zone Ranking row (leadership_summary.html) derived from a
+    full zone-scorecard entry (compute_zone_display_views) -- same source of
+    truth as zone_scorecards.html, so the two pages never disagree."""
+    sc = z.get("startCounts", {}) or {}
+    ec = z.get("endCounts", {}) or {}
+    t1_latest, t1_base = ec.get("1", 0), sc.get("1", 0)
+    t3_latest, t3_base = ec.get("3", 0), sc.get("3", 0)
+    avg_latest, avg_base = z.get("headline_avg"), z.get("base_avg")
+    return {
+        "oa": z.get("oa"),
+        "zone": z.get("zone"),
+        "n": z.get("n_stores", 0),
+        "avg_latest": avg_latest,
+        "avg_base": avg_base,
+        "t1_latest": t1_latest, "t1_base": t1_base,
+        "t3_latest": t3_latest, "t3_base": t3_base,
+        "delta": round(avg_latest - avg_base, 2) if avg_latest is not None and avg_base is not None else 0,
+        "t1_pct_chg": round((t1_latest - t1_base) / t1_base * 100, 1) if t1_base > 0 else 0,
+        "t3_pct_chg": round((t3_latest - t3_base) / t3_base * 100, 1) if t3_base > 0 else 0,
+    }
 
 STAR_COLS = ["WIN_SCORE_STAR", "SPEED_STAR", "BRAND_STAR", "HB_ONTIME_STAR", "FSCC_STAR"]
 ACTUAL_COLS = {
@@ -1522,44 +1700,12 @@ def compute_leadership(df):
     may_df = df[df["MONTHNUM"] == last_m]
     jan_df = df[df["MONTHNUM"] == first_m]
 
-    # Zone rankings
-    oa_list = []
-    for oa in sorted(df["OPX_OA"].dropna().unique()):
-        m_sub = may_df[may_df["OPX_OA"] == oa]
-        j_sub = jan_df[jan_df["OPX_OA"] == oa]
-        if len(m_sub) == 0:
-            continue
-
-        t1_latest = int((m_sub["_tier"] == 1).sum())
-        t1_base = int((j_sub["_tier"] == 1).sum()) if len(j_sub) > 0 else t1_latest
-        t3_latest = int((m_sub["_tier"] == 3).sum())
-        t3_base = int((j_sub["_tier"] == 3).sum()) if len(j_sub) > 0 else t3_latest
-
-        avg_latest = float(m_sub["OVERALL_FIVESTAR"].mean())
-        avg_base = float(j_sub["OVERALL_FIVESTAR"].mean()) if len(j_sub) > 0 else avg_latest
-
-        n_stores = len(m_sub)
-        n_fran = int(m_sub["CURR_FRAN_OWNER_NM"].nunique())
-
-        t1_pct_chg = ((t1_latest - t1_base) / t1_base * 100) if t1_base > 0 else 0
-        t3_pct_chg = ((t3_latest - t3_base) / t3_base * 100) if t3_base > 0 else 0
-
-        oa_list.append({
-            "oa": oa,
-            "zone": zone_name_for(oa),
-            "n": n_stores,
-            "avg_latest": round(avg_latest, 2),
-            "avg_base": round(avg_base, 2),
-            "t1_latest": t1_latest,
-            "t1_base": t1_base,
-            "t3_latest": t3_latest,
-            "t3_base": t3_base,
-            "delta": round(avg_latest - avg_base, 2),
-            "t1_pct_chg": round(t1_pct_chg, 1),
-            "t3_pct_chg": round(t3_pct_chg, 1),
-        })
-
-    oa_list.sort(key=lambda x: x["avg_latest"], reverse=True)
+    # Zone rankings (zone_rank / zone_rank_15) are NOT built here -- they're
+    # derived in main() from compute_zone_display_views(), which groups
+    # stores by the authoritative per-store zone assignment files
+    # (zone_assignments_24_option2.csv / Alignments - 15 zones.csv) rather
+    # than live OPX_OA, since Snowflake's OPX_ALIGNMENT doesn't yet reflect
+    # the real 24-zone split (confirmed 2026-10). See _zone_rank_row_from_full.
 
     # Binding table (national, by tier, May 2026)
     binding_tbl = {}
@@ -1598,7 +1744,8 @@ def compute_leadership(df):
         "moved_up": flows["moved_up"],
         "moved_down": flows["moved_down"],
         "tier_story": flows["tier_story"],
-        "zone_rank": oa_list,
+        "zone_rank": [],
+        "zone_rank_15": [],
         "binding_tbl": binding_tbl,
         "corr_fivestar_sssg": corr_sssg,
         "corr_fivestar_sstg": corr_sstg,
@@ -1647,23 +1794,26 @@ def compute_leadership(df):
 # ─── Zone Scorecards ───────────────────────────────────────────────────────
 
 def compute_zone_scorecards(df, workshops_by_oa=None):
-    """Compute per-OA zone scorecard data."""
+    """Compute per-OA zone scorecard data (current org structure, live
+    OPX_OA) -- feeds the FOP dashboard rollup, workshop-by-OA matching, and
+    national watch-list/default aggregates. NOT the same data as the 15/24
+    zone-toggle display on zone_scorecards.html -- see
+    compute_zone_display_views(), which uses the authoritative per-store
+    zone assignment files instead, since OPX_ALIGNMENT doesn't yet reflect
+    the real 24-zone split (confirmed 2026-10)."""
     print("Computing zone scorecards...")
-
-    store_df = df  # already has store list info joined
 
     if workshops_by_oa is None:
         workshops_by_oa = {}
 
-    zones = {}
+    zones_24 = {}
     for oa in sorted(df["OPX_OA"].dropna().unique()):
         oa_df = df[df["OPX_OA"] == oa]
-        oa_workshops = workshops_by_oa.get(oa, {})
-        z = compute_single_zone(oa_df, oa_workshops)
+        z = compute_single_zone(oa_df, workshops_by_oa.get(oa, {}), zone_key=zone_name_for(oa), member_oas=[oa])
         if z:
-            zones[oa] = z
+            zones_24[oa] = z
 
-    return zones
+    return zones_24
 
 
 def _fmt_component_delta(delta, kind):
@@ -1756,11 +1906,20 @@ def build_bootcamp_insight(t1, eff):
     return {"coverage_pct": coverage_pct, "lift": lift, "lines": lines}
 
 
-def compute_single_zone(zone_df, workshops=None):
-    """Compute data for a single OA zone."""
+def compute_single_zone(zone_df, workshops=None, zone_key=None, member_oas=None):
+    """Compute data for a single zone. Normally one OA's stores (24-zone view);
+    `zone_key`/`member_oas` let a caller instead pass a 15-zone group spanning
+    several OAs' stores -- every aggregate below is Σ/Σ over whatever rows are
+    in `zone_df`, so a multi-OA frame re-aggregates correctly with no other
+    changes needed."""
     if workshops is None:
         workshops = {}
     oa = zone_df["OPX_OA"].iloc[0]
+    if member_oas is None:
+        member_oas = [oa]
+    oa_label = ", ".join(sorted(member_oas))
+    if zone_key is None:
+        zone_key = zone_name_for(oa)
 
     # 3-month baseline tier for Bootcamp targeting.
     # A store's baseline tier uses the MEAN of its OVERALL_FIVESTAR over the last 3
@@ -2018,7 +2177,7 @@ def compute_single_zone(zone_df, workshops=None):
     # from a "present in Jan / absent in latest month" diff against zone_df --
     # that diff can never catch these, since a closed store's January row never
     # makes it into zone_df in the first place.
-    closed_stores = [c for c in CLOSED_SINCE_JAN if c["oa"] == oa]
+    closed_stores = [c for c in CLOSED_SINCE_JAN if c["oa"] in member_oas]
 
     stores_data = []
     for sid in store_ids:
@@ -2303,8 +2462,8 @@ def compute_single_zone(zone_df, workshops=None):
     _bc_eff = compute_zone_workshop_effectiveness(zone_df, workshops)
 
     return {
-        "oa": oa,
-        "zone": zone_name_for(oa),
+        "oa": oa_label,
+        "zone": zone_key,
         "n_stores": n_stores,
         "n_fran": n_fran,
         "headline_avg": round(headline_avg, 2),
@@ -4380,23 +4539,35 @@ def generate_leadership_html(nat_data, template_path, output_path):
     print(f"  Written to {output_path}")
 
 
-def generate_zones_html(zones_data, template_path, output_path):
-    """Generate zone_scorecards.html from template."""
+def generate_zones_html(zones_data, zones_data_15, template_path, output_path):
+    """Generate zone_scorecards.html from template. zones_data is the 24-zone
+    view (compute_zone_display_views, grouped from the authoritative
+    per-store assignment file -- not the OPX_OA-keyed dict of the same name
+    used elsewhere in main()); zones_data_15 is the 15-zone view, same
+    source. 15-zone is the page's default, toggled in the browser via
+    setZoneMode() -- see zone_scorecards.html."""
     print(f"Generating {output_path.name}...")
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
 
     html = replace_data_block(html, "ZONES", zones_data)
+    html = replace_data_block(html, "ZONES_15", zones_data_15)
 
     # Inject dynamic month labels and period label
     html = replace_data_block(html, "MONTHS", MONTH_LABELS)
     html = re.sub(r'const REPORT_YEAR = \d+;', f'const REPORT_YEAR = {REPORT_YEAR};', html, count=1)
     html = _replace_month_refs(html)
 
-    # Update OA dropdown options to match actual OAs (exclude internal keys starting with _)
-    oa_names = sorted(k for k in zones_data if not k.startswith("_"))
+    # Build 24-zone dropdown options from each entry's own resolved zone/oa
+    # fields -- "OPEN" isn't a unique OA name (it covers 3 different vacant
+    # zones), so per-entry fields are the only correct source, never a
+    # name->zone lookup. Standard label format everywhere a zone needs
+    # pairing with its OA: "Zone (OA)". The 15-zone option set is built
+    # client-side from ZONES_15 when toggled.
+    oa_keys = [k for k in zones_data if not k.startswith("_")]
+    oa_keys.sort(key=lambda k: zones_data[k]["zone"])
     options = "\n".join(
-        f'<option value="{name}">{zone_name_for(name)} — {name}</option>' for name in oa_names
+        f'<option value="{name}">{zones_data[name]["zone"]} ({zones_data[name]["oa"]})</option>' for name in oa_keys
     )
     html = re.sub(
         r'<select id="oaSelect".*?</select>',
@@ -5071,6 +5242,21 @@ def main(no_cache=False, run_date=None):
 
     zones_data = compute_zone_scorecards(df, workshops_by_oa)
 
+    # 15/24 zone-toggle display data (zone_scorecards.html, leadership
+    # Zone Ranking) -- built from the authoritative per-store assignment
+    # files, NOT the live OPX_OA grouping zones_data above uses. See the
+    # module comment above compute_zone_display_views().
+    zone24_map, zone15_map = load_store_zone_assignments()
+    zones_24_display, zones_15_display = compute_zone_display_views(df, workshops_by_oa, zone24_map, zone15_map)
+    nat_data["zone_rank"] = sorted(
+        (_zone_rank_row_from_full(z) for z in zones_24_display.values()),
+        key=lambda x: (x["avg_latest"] is None, -(x["avg_latest"] or 0))
+    )
+    nat_data["zone_rank_15"] = sorted(
+        (_zone_rank_row_from_full(z) for z in zones_15_display.values()),
+        key=lambda x: (x["avg_latest"] is None, -(x["avg_latest"] or 0))
+    )
+
     # Enrich workshop entries with per-store actual 5-Star component arrays
     # (WIN_SCORE/SPEED/BRAND/HUTBOT/FSCC) so the national leadership and Rising
     # Star drill-downs can break each workshop out by component across
@@ -5201,11 +5387,20 @@ def main(no_cache=False, run_date=None):
     # Convert to JSON-safe types
     nat_data = convert_for_json(nat_data)
     zones_data = convert_for_json(zones_data)
+    zones_24_display = convert_for_json(zones_24_display)
+    zones_15_display = convert_for_json(zones_15_display)
     rising_data = convert_for_json(rising_data)
 
     # Generate LLM summaries (now with enriched nat_data)
     summarize_zones(zones_data, no_cache=no_cache)
     summarize_leadership(nat_data, no_cache=no_cache)
+
+    # The 15/24 zone-toggle display (zones_24_display/zones_15_display) is a
+    # separate grouping from zones_data (FOP/workshop plumbing above) --
+    # give both a deterministic summary rather than doubling the LLM call
+    # count for what's still a secondary view on this page.
+    for _z in list(zones_24_display.values()) + list(zones_15_display.values()):
+        _z["summary"] = generate_fallback_zone_summary(_z)
 
     # Build + summarize the private Leadership Brief page
     brief_data = compute_brief_data(nat_data, zones_data, fop_data, workshops_by_oa, run_date=run_date)
@@ -5247,7 +5442,8 @@ def main(no_cache=False, run_date=None):
     )
 
     generate_zones_html(
-        zones_data,
+        zones_24_display,
+        zones_15_display,
         template_dir / "zone_scorecards.html",
         OUTPUT_DIR / "zone_scorecards.html"
     )

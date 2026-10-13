@@ -67,6 +67,18 @@ A workshop's value is tracked through four checkpoints: a pre-workshop **baselin
 improvement stats, so early attendees can't quietly drag down the numbers before they've had
 time to show results.
 
+Rising Star gets the exact same treatment as Boot Camp — tier breakdown, lift-vs-control, and a
+baseline-vs-30/60/90-day breakdown of every 5-Star component plus the XM360/Taste sentiment
+metrics (so you can see not just whether a group improved, but which specific component drove
+it). Win Score, Speed, and Hutbot are shown as their real percentage; Brand and FSCC stay on the
+star scale. Same-store sales growth (SSSG) is tracked too, at the overall level, as a
+complementary (noisier) read on whether the operational improvement is showing up in sales.
+
+Getting workshop attendance into the reports is semi-automated: an OA still has to export the
+Teams "Workshop Intake" list to Excel by hand, but everything after that — cleaning the export,
+loading it into Snowflake, and regenerating `Workshops.csv` — is one script
+(`scripts/load_workshop_intake.py`).
+
 ## How each role uses the suite
 
 ### Leadership — `leadership_summary.html` and `leadership_brief.html`
@@ -85,6 +97,8 @@ narrative they can walk into a meeting with.
 - **Default Watch** — every defaulting / at-risk / T1-watch store nationwide, sorted by
   severity, with OA and Franchisee attached.
 - **Workshop Effectiveness** — did Boot Camp / Rising Star investment actually move the needle?
+  Click any row (Workshopped/Control, or a tier's attended/control) to expand its baseline-vs-
+  30/60/90-day component breakdown — which specific 5-Star/XM360 metric is driving the result.
 - **`leadership_brief.html`** is the private, recognition-focused companion: who had the
   standout month, Boot Camp pulse, franchisees on the rise vs. to watch. Not linked from the
   shared pages — open it directly.
@@ -104,11 +118,16 @@ franchisee call, which stores are in trouble and why.
 - Select their name (or land on "All" for the full cross-portfolio view) to see every
   franchisee they manage, sorted by defaulting-store count.
 - Get an AI-written 3-paragraph summary (Past | Present | Future) per FOP — portfolio shifts,
-  risk distribution, recommended action.
+  risk distribution, recommended action. Collapsible (click the heading) once you've read it.
 - Click into a franchisee for the full store list: status badges, trend arrows, search, and
-  Region/Area-Coach filters.
+  Region/Area filters. Each franchisee's quintile mix is a single proportioned color bar
+  (store counts labeled directly on segments wide enough to show them) instead of a chip list.
+  Export-to-PNG controls sit at the top of the page, not buried below the table.
 - Click a store for the full component breakdown and a plain-language status banner (e.g.
   "Default threshold met — immediate improvement plan required").
+- **Restaurant Performance Quintiles** can be viewed as the usual table or flipped to a Bell
+  Curve — a distribution chart of actual store scores for the current scope/window, with
+  colored bands marking the five quintile boundaries.
 - The **Alignment tab** is a separate, flat, filterable list of every open store with its full
   org-hierarchy assignment (OA/Zone/FOP/Director/DMA/Region/Area/address/lat-long) — useful for
   "who owns this store" lookups independent of the drill-down above.
@@ -124,16 +143,25 @@ Rising Star workshops.
   (+50%) targets, plus gross stores moved up, moved down, stayed, and closed since January.
 - **Tier 1 Boot Camp Coverage** — of the stores currently in Tier 1 (trailing 3-month average),
   what fraction have had, or have scheduled, a Boot Camp? Shown as a donut (Had / Scheduled /
-  Need) next to the Goal Tracker cards, with a worklist below for new Tier 1 entrants since
-  January that haven't been reached yet.
+  Need) next to the Goal Tracker cards. The donut's "at start of year" count always matches the
+  Overview tab's Tier 1 Reduction card (both use January's single-month score); "now" is
+  deliberately a steadier 3-month average, so it can read a little differently from a
+  single-month snapshot — the page explains why. The worklist below it is every current Tier 1
+  store still without a Boot Camp held or scheduled, sortable by any column.
+- **Boot Camp Insights** — a short, plain-language read per OA: how much of Tier 1 is covered,
+  whether attendees are actually beating a tier-matched control group (framed positively either
+  way), and which component is the standout driver so far. Generated from the same numbers on
+  the page, not a separate AI call.
 - **Area & Franchisee Spotlight** — where to go next: lowest/highest areas, best/worst
   franchisee.
-- **Binding chart** — what's holding each tier back in this zone specifically.
+- **Binding chart** — what's holding each tier back in this zone specifically; hover any segment
+  (or check the legend below the chart) for the full component name.
 - **Portfolio drill-down** — OA → DMA → Area → Store → Component, for prepping a specific visit.
 - **Boot Camps tab** — past workshop history (baseline, post-scores, deltas, sparkline) and
   upcoming/scheduled workshops.
 - **Targeting tab** — Tier 1 stores ranked by area, to decide where the next Boot Camp should
-  go.
+  go. Filter by Focus narrows the list to areas whose binding constraint is a specific
+  component (Win Score, Speed, Hutbot, Brand, FSCC).
 - **`rising_star.html`** does the same targeting job for Tier 2 stores, but zone-agnostic — a
   franchisee's footprint in a DMA can cross OA boundaries, so this page groups by DMA×Franchisee
   instead of by zone, to get the right people in the room.
@@ -153,6 +181,14 @@ Effectiveness table separates "we've reached this store" from "we can already se
 Scores close (1st–5th of month)
         │
         ▼
+Confirm the new month is actually scored in Snowflake, not just present as a placeholder row
+(see TECHNICAL_SPEC.md §3) — then bump MAX_INCLUDE_MONTH in generate_reports.py if needed
+        │
+        ▼
+(Optional) Export the Workshop Intake list from Teams/SharePoint, run it through
+scripts/load_workshop_intake.py to refresh Workshops.csv — see TECHNICAL_SPEC.md §2
+        │
+        ▼
 python generate_reports.py --run-date <today>
         │  (pulls live from Snowflake; falls back to manual CSVs if unreachable)
         ▼
@@ -160,10 +196,14 @@ python generate_reports.py --run-date <today>
         │
         ▼
 push_to_prod.sh "<commit message>"   → publishes to the team GitHub repo
+                                        (only run this when explicitly told to — see below)
 ```
 
 No database, no server, no login for end users — every report is a single file. Share it as an
 attachment, a link, or open it from a shared drive.
+
+**Pushing to prod is always an explicit, separate ask** — regenerating and reviewing the reports
+locally never requires it; only push when told to.
 
 ## Known open item
 

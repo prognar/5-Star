@@ -82,9 +82,63 @@ script reads `5-Star full.csv` / `Alignment.csv` from disk unchanged, exactly li
 manual-export workflow. Nothing breaks if Snowflake is down — you just lose freshness, not
 functionality.
 
-**`Workshops.csv` is the one remaining manual export** (Boot Camp / Rising Star attendance —
-query in the "Exporting Data" section below). It is **not** committed to the public GitHub
-repo (real store/franchisee attendance data) — see §7.
+**`Workshops.csv` generation is semi-automated** via `scripts/load_workshop_intake.py` (added
+2026-10). Only the export step stays manual — the rest is scripted. It is **not** committed to
+the public GitHub repo (real store/franchisee attendance data) — see §7.
+
+### Workshop Intake pipeline (`scripts/load_workshop_intake.py`)
+
+```
+OA opens the "Workshop Intake" Teams/SharePoint list, clicks Export to Excel  (manual — not automatable
+    without Microsoft Graph API access, which isn't set up)
+        │
+        ▼
+powershell -ExecutionPolicy Bypass -File snowflake\snow.ps1 scripts\load_workshop_intake.py "<raw export.csv>"
+        │  parses + cleans the raw export (normalizes blank/placeholder Host Store values to NULL,
+        │  guards against the WORKSHOP.HOST_STORE VARCHAR(6) column, trims/validates the
+        │  newline-separated Store Number blob)
+        ▼
+TRUNCATE + batch INSERT → AXC1195.LANDING_BOOTCAMP_WORKSHOP
+        ▼
+runs the fixed 6-step load SQL → AXC1195.WORKSHOP, AXC1195.WORKSHOP_RESTAURANT
+        │  (flattens the Store Number blob, matches training completion off DSC.LP_LRN_ACTIV_FACT_V1,
+        │  walks the management chain for ARL training counts)
+        ▼
+final SELECT → writes Workshops.csv directly (fixes the SQL REST API's epoch-day DATE
+                 columns via snow_client.epoch_to_date() — a real bug hit and fixed 2026-10)
+```
+
+Flags: `--dry-run` (parse/clean only, no Snowflake writes — use this first to review the
+validation-warning list), `--skip-reload` (land the raw rows only, skip the WORKSHOP/
+WORKSHOP_RESTAURANT pipeline and `Workshops.csv` regen).
+
+**Caution: not truncating `STG_FIVESTAR_RAW` before a reload is usually fine** — confirmed
+2026-10 that a missed truncate just appends new months with zero duplicate
+`(REST_NUMBER, BUSINESS_DATE, METRIC)` keys, because each month lands with distinct
+`BUSINESS_DATE` values. It would only matter if a reload *restates* a month already in the
+table (two different values for the same key) — `VW_FIVESTAR_SUMMARY`'s `MAX(...)` aggregation
+would then silently pick whichever value is numerically larger, not the most recent. Worth a
+quick duplicate-key check after any reload where the source data might overlap a prior load,
+not just append to it.
+
+### How `STG_FIVESTAR_RAW` actually reaches the reports (discovered 2026-10)
+
+This isn't obvious from `FIVESTAR_SQL` alone, so it's worth spelling out: the live pipeline is a
+two-hop view chain, both already pre-existing in Snowflake, not owned by this repo —
+
+```
+AXC1195.STG_FIVESTAR_RAW   (raw monthly load: one row per store/metric/date, no restated-month protection)
+        │  GROUP BY store, month — pivots METRIC/ACTUAL/STAR_RATING long→wide via MAX(CASE...))
+        ▼
+AXC1195.VW_FIVESTAR_SUMMARY
+        │  joined into a much larger view alongside sales/ops/XM360/training facts
+        ▼
+AXC1195.FXT_DASHBOARD_BASE_MONTHLY   ← this is what FIVESTAR_SQL actually queries
+```
+
+Both are plain Snowflake views (`SELECT ... FROM STG_FIVESTAR_RAW`, no materialization), so a
+fresh `STG_FIVESTAR_RAW` load is visible immediately on the next query — there's no separate
+"transform job" to run or wait on.
 
 ### Pulling closed-store status
 
@@ -134,6 +188,16 @@ Months are **auto-detected from the data**, not hardcoded — `PERIOD_MONTHS`, `
 `PERIODS`, `REPORT_YEAR` are set once in `filter_analysis_data()` and threaded through
 everywhere else. `MAX_INCLUDE_MONTH` caps which months are considered "landed" (ignores
 incomplete future-month placeholders in the source).
+
+**`MAX_INCLUDE_MONTH` needs a manual +1 bump every time a new month's 5-Star data actually
+lands** — it is *not* auto-derived from "does this month have any rows," because the source
+view carries placeholder rows for not-yet-scored future months too (confirmed 2026-10: October
+rows existed with `COUNT(OVERALL_FIVESTAR) = 0` well before the month was real). Before trusting
+a regeneration to include a new month, verify the new month is actually scored first —
+`SELECT MONTHNUM, COUNT(*), COUNT(OVERALL_FIVESTAR) FROM AXC1195.FXT_DASHBOARD_BASE_MONTHLY
+WHERE YEARNO = 'Y2026' GROUP BY MONTHNUM` (note: `YEARNO` is text, `'Y2026'`, not an int) — then
+bump the constant. Forgetting this step silently caps the report at last month's data even
+though the new month is sitting right there in Snowflake.
 
 ## 4. Tier, status, and binding formulas
 
@@ -223,16 +287,70 @@ side by side (every Boot Camp Effectiveness table across the suite has both colu
 **Control group:** for effectiveness comparisons, control = stores in the same tier at the
 baseline month (Tier 1 for Boot Camp, Tier 2 for Rising Star) that did **not** attend that type
 of workshop — i.e. "did attendees improve more than their tier peers who didn't attend."
+`compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="boot_camp",
+target_tier=1)` (generalized 2026-10 — it used to be Boot-Camp-only) drives this for both
+workshop types; the national rollup calls it once per type
+(`workshop_key="rising_star", target_tier=2`), so Rising Star gets the exact same by-tier
+breakdown, lift-vs-control, and component analysis Boot Camp always had — no more
+Boot-Camp-only asymmetry in Leadership Summary's Workshop Effectiveness section.
 
-**Tier 1 Boot Camp Coverage** (Zone Scorecards): denominator is the **current** Tier 1
-population — stores whose **trailing 3-month average** (`avg3mo(s, n)`, not a single month)
-classifies as Tier 1 right now, not the frozen January cohort. Of those, a store counts as
-covered if it `bch` (ever held a Boot Camp) or `bcs` (has one scheduled). Rendered as a donut
-(Had / Scheduled / Need, colored pine/gold/cardinal) with the coverage % centered, next to the
-three Progress cards. A separate worklist below it surfaces Tier 1 stores that weren't Tier 1
-back in January (churn into Tier 1 since the baseline) and still have no Boot Camp held or
-scheduled — this is deliberately a different population from the headline coverage number,
-because the original program goal was framed around the January cohort specifically.
+**Per-component breakdown** (`WORKSHOP_COMPONENT_SPEC` in `generate_reports.py`): for the
+Overall group and each by-tier group, every component's baseline vs. 30/60/90-day checkpoint is
+tracked, not just the blended `OVERALL_FIVESTAR` score — lets a Workshops-tab row answer "which
+specific component moved, not just whether the group improved." Win Score / Speed / Hutbot are
+shown as their **actual metric** (0–100%, `WIN_SCORE_ACTUAL`/`SPEED_ACTUAL`/`HB_ONTIME_ACTUAL`),
+while Brand / FSCC stay on the **star scale** — they don't have a comparable numeric actual
+(categorical/count-based). Control groups repeat the same current-snapshot value across all
+three period columns (30/60/90) since they have no workshop date to window off of. Each
+component cell carries an `n`/`n30`/`n60`/`n90` restaurant count (surfaced as a column-header
+tooltip in the UI, not per-cell — counts can differ component to component since e.g. XM360
+survey fields are missing more often than the 5-Star pillars).
+
+**Sales Growth (SSSG)** — Overall-only (not broken out by tier, deliberately: noisier signal,
+smaller qualifying population). Computed the same way as `avg_baseline`/`avg_latest` (each
+workshopped store's own baseline window vs. its own latest checkpoint; control uses the fixed
+current window), surfaced as 3 extra columns (`SSSG BL`/`SSSG Latest`/`SSSG Δ`) on the Overall
+summary table only. **The raw `SSSG` column needs winsorizing before use** — it's computed
+upstream as `cy/ly - 1.0` with no outlier guard, so a near-zero last-year baseline can produce a
+60%+ "growth" figure; clip to `GROWTH_RATIO_BAND` (already defined for a different quintile
+feature) before averaging, same as the fix applied 2026-10.
+
+**Tier 1 Boot Camp Coverage** (Zone Scorecards "Where to Focus" donut): "now" denominator is the
+**current** Tier 1 population — stores whose **trailing 3-month average** (`avg3mo(s, n)` in JS
+/ `_tier_base` in Python) classifies as Tier 1 right now. Of those, a store counts as covered if
+it `bch` (ever held a Boot Camp) or `bcs` (has one scheduled). Rendered as a donut (Had /
+Scheduled / Need, colored pine/gold/cardinal) with the coverage % centered, next to the three
+Progress cards.
+
+**The donut's "at start of year" count must match the Overview tab's January Tier 1 count** —
+this was a real bug (reported 2026-10): the Boot Camp tab's `start` used a Jan–Mar **3-month
+average** (`t1_begin_ids` in `compute_single_zone`), while the Overview tab's "Tier 1 Reduction"
+card uses January's **single-month** score (`_tier` column, same definition `compute_tier_flows`
+uses for `startCounts`). The two numbers disagreed (e.g. 126 vs. 112 for one OA) with no
+indication they were different metrics. Fixed by switching `t1_begin_ids` to
+`jan_df.loc[jan_df["_tier"] == 1, "CHAINED_STORE_ID"]` — same single-month definition as
+Overview. "Now" intentionally stays a 3-month average (matches Bootcamp targeting's own
+definition elsewhere); the Boot Camps tab UI explains this difference directly (a caption above
+the donut) so a "now" vs. Overview's latest-single-month mismatch doesn't get mistaken for
+another bug.
+
+A separate worklist below the donut (`needBcStores` in `fz_dashboard.html` /
+`newT1Needed` id, despite the name — reused from an earlier "new since January" version)
+surfaces **every current Tier 1 store** with no Boot Camp held or scheduled (changed 2026-10
+from "only stores that newly churned into Tier 1 since January" — the old scope quietly excluded
+stores that were already Tier 1 in January and still uncovered, which is the bigger and more
+actionable list). Sortable by every column; OA is sourced from `ALIGNMENT_DATA` specifically —
+the per-store records elsewhere in this file key `"oa"`/`"o"` to the FOP, not the OA who
+actually runs Boot Camps, and store-ID zero-padding differs between the two datasets (normalize
+both before joining).
+
+**Per-OA Boot Camp insights** (`build_bootcamp_insight()` in `generate_reports.py`, rendered on
+Zone Scorecards' Boot Camps tab as an "Insights" callout): a deterministic, template-based
+narrative — not an LLM call, so it's instant/free/consistent — covering coverage standing, lift
+vs. control (framed positively regardless of direction: "it's working" / "room to grow" /
+"early read"), and which component moved most for that tier's attendees (the "driver"). Reuses
+`t1_opportunity` and `workshop_effectiveness` numbers already computed for the page; no new data
+source.
 
 ## 7. File manifest
 
@@ -246,6 +364,8 @@ because the original program goal was framed around the January cohort specifica
 | `PHLogo.png` | Masthead logo, embedded in every report. |
 | `.env` | Local secrets (Snowflake/Anthropic config) — **never committed**, see `.gitignore`. |
 | `push_to_prod.sh` | Deploy script — see §8. |
+| `scripts/load_workshop_intake.py` | Workshop Intake conversion/clean/load pipeline — see §2. |
+| `snowflake/snow_client.py`, `snowflake/snow.ps1`, `snowflake/store_pat.ps1` | Shared Snowflake SQL-API client + PAT decrypt/run wrapper, used by both `generate_reports.py` and `load_workshop_intake.py`. `snow.ps1` is how *any* script in this repo gets `SNOWFLAKE_PAT` into its environment — always run one-off Snowflake queries through it, never `python` directly. |
 | `5-Star full.csv`, `Alignment.csv`, `Workshops.csv`, `Store List - *.csv`, `OAs.xlsx` | Local data inputs — gitignored, never pushed (business-sensitive; two of the three have live Snowflake replacements per §2). |
 | `_summaries.json` | Local LLM-summary cache (see §9) — gitignored, local-machine scratch, never pushed. |
 
@@ -267,6 +387,11 @@ Stages a fixed allowlist of files (`FILES=(...)` at the top of the script — th
 `origin main` on `github.com/prognar/5-Star` (currently public; team-only access is a planned
 follow-up, not yet done). It deliberately does **not** `git add -A` — if you add a new file
 that should ship, add it to the `FILES` array explicitly.
+
+**Never run `push_to_prod.sh` (or any `git push`) without the user explicitly saying so in that
+session** — "push to prod" / "push" is an explicit, standing instruction from the user, not
+something to infer from "the change looks done" or "I already regenerated the reports."
+Regenerating locally and verifying output is always fine without asking; publishing is not.
 
 ## 9. LLM summaries (optional layer)
 
@@ -298,3 +423,36 @@ python generate_reports.py --run-date <YYYY-MM-DD>
 `scripts/_verify_five.py` (local, not part of the pushed fileset) does a structural sanity pass
 over all 5 generated files — JS-parseable (`esprima`), expected data keys present — useful after
 any change that touches `replace_data_block()` or the data-embedding format itself.
+
+## 11. House style & recurring UI conventions
+
+**Dispatch phrasing (added 2026-10):** never recommend "shortening/tightening dispatch windows"
+as a speed-improvement suggestion, anywhere — phrase it as **"increase drive turn, use
+Dragontail"** instead. This applies to:
+- `DISPATCH_PHRASING_RULE` (module-level constant in `generate_reports.py`), appended to all 4
+  LLM system prompts (zone/FOP/leadership/brief summaries) so Claude-authored narratives follow
+  it too.
+- Hardcoded lever-insight strings in `fz_dashboard.html` and `zone_scorecards.html` (the "Rack
+  (staging)" / "High rack + low DaaS" callouts) — these are plain template text, not LLM output,
+  so they needed fixing directly in the `.html` files, not just the prompt. Purely diagnostic
+  mentions of "dispatch" (e.g. "check driver / 3rd-party dispatch, not the line") are fine as-is
+  — the rule is about the *recommendation*, not the word.
+
+**Status-pill tooltips:** Defaulting / At Risk / T1 Watch pills (`.badge-dl`/`.badge-ar`/
+`.badge-tw` classes) should always carry a `title` attribute explaining the threshold, via a
+`STATUS_TIPS` object — duplicated (not shared) across `fz_dashboard.html`, `leadership_summary.html`,
+and `zone_scorecards.html` since each is a standalone file; keep the three copies' wording in
+sync by hand if the definitions ever change. Same pattern for `TIER_TIPS` (Tier 1/2/3 score-range
+tooltips) in `fz_dashboard.html`.
+
+**A real CSS trap to know about:** `fz_dashboard.html`'s `.avg-mode-btn` base class is styled for
+a *dark* background (near-white, low-opacity text — it's meant for the header bar). Any new
+toggle button built on it needs its own override rule (see `.quint-win-btn` / `.quint-view-btn`)
+if it's placed on a light background, or its text will be nearly invisible. This exact bug
+shipped once (2026-10, the quintile Bell Curve toggle) before being caught and fixed.
+
+**Area vs. OA:** any dropdown/filter populated from a store's Area field (`FAREADESC`, the `"a"`
+key on a store object) must be labeled "Area," never "OA" — a store's `"oa"`/`"o"` key elsewhere
+in this codebase is usually the FOP, not the Operations Advisor, which is its own easy mix-up
+(see the Tier 1 Boot Camp Coverage worklist note in §6 for the real OA source,
+`ALIGNMENT_DATA`).

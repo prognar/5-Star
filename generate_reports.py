@@ -137,6 +137,15 @@ TIER_NAMES = {1: "Bootcamp", 2: "Rising Star", 3: "Top Tier"}
 # Sonnet is the right tier for this workload: short, structured executive
 # narratives generated from data, not open-ended reasoning.
 LLM_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+
+# House style rule for every LLM-authored narrative (zone/FOP/leadership/brief
+# summaries): speed coaching recommendations are framed as a drive-thru/
+# turn-time lever, not a back-of-house dispatch-time lever.
+DISPATCH_PHRASING_RULE = (
+    "House style rule: never recommend 'shortening dispatch' or reducing dispatch time as a "
+    "speed-improvement suggestion -- phrase that recommendation instead as 'increase drive turn, "
+    "use Dragontail'."
+)
 SUMMARIES_CACHE = BASE_DIR / "_summaries.json"
 
 try:
@@ -3380,7 +3389,7 @@ def summarize_zones(zones_data, no_cache=False):
         "specific areas or franchisees requiring attention. "
         "Support all observations with specific figures. "
         "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
-        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
+        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC. " + DISPATCH_PHRASING_RULE
     )
 
     period_label = get_period_label()
@@ -3507,7 +3516,7 @@ def summarize_leadership(nat_data, no_cache=False):
         "(distribution, binding constraints by tier, zones requiring attention, risk exposure), "
         "and the primary national priority with the single most important operational focus. "
         "End action-oriented. Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, "
-        "BRAND_STAR = Brand, HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
+        "BRAND_STAR = Brand, HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC. " + DISPATCH_PHRASING_RULE
     )
 
     period_label = get_period_label()
@@ -3622,7 +3631,7 @@ def summarize_fops(fop_data, no_cache=False):
         "Paragraph 3 — RECOMMENDED ACTION: Identify the single highest-impact action for this FOP and "
         "specific franchisees requiring the most support. "
         "Metric reference: WIN_SCORE_STAR = Win Score, SPEED_STAR = Speed, BRAND_STAR = Brand, "
-        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC."
+        "HB_ONTIME_STAR = Hutbot Ontime, FSCC_STAR = FSCC. " + DISPATCH_PHRASING_RULE
     )
 
     period_label = get_period_label()
@@ -4897,7 +4906,7 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         "opportunities are'. Tone: confident, direct, recognition-forward. The narrative voice "
         "throughout is: our OAs and FOPs are making a difference out in the field, and here is "
         "the proof. Answer three questions framing: are the bootcamps working, are sales improving, "
-        "and how are the franchisees doing?"
+        "and how are the franchisees doing? " + DISPATCH_PHRASING_RULE
     )
     nat_growth = brief_data.get("growth") or {}
     _growth_compact = {

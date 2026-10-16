@@ -25,7 +25,6 @@ except ImportError:
 # ─── Config ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 FIVESTAR_CSV = BASE_DIR / "5-Star full.csv"
-STORE_LIST_CSV = BASE_DIR / "Store List - 7-7-26 v2.csv"
 WORKSHOPS_CSV = BASE_DIR / "Workshops.csv"
 ALIGNMENT_CSV = BASE_DIR / "Alignment.csv"
 OUTPUT_DIR = BASE_DIR
@@ -683,56 +682,16 @@ def load_data():
 
     print(f"  {len(df):,} rows loaded")
 
-    # Try loading store list (optional — provides Area, Lat/Long, FOP)
-    store_list_loaded = False
-    if STORE_LIST_CSV.exists():
-        print("Loading store list...")
-        try:
-            stores = pd.read_csv(
-                STORE_LIST_CSV,
-                dtype={"CHAINED_STORE_ID": str},
-            )
-            print(f"  {len(stores):,} stores loaded")
-
-            # Join: bring Area, Lat/Long, DMA, Franchisee, FOP from store list
-            join_cols = ["CHAINED_STORE_ID"]
-            store_cols = ["CHAINED_STORE_ID", "FREGIONDESC", "FAREADESC",
-                          "LATITUDE", "LONGITUDE", "CURR_FRAN_OWNER_NM",
-                          "NIELSENDMADESC"]
-            # Add FOP if available in store list
-            if "FOP" in stores.columns:
-                store_cols.append("FOP")
-                join_cols.append("FOP")
-
-            df = df.merge(
-                stores[store_cols],
-                on=join_cols if len(join_cols) > 1 else "CHAINED_STORE_ID",
-                how="left",
-                suffixes=("", "_sl")
-            )
-
-            # Fill missing fran/dma from the 5-Star CSV if store list missing
-            if "CURR_FRAN_OWNER_NM_sl" in df.columns:
-                sfm = df["CURR_FRAN_OWNER_NM_sl"].notna()
-                df.loc[sfm, "CURR_FRAN_OWNER_NM"] = df.loc[sfm, "CURR_FRAN_OWNER_NM_sl"]
-            if "NIELSENDMADESC_sl" in df.columns:
-                sdm = df["NIELSENDMADESC_sl"].notna()
-                df.loc[sdm, "NIELSENDMADESC"] = df.loc[sdm, "NIELSENDMADESC_sl"]
-            if "FOP_sl" in df.columns:
-                sfp = df["FOP_sl"].notna()
-                df.loc[sfp, "FOP"] = df.loc[sfp, "FOP_sl"]
-
-            store_list_loaded = True
-            print(f"  Joined: {len(df):,} rows")
-        except Exception as e:
-            print(f"  Store list load failed: {e}, proceeding without it")
-
-    if not store_list_loaded:
-        print("  No store list — using 5-Star CSV fields only")
-        # Ensure lat/long columns exist as placeholders
-        for c in ["LATITUDE", "LONGITUDE", "FAREADESC", "FREGIONDESC"]:
-            if c not in df.columns:
-                df[c] = None
+    # Store List - 7-7-26 v2.csv (STORE_LIST_CSV) is retired (2026-10) -- it
+    # was a temporary stopgap from before Snowflake access existed, and every
+    # field it used to supply (franchisee, area/region, lat/long, FOP) is
+    # already pulled live in FIVESTAR_SQL above. Keeping its join around only
+    # risked silently reverting a real-world change (a franchisee sale) back
+    # to a stale 2026-07-07 snapshot, which is exactly what happened. Do not
+    # reintroduce this file or any join against it.
+    for c in ["LATITUDE", "LONGITUDE", "FAREADESC", "FREGIONDESC"]:
+        if c not in df.columns:
+            df[c] = None
 
     # Ensure FOP column exists (check OPX_FOP first, then FOP)
     if "OPX_FOP" in df.columns:
@@ -746,10 +705,32 @@ def load_data():
     if "DIRECTOR" not in df.columns:
         df["DIRECTOR"] = "Unknown"
 
-    # ---- Franchisee normalization (2026-09): GARRETT MCGINN is Don Rizzie and
-    # ---- his stores attach to FOP Kelly Sharpe. Applied post store-list join so
-    # ---- the corrected name/FOP propagate to every report from this dataframe.
-    _fran_mask = df["CURR_FRAN_OWNER_NM"].astype(str).str.strip().str.upper() == "GARRETT MCGINN"
+    # Overwrite CURR_FRAN_OWNER_NM from DSC.ALIGN_DIM_V1 -- the source of
+    # truth for current ownership -- for every row of a store, not just its
+    # latest month. FIVESTAR_SQL's own CURR_FRAN_OWNER_NM is a per-store-month
+    # value and can disagree with itself across months during a sale (see
+    # CURRENT_FRANCHISEE_SQL comment); reports only care about current
+    # status, so every historical row should show the current owner too, not
+    # whoever owned it at the time. Falls back to leaving FIVESTAR_SQL's own
+    # value in place if Snowflake isn't reachable for this second pull.
+    _current_fran = load_current_franchisee_map()
+    if _current_fran:
+        _sid_key = df["CHAINED_STORE_ID"].astype(str).str.strip().str.zfill(6)
+        _fran_map_key = {str(k).strip().zfill(6): v for k, v in _current_fran.items()}
+        _mapped = _sid_key.map(_fran_map_key)
+        _hit = _mapped.notna()
+        df.loc[_hit, "CURR_FRAN_OWNER_NM"] = _mapped[_hit]
+
+    # ---- Franchisee normalization (2026-09): this franchisee shows up under
+    # ---- two different spellings depending on source -- GARRETT MCGINN from
+    # ---- the static store list, DONALD RIZZIE from live Snowflake (same
+    # ---- person documented at load_alignment_data() and compute_fop_data(),
+    # ---- which already check both spellings) -- normalized to Don Rizzie,
+    # ---- attached to FOP Kelly Sharpe. This used to only catch GARRETT
+    # ---- MCGINN because the store-list join always overwrote the live value
+    # ---- with it; now that join is gap-fill-only (2026-10 fix), the live
+    # ---- DONALD RIZZIE spelling needs to be caught here directly too.
+    _fran_mask = df["CURR_FRAN_OWNER_NM"].astype(str).str.strip().str.upper().isin(("GARRETT MCGINN", "DONALD RIZZIE"))
     if _fran_mask.any():
         df.loc[_fran_mask, "CURR_FRAN_OWNER_NM"] = "DON RIZZIE"
         df.loc[_fran_mask, "FOP"] = "Kelly Sharpe"
@@ -787,18 +768,26 @@ def load_workshops(df):
 
     last_data_month = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
 
-    # Build store->franchisee, store->area, and store->dma lookups from main df
+    # Build store->franchisee, store->area, and store->dma lookups from main df.
+    # Sort by month and take .last(), not .first() -- a store that changed
+    # franchisee mid-year (confirmed 2026-10: 043469/043470 sold Ryan
+    # Wasinger -> Thomas Jorgensen) otherwise gets stuck on whichever row
+    # happens to come first (often January, the stale pre-sale owner), while
+    # its siblings in the same Area show the current owner -- exactly the
+    # "two franchisees in one Area" bug reported for Finley Klement's
+    # "Brundage, Christina" Boot Camp area.
+    _df_sorted = df.sort_values("MONTHNUM")
     _fran_cache = {}
     _area_cache = {}
     _dma_cache = {}
     if "CURR_FRAN_OWNER_NM" in df.columns:
-        _fran_map = df.groupby("CHAINED_STORE_ID")["CURR_FRAN_OWNER_NM"].first().to_dict()
+        _fran_map = _df_sorted.groupby("CHAINED_STORE_ID")["CURR_FRAN_OWNER_NM"].last().to_dict()
         _fran_cache = {k: str(v) for k, v in _fran_map.items() if pd.notna(v)}
     if "FAREADESC" in df.columns:
-        _area_map = df.groupby("CHAINED_STORE_ID")["FAREADESC"].first().to_dict()
+        _area_map = _df_sorted.groupby("CHAINED_STORE_ID")["FAREADESC"].last().to_dict()
         _area_cache = {k: str(v) for k, v in _area_map.items() if pd.notna(v)}
     if "NIELSENDMADESC" in df.columns:
-        _dma_map = df.groupby("CHAINED_STORE_ID")["NIELSENDMADESC"].first().to_dict()
+        _dma_map = _df_sorted.groupby("CHAINED_STORE_ID")["NIELSENDMADESC"].last().to_dict()
         _dma_cache = {k: str(v) for k, v in _dma_map.items() if pd.notna(v)}
 
     # Build a fast (store, month) -> score lookup
@@ -4237,6 +4226,31 @@ def load_alignment_from_snowflake():
     Alignment.csv" step. Returns a DataFrame, or None if Snowflake isn't
     reachable -- callers should fall back to the manual CSV in that case."""
     return _snowflake_query_df(ALIGNMENT_SQL, None, "Alignment data (DSC.ALIGN_DIM_V1)")
+
+
+# DSC.ALIGN_DIM_V1 is the source of truth for current ownership -- one row
+# per store, always current, unlike AXC1195.FXT_DASHBOARD_BASE_MONTHLY
+# (FIVESTAR_SQL's source), which carries a CURR_FRAN_OWNER_NM per store-month
+# and can disagree with itself across months during a franchisee sale
+# (confirmed 2026-10 twice: Harold Kreeger -> Greg Shelton, Ryan Wasinger ->
+# Thomas Jorgensen -- both left stale pre-sale rows mixed in with current
+# ones). Reports only care about current status, so every row for a store
+# gets overwritten to this single current value, not just the latest month's.
+CURRENT_FRANCHISEE_SQL = """
+SELECT CHAINED_STORE_ID, CURR_FRAN_OWNER_NM
+FROM DSC.ALIGN_DIM_V1
+"""
+
+
+def load_current_franchisee_map():
+    """Pull {CHAINED_STORE_ID: current CURR_FRAN_OWNER_NM} straight from
+    DSC.ALIGN_DIM_V1. Returns {} if Snowflake isn't reachable -- callers
+    should then just keep whatever FIVESTAR_SQL already supplied rather than
+    fail the run."""
+    df = _snowflake_query_df(CURRENT_FRANCHISEE_SQL, None, "current franchisee (DSC.ALIGN_DIM_V1)")
+    if df is None:
+        return {}
+    return dict(zip(df["CHAINED_STORE_ID"], df["CURR_FRAN_OWNER_NM"]))
 
 
 def enrich_with_snowflake(df):

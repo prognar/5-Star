@@ -258,11 +258,6 @@ Star-rating thresholds (`STAR_THRESHOLDS` in `generate_reports.py`, mirrored as
 Overall 5-Star blend weights: Win 0.35 · Speed 0.30 · Hutbot 0.20 · Brand 0.075 · FSCC 0.075
 (provided pre-blended as `OVERALL_FIVESTAR`, not recomputed by this codebase).
 
-**Known gap (flagged, not fixed):** the Brand Standards Manual says a failed FSCC score should
-cap a store at 1★ regardless of other components; the actual blend only weights FSCC at 7.5%,
-so a store can fail food safety and still land in Tier 2/3. The reports compute the formula as
-specified, not the policy override — see `FUNCTIONAL_SPEC.md` for the escalation options.
-
 ## 6. Boot Camp / Rising Star workshop logic
 
 **Baseline:** an average of available 5-Star scores *before* the workshop. The anchor month
@@ -358,6 +353,7 @@ source.
 |---|---|
 | `generate_reports.py` | The generator. Everything above lives here. |
 | `leadership_summary.html`, `fz_dashboard.html`, `zone_scorecards.html`, `rising_star.html`, `leadership_brief.html` | The 5 generated reports — self-templating, see §1. |
+| `definitions.html` | Hand-maintained (not generated/templated) plain-language reference page — tiers, status, binding constraint, scorecard formulas, roll-up rule, workshops, the 15/24 zone toggle, glossary. Linked from the nav bar of the other 4 public reports (not `leadership_brief.html`, which stays unlinked by design). Edit it directly; it never needs regenerating since nothing on it is data-driven. |
 | `fz_dashboard_detail.js` | Companion data file for `fz_dashboard.html`. ~15 MB of per-store drill-down-only fields (metric-panel parts, sentiment trends, component history) that would otherwise bloat the main file's up-front load (was 19.7 MB → 5.4 MB after the split). Lazy-loaded on first franchisee drill-down via `ensureDetailLoaded()`. **Must ship in the same folder as `fz_dashboard.html`** — it degrades gracefully without it (drill-down fields just render absent), but store-level detail breaks. |
 | `FUNCTIONAL_SPEC.md` / `TECHNICAL_SPEC.md` | This doc pair. |
 | `5-STAR_METRICS.md` | Full metric formula/roll-up reference (§5). |

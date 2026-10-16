@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>5-Star Reporting Suite — Definitions &amp; How It Works</title>
+<style>
+  :root{
+    --ink:#1c1a1f; --paper:#f6f4f0; --card:#ffffff; --line:#e4dfd6;
+    --ph-red:#C31417; --cardinal:#a3122a; --cardinal-dim:#eadcdb; --gold:#c07f1f; --pine:#276b4d; --muted:#6b6560;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink); font-family:'Inter',sans-serif; line-height:1.55; padding-bottom:80px;}
+  .wrap{max-width:900px;margin:0 auto;padding:0 28px;}
+  header.top{background:var(--ph-red); color:#fff; padding:28px 0 24px;}
+  header.top .toprow{display:flex; align-items:center; gap:18px;}
+  header.top .logo{height:50px; width:auto; display:block;}
+  .report-title{font-family:'Segoe UI',sans-serif; font-weight:700; font-size:30px; color:#fff; margin:0; line-height:1.15; letter-spacing:-.02em;}
+  .report-sub{font-family:'Segoe UI',sans-serif; font-size:13.5px; color:rgba(255,255,255,.78); margin:4px 0 0;}
+
+  nav{background:#1a1a1a;padding:6px 24px;font-family:'IBM Plex Mono',monospace;font-size:11px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+  nav a{color:rgba(255,255,255,.6);text-decoration:none;}
+  nav a:hover{color:#fff;}
+  nav span.current{color:#fff;font-weight:600;}
+
+  /* Table of contents */
+  .toc{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--ph-red); padding:18px 22px; margin:28px 0;}
+  .toc h2{margin:0 0 10px;}
+  .toc ol{margin:0; padding-left:20px; columns:2; column-gap:28px;}
+  .toc li{margin-bottom:6px; break-inside:avoid;}
+  .toc a{color:var(--ink); text-decoration:none; font-size:13.5px;}
+  .toc a:hover{color:var(--cardinal); text-decoration:underline;}
+
+  section{padding:26px 0; border-bottom:1px solid var(--line);}
+  section:last-of-type{border-bottom:none;}
+  h2{font-family:'Oswald',sans-serif; font-weight:600; font-size:20px; color:var(--cardinal); margin:0 0 6px; letter-spacing:-.01em; scroll-margin-top:16px;}
+  h2 .num{color:var(--muted); font-weight:400; margin-right:6px;}
+  h3{font-family:'Oswald',sans-serif; font-weight:600; font-size:14.5px; color:var(--ink); margin:22px 0 8px; text-transform:uppercase; letter-spacing:.04em;}
+  p{margin:0 0 12px; font-size:14.5px;}
+  p.lede{font-size:15.5px; color:var(--muted);}
+  ul, ol.plain{margin:0 0 14px; padding-left:22px; font-size:14.5px;}
+  li{margin-bottom:5px;}
+  strong{font-weight:650;}
+  code{background:var(--cardinal-dim); color:var(--cardinal); padding:1px 5px; border-radius:3px; font-family:'IBM Plex Mono',monospace; font-size:.9em;}
+
+  table{width:100%; border-collapse:collapse; margin:10px 0 18px; font-size:13.5px;}
+  th{background:var(--ink); color:#fff; text-align:left; padding:8px 10px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;}
+  td{padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top;}
+  tr:nth-child(even) td{background:rgba(0,0,0,.015);}
+
+  .callout{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--gold); padding:14px 18px; margin:14px 0; font-size:13.5px;}
+  .callout.pine{border-left-color:var(--pine);}
+  .callout.cardinal{border-left-color:var(--cardinal);}
+  .callout .tag{font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); display:block; margin-bottom:4px;}
+
+  .badge{display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:.03em;}
+  .badge-dl{background:var(--cardinal); color:#fff;}
+  .badge-ar{background:var(--gold); color:#fff;}
+  .badge-tw{background:#e4dfd6; color:var(--ink);}
+  .badge-ok{background:var(--pine); color:#fff;}
+  .badge-t1{background:var(--cardinal);color:#fff;} .badge-t2{background:var(--gold);color:#fff;} .badge-t3{background:var(--pine);color:#fff;}
+
+  .glossary dt{font-weight:650; font-family:'IBM Plex Mono',monospace; font-size:13px; margin-top:12px; color:var(--ink);}
+  .glossary dd{margin:3px 0 0; font-size:13.5px; color:var(--muted);}
+
+  .top-link{display:inline-block; font-size:11.5px; font-family:'IBM Plex Mono',monospace; color:var(--muted); text-decoration:none; margin-top:18px;}
+  .top-link:hover{color:var(--cardinal);}
+
+  footer{max-width:900px; margin:0 auto; padding:24px 28px; font-size:12px; color:var(--muted); font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="leadership_summary.html">Leadership</a>
+  <a href="fz_dashboard.html">Franchisee Dashboard</a>
+  <a href="zone_scorecards.html">Zone Scorecards</a>
+  <a href="rising_star.html">Rising Star</a>
+  <span class="current">Definitions</span>
+</nav>
+
+<header class="top">
+  <div class="wrap">
+    <div class="toprow">
+      <img src="PHLogo.png" alt="Pizza Hut" class="logo" onerror="this.style.display='none'">
+      <div>
+        <h1 class="report-title">5-Star Reporting Suite</h1>
+        <p class="report-sub">Definitions &amp; How It Works — a plain-language reference for anyone new to these reports</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section style="border-bottom:none; padding-bottom:0;">
+    <p class="lede" style="margin-top:22px;">
+      This page explains every term, score, and calculation used across the 5-Star Reporting Suite —
+      no prior context needed. It doesn't change as the data refreshes each month, so it's safe to
+      bookmark and come back to whenever a number on one of the reports needs explaining.
+    </p>
+  </section>
+
+  <div class="toc">
+    <h2 style="border:none;">On this page</h2>
+    <ol>
+      <li><a href="#overview">What this suite is</a></li>
+      <li><a href="#reports">The four reports</a></li>
+      <li><a href="#tiers">Tiers</a></li>
+      <li><a href="#status">Store status (Defaulting / At Risk / etc.)</a></li>
+      <li><a href="#binding">Binding constraint</a></li>
+      <li><a href="#components">The five scorecard components</a></li>
+      <li><a href="#rollup">How numbers roll up (the one rule)</a></li>
+      <li><a href="#other-metrics">Other metrics you'll see</a></li>
+      <li><a href="#workshops">Boot Camp &amp; Rising Star workshops</a></li>
+      <li><a href="#zones">Zones — 15 vs. 24, and the toggle</a></li>
+      <li><a href="#glossary">Glossary of roles &amp; terms</a></li>
+      <li><a href="#data">Where the numbers come from</a></li>
+    </ol>
+  </div>
+
+  <section id="overview">
+    <h2><span class="num">1.</span>What this suite is</h2>
+    <p>
+      Every Pizza Hut franchise restaurant gets a <strong>5-Star score</strong> each month, measuring
+      performance across five operational areas. That raw score, on its own, doesn't tell anyone what
+      to do next. This suite turns it into purpose-built reports — one for each audience — so
+      Leadership, Directors, FOPs, OAs, and Training all get the view that answers their specific
+      questions, without needing a database, a login, or a BI tool.
+    </p>
+    <p>
+      Every report is a single file you open in a browser. All of them are built from the same
+      underlying data at the same time, so a number means the same thing wherever you see it —
+      a store's overall score on the Zone Scorecard is the exact same number you'd see for that
+      store on the Franchisee Dashboard.
+    </p>
+    <div class="callout">
+      <span class="tag">The core idea</span>
+      A store's overall score is a weighted average, but the <strong>lowest</strong> of its five
+      components — its <em>binding constraint</em> (see §5) — is what actually tells someone what to
+      coach on. Every report leads with binding constraints, not just overall scores, because that's
+      the actionable layer.
+    </div>
+  </section>
+
+  <section id="reports">
+    <h2><span class="num">2.</span>The four reports</h2>
+    <table>
+      <tr><th>Report</th><th>Who it's for</th><th>What it answers</th></tr>
+      <tr><td><strong>Leadership Summary</strong></td><td>Leadership, Directors, Strategy</td>
+        <td>National health in one page: zone ranking, tier movement, what's binding each tier, workshop ROI, who's at risk</td></tr>
+      <tr><td><strong>Franchisee Dashboard</strong></td><td>FOPs, Directors</td>
+        <td>Franchisee-by-franchisee health, drilling Director → FOP → Franchisee → Store, default/at-risk tracking</td></tr>
+      <tr><td><strong>Zone Scorecards</strong></td><td>OAs</td>
+        <td>Per-zone deep dive: goal tracking, drilling into DMA/Area, Boot Camp history, where to run the next workshop</td></tr>
+      <tr><td><strong>Rising Star</strong></td><td>OAs, Directors, Leadership</td>
+        <td>Targeting Tier 2 (Rising Star) stores by DMA × Franchisee, independent of zone boundaries</td></tr>
+    </table>
+    <p>All four share the same tier/status vocabulary below, so once you learn it here, it applies everywhere.</p>
+  </section>
+
+  <section id="tiers">
+    <h2><span class="num">3.</span>Tiers</h2>
+    <p>Every store is sorted into one of three tiers based on its overall 5-Star score:</p>
+    <table>
+      <tr><th>Tier</th><th>Name</th><th>Score range</th><th>Meaning</th></tr>
+      <tr><td><span class="badge badge-t1">Tier 1</span></td><td>Bootcamp</td><td>below 2.5 ★</td><td>Needs intervention</td></tr>
+      <tr><td><span class="badge badge-t2">Tier 2</span></td><td>Rising Star</td><td>2.5 ★ – 4.0 ★</td><td>On track, room to grow</td></tr>
+      <tr><td><span class="badge badge-t3">Tier 3</span></td><td>Top Tier</td><td>4.0 ★ and above</td><td>Excellent — protect and replicate</td></tr>
+    </table>
+    <p>
+      Most places use a store's <strong>current single month</strong> score to set its tier. A few
+      features (Boot Camp targeting, zone coverage tracking) instead use the <strong>trailing
+      3-month average</strong>, specifically so one unusually good or bad month doesn't flip a store's
+      tier back and forth. Where that happens, the report says so right next to the number.
+    </p>
+  </section>
+
+  <section id="status">
+    <h2><span class="num">4.</span>Store status</h2>
+    <p>
+      Status is a separate flag from tier, built from how a store's score has trended over
+      <strong>consecutive months</strong> — not just where it sits this month. It mirrors the
+      Brand Standards Manual's default language.
+    </p>
+    <table>
+      <tr><th>Status</th><th>Plain meaning</th><th>The actual rule</th><th>Who acts</th></tr>
+      <tr><td><span class="badge badge-dl">Defaulting</span></td><td>Crossed the contractual default line</td>
+        <td>3 consecutive months under 2.0 ★, <em>or</em> 4 months under 2.0 ★ in any recent window</td>
+        <td>FOP escalates — formal improvement plan</td></tr>
+      <tr><td><span class="badge badge-ar">At Risk</span></td><td>One step from defaulting</td>
+        <td>Exactly 2 consecutive months under 2.0 ★ (and not already Defaulting)</td>
+        <td>FOP/OA steps in before it becomes contractual</td></tr>
+      <tr><td><span class="badge badge-tw">T1 Watch</span></td><td>In Bootcamp tier, but not yet failing</td>
+        <td>Currently scoring 2.0–2.5 ★, and not Defaulting or At Risk</td>
+        <td>Monitor — get ahead of it</td></tr>
+      <tr><td><span class="badge badge-ok">OK</span></td><td>Everything else</td><td>—</td><td>Business as usual</td></tr>
+    </table>
+    <p>
+      A quick way to remember the difference from Tier: <strong>Tier</strong> is "how good is this
+      store right now," <strong>Status</strong> is "is this store failing badly enough, for long
+      enough, that it's a contract problem." A store can be Tier 1 (under 2.5★) for years without ever
+      being Defaulting, as long as it never drops under 2.0★ for that many consecutive months.
+    </p>
+  </section>
+
+  <section id="binding">
+    <h2><span class="num">5.</span>Binding constraint</h2>
+    <p>
+      Every store gets five component scores (next section). Its <strong>binding constraint</strong>
+      is simply whichever of the five is <em>lowest</em> that month. If a tier's stores are mostly
+      bound on Speed, that's where coaching time should go — not Brand, not Win Score. Every
+      "what's binding" chart across the suite is built from this one idea, aggregated up: for a
+      group of stores, it's the % of stores where each component is the one holding them back.
+    </p>
+  </section>
+
+  <section id="components">
+    <h2><span class="num">6.</span>The five scorecard components</h2>
+    <p>
+      A store's <strong>Overall 5-Star</strong> score is a weighted blend of five components. The
+      weights are fixed and don't change month to month:
+    </p>
+    <table>
+      <tr><th>Component</th><th>Weight</th><th>What it measures</th></tr>
+      <tr><td><strong>Win Score</strong></td><td>35%</td><td>Customer satisfaction — surveys, aggregator ratings (DoorDash, Uber Eats, Grubhub), and public reviews (Google, Yelp)</td></tr>
+      <tr><td><strong>Speed</strong></td><td>30%</td><td>Delivery stores: % of orders out the door under 18 minutes. Non-delivery stores: % with production time under 15 minutes</td></tr>
+      <tr><td><strong>Hutbot On-Time</strong></td><td>20%</td><td>% of required in-store routines/checklists completed on time</td></tr>
+      <tr><td><strong>Brand</strong></td><td>7.5%</td><td>Adherence to Pizza Hut brand standards (visit-based)</td></tr>
+      <tr><td><strong>FSCC</strong></td><td>7.5%</td><td>Food safety performance and compliance</td></tr>
+    </table>
+    <p>Each component is first graded on its own 1–5 star scale, using these cutoffs (for the two with public thresholds):</p>
+    <table>
+      <tr><th>Component</th><th>1 ★</th><th>2 ★</th><th>3 ★</th><th>4 ★</th><th>5 ★</th></tr>
+      <tr><td>Win Score</td><td>under 49%</td><td>49–60%</td><td>60–66%</td><td>66–71%</td><td>71%+</td></tr>
+      <tr><td>Speed</td><td>under 40%</td><td>40–60%</td><td>60–70%</td><td>70–80%</td><td>80%+</td></tr>
+      <tr><td>Hutbot On-Time</td><td>under 80%</td><td>80–85%</td><td>85–90%</td><td>90–95%</td><td>95%+</td></tr>
+    </table>
+    <p>
+      Brand and FSCC stars come from visit/audit results rather than a single percentage, so they
+      don't have the same simple 5-bucket cutoff table. A store's <strong>Overall 5-Star</strong> is
+      then the weighted sum of all five stars using the percentages above — it isn't recomputed by
+      the reports, it comes pre-blended from the scoring system.
+    </p>
+  </section>
+
+  <section id="rollup">
+    <h2><span class="num">7.</span>How numbers roll up — the one rule</h2>
+    <p>Whenever you see a number for a group of stores (an Area, a Franchisee, a Zone, a Region, or the whole company), it follows one rule:</p>
+    <div class="callout pine">
+      <span class="tag">The rule</span>
+      <strong>Never average the averages — sum the parts, then calculate.</strong>
+    </div>
+    <p>
+      For example, to get a Zone's "% of deliveries under 30 minutes," the report adds up every
+      store's count of on-time deliveries, adds up every store's total delivery count, and only then
+      divides — it never averages each store's individual percentage. Averaging percentages directly
+      would let a tiny 50-order store count exactly as much as an 800-order store, distorting the
+      real picture. The one place this doesn't apply is a handful of scorecard <em>star ratings</em>
+      themselves, which are volume-weighted averages (bigger stores count more) rather than raw
+      sums, since a star rating isn't built from a simple numerator/denominator the way a delivery
+      percentage is.
+    </p>
+  </section>
+
+  <section id="other-metrics">
+    <h2><span class="num">8.</span>Other metrics you'll see</h2>
+    <table>
+      <tr><th>Metric</th><th>What it means</th></tr>
+      <tr><td><strong>SSSG</strong> (Same Store Sales Growth)</td><td>This month's sales vs. the same month last year, for stores open both periods. The headline read on whether a store/zone is growing.</td></tr>
+      <tr><td><strong>SSTG</strong> (Same Store Transactions Growth)</td><td>Same idea as SSSG, but counting transactions instead of dollars — shows whether growth is coming from more visits or bigger checks.</td></tr>
+      <tr><td><strong>AGC</strong> (Average Guest Check)</td><td>Average dollar amount per transaction.</td></tr>
+      <tr><td><strong>WPRA</strong> (Weekly Per-Restaurant Average)</td><td>Average weekly sales for a store or group.</td></tr>
+      <tr><td><strong>Taste / Accuracy / Speed Score</strong></td><td>Customer survey scores (0–100) on how the food tasted, how accurate the order was, and how fast it felt — separate from the operational Speed component above, which is measured, not perceived.</td></tr>
+      <tr><td><strong>OSAT</strong></td><td>Overall guest satisfaction survey score. Unlike the others, <em>lower is better</em> on this one.</td></tr>
+      <tr><td><strong>DaaS %</strong></td><td>Share of deliveries made by a third-party driver (DoorDash, etc.) rather than an in-house driver. High DaaS share changes how rack-time issues should be read — see the Zone Scorecard's lever callouts.</td></tr>
+    </table>
+  </section>
+
+  <section id="workshops">
+    <h2><span class="num">9.</span>Boot Camp &amp; Rising Star workshops</h2>
+    <p>
+      OAs run hands-on workshops to help struggling stores improve: <strong>Boot Camp</strong> for
+      Tier 1 stores, <strong>Rising Star</strong> for Tier 2 stores — usually grouped by DMA and
+      Area Coach so the right people are in the room together. Every workshop-related chart in the
+      suite is answering the same question: <em>did the stores that attended improve more than
+      similar stores that didn't?</em>
+    </p>
+    <h3>The four checkpoints</h3>
+    <p>
+      Each workshop is measured at a <strong>baseline</strong> (the store's score right before
+      attending) and then <strong>30, 60, and 90 days</strong> after. A store only counts as
+      "measurable" once it's reached the 30-day mark — before that, it's counted as "had a Boot
+      Camp" but isn't yet averaged into the improvement numbers, so a store that attended last week
+      can't drag down (or inflate) results before it's had time to show anything.
+    </p>
+    <h3>Control group</h3>
+    <p>
+      To know whether a workshop actually helped, each attending group is compared to a
+      <strong>control group</strong>: stores in the same tier, at the same point in time, that did
+      <em>not</em> attend. If attendees improved more than their tier-matched peers who skipped it,
+      that's the workshop working.
+    </p>
+    <h3>Coverage</h3>
+    <p>
+      The Zone Scorecard's Boot Camp donut shows what share of a zone's <em>current</em> Tier 1
+      stores have had, or have scheduled, a Boot Camp — "Had," "Scheduled," and "Need" are the three
+      slices. Getting every current Tier 1 store covered is the goal; the worklist underneath the
+      donut is exactly the stores still needing one.
+    </p>
+  </section>
+
+  <section id="zones">
+    <h2><span class="num">10.</span>Zones — 15 vs. 24, and the toggle</h2>
+    <p>
+      Pizza Hut's field organization is moving from <strong>15 zones</strong> (the long-standing
+      structure) to <strong>24 zones</strong> (new, smaller territories, several carved out of the
+      original 15 as new Operations Assistants are hired). Both the Zone Scorecards page and the
+      Leadership Summary's Zone Ranking table let you toggle between the two views of the exact same
+      underlying store data — nothing about a store's score changes, only how stores are grouped and
+      labeled.
+    </p>
+    <ul>
+      <li><strong>24 Zones</strong> is the current, live org structure — every OA position shows up, including ones recently hired into but not yet handling stores (shown with 0 stores until that happens), and any position still vacant shows as <strong>OPEN</strong>.</li>
+      <li><strong>15 Zones</strong> is the legacy structure. Because new 24-zone positions didn't exist under the old structure, they simply don't appear in the 15-zone view — that's expected, not a gap.</li>
+    </ul>
+    <p>15 Zones is the default view on both pages; switch to 24 Zones with the toggle at the top.</p>
+  </section>
+
+  <section id="glossary">
+    <h2><span class="num">11.</span>Glossary of roles &amp; terms</h2>
+    <dl class="glossary">
+      <dt>OA (Operations Assistant)</dt>
+      <dd>Runs a Zone. Trains shoulder-to-shoulder in the markets that need the most help and runs Boot Camp / Rising Star workshops.</dd>
+      <dt>FOP (Franchise Operations Partner)</dt>
+      <dd>Manages the relationship with a set of franchisees — not individual stores. Needs to know, before a franchisee call, which stores are in trouble and why.</dd>
+      <dt>Director</dt>
+      <dd>Oversees a group of FOPs. Rolls up to a whole territory's worth of franchisees and stores.</dd>
+      <dt>Franchisee</dt>
+      <dd>The business owner who owns and operates one or more restaurants.</dd>
+      <dt>Area</dt>
+      <dd>A grouping of stores under one Area Coach, used for Boot Camp/Rising Star targeting. Not the same as "OA" — a store's Area Coach and its OA are usually different people with different jobs, which is a common mix-up.</dd>
+      <dt>DMA</dt>
+      <dd>Designated Market Area — a standard media/geography grouping (e.g. "Kansas City") used to group stores by local market.</dd>
+      <dt>Region</dt>
+      <dd>A broader geography grouping, above DMA.</dd>
+      <dt>Zone</dt>
+      <dd>The territory one OA is responsible for — see §10 for the 15-vs-24 distinction.</dd>
+      <dt>Chained Store ID</dt>
+      <dd>The unique number identifying one restaurant, used to look up a store across every report.</dd>
+      <dt>Concept</dt>
+      <dd>Whether a store is a delivery or non-delivery restaurant — several metrics (like Speed) are defined differently for each.</dd>
+    </dl>
+  </section>
+
+  <section id="data" style="border-bottom:none;">
+    <h2><span class="num">12.</span>Where the numbers come from</h2>
+    <p>
+      Every number in these reports comes from the company's live systems — there's no manual data
+      entry behind any score, tier, or status. Reports are regenerated periodically (typically once
+      a new month's scores have landed), and the five files always reflect the same snapshot of
+      data, generated together, so nothing can disagree with itself across reports.
+    </p>
+    <p style="margin-top:18px;">
+      <a href="#overview" class="top-link">&uarr; Back to top</a>
+    </p>
+  </section>
+
+</div>
+
+<footer>
+  5-Star Reporting Suite — Definitions &amp; How It Works. This page is reference material and does
+  not change when the reports refresh each month.
+</footer>
+
+</body>
+</html>

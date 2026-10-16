@@ -28,6 +28,10 @@ because that's the actionable layer.
 All five are generated together by one script (`generate_reports.py`) from the same underlying
 data, so a number means the same thing wherever you see it across reports.
 
+A sixth page, `definitions.html`, is a plain-language reference — every term, score, and formula
+explained for someone who's never seen the suite before. It's linked from the other four public
+reports' nav bars and never needs regenerating, since none of it is data-driven.
+
 ## The tier and status vocabulary everyone shares
 
 **Tiers** (based on a store's monthly — or, for coverage purposes, trailing 3-month — overall
@@ -204,13 +208,3 @@ attachment, a link, or open it from a shared drive.
 
 **Pushing to prod is always an explicit, separate ask** — regenerating and reviewing the reports
 locally never requires it; only push when told to.
-
-## Known open item
-
-**FSCC weighted-average gap.** The Brand Standards Manual says a failed food-safety (FSCC)
-score should cap a store at 1★ for that period. The actual formula blends FSCC at only ~7.5%
-of the overall score, so a store can fail FSCC outright and still land in Tier 2 or 3 if its
-other four components are strong. The reports currently reflect the formula as calculated, not
-the policy override — this is flagged for a leadership decision (add a post-blend FSCC cap, or
-update the policy language to match the formula), not something the reporting suite should
-silently decide on its own.

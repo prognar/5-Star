@@ -4137,6 +4137,18 @@ def load_5star_from_snowflake():
 # just isn't in the window, so the average divides by however many of the
 # last 3 months actually exist) joined to org-hierarchy (OPX_ALIGNMENT) and
 # the store directory (DSC.ALIGN_DIM_V1).
+#
+# DSC.ALIGN_DIM_V1 is NOT one row per CHAINED_STORE_ID -- confirmed 2026-10:
+# 6,272 CHAINED_STORE_IDs carry multiple rows, one per RESTID "era," chained
+# together by PREV_STORE_ID/NEXT_STORE_ID (the old row's NEXT_STORE_ID equals
+# the new row's own RESTID). A store that changed franchisees shows an old,
+# Permanently Closed row under the former owner alongside a new, Open row
+# under the current one -- e.g. 035913/035962/035970 all still carried a
+# stale "KENT COLVIN" row. NEXT_STORE_ID = 'N/A' marks the terminal (current)
+# row in the chain -- confirmed no CHAINED_STORE_ID has more than one such
+# row, so this filter alone resolves the ambiguity. STATUSDESC = 'Open'
+# answers a different question (is it currently trading) and is kept too;
+# neither filter is a substitute for the other.
 ALIGNMENT_SQL = """
 WITH MONTH_LOOKUP AS (
     SELECT * FROM VALUES
@@ -4217,6 +4229,7 @@ LEFT JOIN DATASCIENCE.AXC1195.OPX_ALIGNMENT OA
 WHERE A.OWNERID <> 'L'
   AND A.CURR_FRAN_OWNER_NM NOT LIKE 'PIZZA HUT%'
   AND A.STATUSDESC = 'Open'
+  AND A.NEXT_STORE_ID = 'N/A'
 """
 
 
@@ -4228,17 +4241,24 @@ def load_alignment_from_snowflake():
     return _snowflake_query_df(ALIGNMENT_SQL, None, "Alignment data (DSC.ALIGN_DIM_V1)")
 
 
-# DSC.ALIGN_DIM_V1 is the source of truth for current ownership -- one row
-# per store, always current, unlike AXC1195.FXT_DASHBOARD_BASE_MONTHLY
-# (FIVESTAR_SQL's source), which carries a CURR_FRAN_OWNER_NM per store-month
-# and can disagree with itself across months during a franchisee sale
-# (confirmed 2026-10 twice: Harold Kreeger -> Greg Shelton, Ryan Wasinger ->
-# Thomas Jorgensen -- both left stale pre-sale rows mixed in with current
-# ones). Reports only care about current status, so every row for a store
-# gets overwritten to this single current value, not just the latest month's.
+# DSC.ALIGN_DIM_V1 is the source of truth for current ownership, but it is
+# NOT one row per store -- see the ALIGNMENT_SQL comment above for the full
+# RESTID-chain explanation (PREV_STORE_ID/NEXT_STORE_ID, 6,272 affected
+# CHAINED_STORE_IDs). NEXT_STORE_ID = 'N/A' is the only reliable way to pick
+# the current row; without it this query can silently return a stale,
+# superseded owner (confirmed 2026-10: 035913/035962/035970 resolved to
+# "KENT COLVIN," a closed-era owner, instead of their real current owner).
+# AXC1195.FXT_DASHBOARD_BASE_MONTHLY (FIVESTAR_SQL's source) has the same
+# per-era duplication problem from the other direction -- a CURR_FRAN_OWNER_NM
+# per store-month that can disagree with itself during a sale (confirmed
+# 2026-10 twice: Harold Kreeger -> Greg Shelton, Ryan Wasinger -> Thomas
+# Jorgensen). Reports only care about current status, so every row for a
+# store gets overwritten to this single current value, not just the latest
+# month's.
 CURRENT_FRANCHISEE_SQL = """
 SELECT CHAINED_STORE_ID, CURR_FRAN_OWNER_NM
 FROM DSC.ALIGN_DIM_V1
+WHERE NEXT_STORE_ID = 'N/A'
 """
 
 

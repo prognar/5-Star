@@ -14,12 +14,12 @@
   body{margin:0; background:var(--paper); color:var(--ink); font-family:'Inter',sans-serif; line-height:1.45; padding-bottom:60px;}
   .wrap{max-width:1080px;margin:0 auto;padding:0 28px;}
   header.top{background:var(--ph-red); color:#fff; padding:22px 0 22px; border-bottom:none;}
-  header.top .toprow{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;}
-  .brand{display:flex; align-items:center; gap:18px;}
+  header.top .toprow{display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;}
+  .brand{display:flex; align-items:center; gap:18px; flex-shrink:0;}
   .brand .logo{height:50px; width:auto; display:block;}
   .report-title{font-family:'Segoe UI',sans-serif; font-weight:700; font-size:32px; color:#fff; margin:0; line-height:1.15; letter-spacing:-.02em;}
   .report-period{font-family:'Segoe UI',sans-serif; font-size:13px; color:rgba(255,255,255,.7); margin:2px 0 0; letter-spacing:.03em;}
-  .controls{text-align:center;}
+  .controls{text-align:center; min-width:0; flex:1 1 0%;}
   .controls-row{display:flex;justify-content:center;gap:16px;align-items:center;flex-wrap:wrap;}
   select#fopSelect, select#directorSelect{
     font-family:'Oswald',sans-serif; font-weight:600; font-size:18px; background:transparent; color:#fff;
@@ -242,7 +242,7 @@
         </select>
           <p class="sub" id="subLine"></p>
         </div>
-        <div style="display:flex;align-items:center;gap:14px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-shrink:0;">
           <div style="display:flex;gap:2px;background:rgba(255,255,255,.12);border-radius:4px;padding:3px;">
             <span class="avg-mode-btn" data-mode="lm" onclick="setScoreMode('lm')">LM</span>
             <span class="avg-mode-btn" data-mode="lq" onclick="setScoreMode('lq')">LQ</span>

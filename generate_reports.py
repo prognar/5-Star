@@ -246,10 +246,14 @@ def _zone_rank_row_from_full(z):
     """Lightweight Zone Ranking row (leadership_summary.html) derived from a
     full zone-scorecard entry (compute_zone_display_views) -- same source of
     truth as zone_scorecards.html, so the two pages never disagree."""
+    # startCounts/endCounts are raw Python dicts here (int keys 1/2/3,
+    # from compute_tier_flows) -- this function runs before convert_for_json
+    # turns them into string keys, so string lookups ("1") always miss and
+    # silently fall back to 0 (confirmed 2026-10: Tier 1/3 Δ showing as 0).
     sc = z.get("startCounts", {}) or {}
     ec = z.get("endCounts", {}) or {}
-    t1_latest, t1_base = ec.get("1", 0), sc.get("1", 0)
-    t3_latest, t3_base = ec.get("3", 0), sc.get("3", 0)
+    t1_latest, t1_base = ec.get(1, 0), sc.get(1, 0)
+    t3_latest, t3_base = ec.get(3, 0), sc.get(3, 0)
     avg_latest, avg_base = z.get("headline_avg"), z.get("base_avg")
     return {
         "oa": z.get("oa"),
@@ -790,14 +794,47 @@ def load_workshops(df):
         _dma_map = _df_sorted.groupby("CHAINED_STORE_ID")["NIELSENDMADESC"].last().to_dict()
         _dma_cache = {k: str(v) for k, v in _dma_map.items() if pd.notna(v)}
 
-    # Build a fast (store, month) -> score lookup
+    # Build a fast (store, month) -> score lookup, plus a parallel (store,
+    # month) -> (sssg, sstg) growth lookup -- same winsorizing as
+    # compute_zone_workshop_effectiveness's per-store comps (GROWTH_RATIO_BAND)
+    # so a workshop entry's growth figures agree with the Boot Camp
+    # Effectiveness summary tables, even though this is a separate code path
+    # (per-workshop-entry baseline/30/60/90, not the Overall/by-tier groups).
     _score_lookup = {}
+    _growth_lookup = {}
+    _grow_lo, _grow_hi = GROWTH_RATIO_BAND
+    _has_sssg_col = "SSSG" in df.columns
+    _has_sstg_col = "SSTG" in df.columns
     for _, r in df.iterrows():
-        _score_lookup[(r["CHAINED_STORE_ID"], int(r["MONTHNUM"]))] = (
+        _key = (r["CHAINED_STORE_ID"], int(r["MONTHNUM"]))
+        _score_lookup[_key] = (
             float(r["OVERALL_FIVESTAR"]) if pd.notna(r["OVERALL_FIVESTAR"]) else None,
             int(r["_tier"]) if pd.notna(r["_tier"]) else None,
             str(r["_binding"]) if pd.notna(r["_binding"]) else None,
         )
+        _sssg_r = pd.to_numeric(r.get("SSSG"), errors="coerce") if _has_sssg_col else None
+        _sstg_r = pd.to_numeric(r.get("SSTG"), errors="coerce") if _has_sstg_col else None
+        _growth_lookup[_key] = (
+            float(max(_grow_lo - 1.0, min(_grow_hi - 1.0, _sssg_r))) if _sssg_r is not None and pd.notna(_sssg_r) else None,
+            float(max(_grow_lo - 1.0, min(_grow_hi - 1.0, _sstg_r))) if _sstg_r is not None and pd.notna(_sstg_r) else None,
+        )
+
+    def _growth_avg(sid, months):
+        """Mean (sssg, sstg) over whatever of the given months have data --
+        mirrors the score baseline/period averaging just below (uses whatever
+        subset exists, never requires every month)."""
+        sssg_vals, sstg_vals = [], []
+        for m in months:
+            g = _growth_lookup.get((sid, m))
+            if not g:
+                continue
+            if g[0] is not None:
+                sssg_vals.append(g[0])
+            if g[1] is not None:
+                sstg_vals.append(g[1])
+        sssg = round(sum(sssg_vals) / len(sssg_vals), 4) if sssg_vals else None
+        sstg = round(sum(sstg_vals) / len(sstg_vals), 4) if sstg_vals else None
+        return sssg, sstg
 
     def _rolling3(sid, cmonth, offset_start):
         """Rolling 3-month average centered at cmonth+offset_start .. cmonth+offset_start+2.
@@ -851,6 +888,8 @@ def load_workshops(df):
         bench_score = None
         bench_tier = None
         bench_binding = None
+        bench_sssg = None
+        bench_sstg = None
         pre_score = None
         pre_month = None
         post_scores = []
@@ -870,6 +909,7 @@ def load_workshops(df):
                 bench_score = round(sum(x[0] for x in bl_scores) / len(bl_scores), 2)
                 bench_tier = bl_scores[-1][1]   # tier from last available month
                 bench_binding = bl_scores[-1][2] # binding from last available month
+            bench_sssg, bench_sstg = _growth_avg(sid, bl_months)
             # Pre-score: 3 months before baseline start (for pre-workshop trajectory)
             pre_key = (sid, anchor - 5)
             if pre_key in _score_lookup:
@@ -891,11 +931,14 @@ def load_workshops(df):
                             period_scores.append(s)
                 if len(period_scores) == n_months:
                     avg_score = round(sum(period_scores) / len(period_scores), 2)
+                    p_sssg, p_sstg = _growth_avg(sid, period_months)
                     post_scores.append({
                         "period": period_days,
                         "label": f"{period_days}-day",
                         "score": avg_score,
                         "months": period_months,
+                        "sssg": p_sssg,
+                        "sstg": p_sstg,
                     })
 
         entry = {
@@ -909,6 +952,8 @@ def load_workshops(df):
             "baseline_score": bench_score,
             "baseline_tier": bench_tier,
             "baseline_binding": bench_binding,
+            "baseline_sssg": bench_sssg,
+            "baseline_sstg": bench_sstg,
             "pre_score": pre_score,
             "pre_month": pre_month,
             "post_scores": post_scores,
@@ -1201,6 +1246,15 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
             comps["SSSG"] = float(max(_lo - 1.0, min(_hi - 1.0, sssg_v)))
         else:
             comps["SSSG"] = None
+        # SSTG (Same Store Transactions Growth) -- same noisy-sales-side-complement
+        # treatment as SSSG above, kept as a separate key so both can be shown
+        # side by side (SSSG = are sales growing, SSTG = is traffic growing).
+        sstg_v = pd.to_numeric(row.get("SSTG"), errors="coerce") if "SSTG" in zone_df.columns else None
+        if sstg_v is not None and pd.notna(sstg_v):
+            _lo, _hi = GROWTH_RATIO_BAND
+            comps["SSTG"] = float(max(_lo - 1.0, min(_hi - 1.0, sstg_v)))
+        else:
+            comps["SSTG"] = None
         if s is not None:
             df_lookup[(sid, mn)] = (s, t, comps)
 
@@ -1259,14 +1313,16 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
     def _ctrl_periods(lt_dicts):
         return {30: lt_dicts, 60: lt_dicts, 90: lt_dicts}
 
-    def _sssg_pair(bl_dicts, lt_dicts):
-        """Overall-only baseline-vs-latest SSSG, mirroring avg_baseline/avg_latest's
-        own definition (each store's own baseline window vs. its own latest
-        checkpoint for var; the fixed current window for control)."""
-        bl_avg = _component_group_avg(bl_dicts)[0].get("SSSG")
-        lt_avg = _component_group_avg(lt_dicts)[0].get("SSSG")
-        n_bl = sum(1 for d in bl_dicts if d.get("SSSG") is not None)
-        n_lt = sum(1 for d in lt_dicts if d.get("SSSG") is not None)
+    def _growth_pair(key, bl_dicts, lt_dicts):
+        """Baseline-vs-latest growth metric (SSSG or SSTG), mirroring
+        avg_baseline/avg_latest's own definition (each store's own baseline
+        window vs. its own latest checkpoint for var; the fixed current
+        window for control). Shown for both the Overall group and each
+        by-tier breakout row -- not just Overall (fixed 2026-10)."""
+        bl_avg = _component_group_avg(bl_dicts)[0].get(key)
+        lt_avg = _component_group_avg(lt_dicts)[0].get(key)
+        n_bl = sum(1 for d in bl_dicts if d.get(key) is not None)
+        n_lt = sum(1 for d in lt_dicts if d.get(key) is not None)
         if n_bl == 0 and n_lt == 0:
             return None
         return {
@@ -1395,10 +1451,10 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         _ctrl_periods(_filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier)),
     )
     if ctrl_data:
-        ctrl_data["sssg"] = _sssg_pair(
-            _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier),
-            _filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier),
-        )
+        _ctrl_target_bl = _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier)
+        _ctrl_target_lt = _filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier)
+        ctrl_data["sssg"] = _growth_pair("SSSG", _ctrl_target_bl, _ctrl_target_lt)
+        ctrl_data["sstg"] = _growth_pair("SSTG", _ctrl_target_bl, _ctrl_target_lt)
 
     # By-tier breakout: attendees vs. non-attending control, within each tier.
     # A tier can have attendees who haven't reached a measurable checkpoint yet
@@ -1426,6 +1482,16 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
         t_lift = None
         if t_var is not None and t_ctrl is not None:
             t_lift = round(t_var["avg_delta"] - t_ctrl["avg_delta"], 3)
+        if t_var is not None:
+            _t_var_bl = _filter_by_tier(var_bl_comps, var_tiers, t)
+            _t_var_lt = _filter_by_tier(var_lt_comps, var_tiers, t)
+            t_var["sssg"] = _growth_pair("SSSG", _t_var_bl, _t_var_lt)
+            t_var["sstg"] = _growth_pair("SSTG", _t_var_bl, _t_var_lt)
+        if t_ctrl is not None:
+            _t_ctrl_bl = _filter_by_tier(ctrl_bl_comps, ctrl_tiers, t)
+            _t_ctrl_lt = _filter_by_tier(ctrl_lt_comps, ctrl_tiers, t)
+            t_ctrl["sssg"] = _growth_pair("SSSG", _t_ctrl_bl, _t_ctrl_lt)
+            t_ctrl["sstg"] = _growth_pair("SSTG", _t_ctrl_bl, _t_ctrl_lt)
         by_tier[str(t)] = {"var": t_var, "control": t_ctrl, "lift": t_lift, "total_attended": t_total_attended}
 
     # Unique workshop count
@@ -1449,7 +1515,8 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
     }
     if n_var:
         trajectory["components"] = _component_rows(var_bl_comps, var_period_comps)
-        trajectory["sssg"] = _sssg_pair(var_bl_comps, var_lt_comps)
+        trajectory["sssg"] = _growth_pair("SSSG", var_bl_comps, var_lt_comps)
+        trajectory["sstg"] = _growth_pair("SSTG", var_bl_comps, var_lt_comps)
 
     return {
         "n_workshops": n_workshops,
@@ -1744,8 +1811,15 @@ def compute_leadership(df):
     # same method as the Franchisee Dashboard so all views agree.
     _q_assign = {}
     for _wk, _mm in (("lm", [last_m]), ("lq", list(PERIOD_MONTHS[-3:])), ("ytd", list(PERIOD_MONTHS))):
-        _q, _ass = compute_quintiles_for(compute_store_metrics(df, _mm), with_assign=True)
+        _metric_rows = compute_store_metrics(df, _mm)
+        _q, _ass = compute_quintiles_for(_metric_rows, with_assign=True)
         nat[f"quintiles_{_wk}"] = _q
+        if _wk in ("lm", "ytd"):
+            # Flat per-store score array (not the 5-row quintile summary
+            # above) -- feeds the Growth Quintiles Callout's Bell Curve view
+            # on leadership_summary.html, same histogram technique
+            # fz_dashboard.html's Restaurant Performance Quintiles already uses.
+            nat[f"quintile_scores_{_wk}"] = [r["overall"] for r in _metric_rows if r.get("overall") is not None]
         if _wk == "ytd":
             _q_assign = _ass
 

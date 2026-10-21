@@ -1203,18 +1203,26 @@ def compute_workshop_effectiveness(df, workshops_by_oa):
 
 def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="boot_camp", target_tier=1):
     """Compute workshop effectiveness (Boot Camp or Rising Star) for a single
-    zone or national roll-up. Compares workshop stores vs tier-matched control
-    stores, including a per-component (5-Star pillars + XM360/Taste) baseline-
-    vs-latest breakdown for the attended and control groups -- both overall
-    and broken out by tier -- so a drill-down can show which specific
+    zone or national roll-up. Compares workshop attendees vs. non-attending
+    control stores, including a per-component (5-Star pillars + XM360/Taste)
+    baseline-vs-latest breakdown for the attended and control groups -- both
+    overall and broken out by tier -- so a drill-down can show which specific
     component is driving (or not) the gap between the two groups.
+
+    The top-level "Overall" row is NOT tier-matched: Variable = every store
+    that attended this workshop type (any tier -- workshops aren't exclusive
+    to one tier), Control = every store in the zone that did NOT attend this
+    workshop type (any tier). The tier-matched comparison (this workshop's
+    nominal target tier vs. its own tier's control) lives in the by-tier
+    breakout instead, at by_tier[str(target_tier)] (fixed 2026-10; Overall
+    control used to be filtered to target_tier only, understating the
+    comparison population).
 
     workshop_key: which workshop list to read off zone_workshops ("boot_camp"
     or "rising_star").
     target_tier: the tier this workshop type is nominally aimed at (Boot Camp
-    -> 1, Rising Star -> 2) -- used only to pick which tier's control group
-    anchors the top-level "overall control" row; the by-tier breakout always
-    covers all three tiers regardless of attendee mix.
+    -> 1, Rising Star -> 2) -- documents intent only; the by-tier breakout
+    covers all three tiers regardless of attendee mix or this value.
     """
     last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
     last_label = MONTH_LABELS[-1] if MONTH_LABELS else str(last_m)
@@ -1439,22 +1447,17 @@ def compute_zone_workshop_effectiveness(zone_df, zone_workshops, workshop_key="b
     def _filter_by_tier(items, tiers, tier):
         return [x for x, t in zip(items, tiers) if t == tier]
 
-    # Overall control: the target tier's peers only (Boot Camp -> Tier 1,
-    # Rising Star -> Tier 2) -- that's the comparison that matters for "did
-    # the workshop help the stores it's meant for," even though attendees and
-    # the by-tier breakout below cover all three tiers.
+    # Overall control: every non-attending store in the zone, regardless of
+    # tier -- paired against Variable = every attendee of this workshop type
+    # (also all tiers, since workshops aren't tier-exclusive; see above). The
+    # target-tier-only comparison still lives below in by_tier[target_tier].
     ctrl_data = _group_stats(
-        _filter_by_tier(ctrl_baselines, ctrl_tiers, target_tier),
-        _filter_by_tier(ctrl_latests, ctrl_tiers, target_tier),
-        _filter_by_tier(ctrl_deltas, ctrl_tiers, target_tier),
-        _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier),
-        _ctrl_periods(_filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier)),
+        ctrl_baselines, ctrl_latests, ctrl_deltas, ctrl_bl_comps,
+        _ctrl_periods(ctrl_lt_comps),
     )
     if ctrl_data:
-        _ctrl_target_bl = _filter_by_tier(ctrl_bl_comps, ctrl_tiers, target_tier)
-        _ctrl_target_lt = _filter_by_tier(ctrl_lt_comps, ctrl_tiers, target_tier)
-        ctrl_data["sssg"] = _growth_pair("SSSG", _ctrl_target_bl, _ctrl_target_lt)
-        ctrl_data["sstg"] = _growth_pair("SSTG", _ctrl_target_bl, _ctrl_target_lt)
+        ctrl_data["sssg"] = _growth_pair("SSSG", ctrl_bl_comps, ctrl_lt_comps)
+        ctrl_data["sstg"] = _growth_pair("SSTG", ctrl_bl_comps, ctrl_lt_comps)
 
     # By-tier breakout: attendees vs. non-attending control, within each tier.
     # A tier can have attendees who haven't reached a measurable checkpoint yet

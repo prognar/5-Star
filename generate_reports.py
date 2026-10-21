@@ -2290,6 +2290,16 @@ def compute_single_zone(zone_df, workshops=None, zone_key=None, member_oas=None)
         fop = latest.get("FOP", "")
         if pd.isna(fop):
             fop = "Unknown"
+        # The real per-store OA (Operations Assistant / Zone Manager) --
+        # OPX_OA survives untouched in df all the way here (only OPX_FOP and
+        # OPX_DIRECTOR get renamed in load_data()). Confirmed 2026-10: every
+        # per-store dict in this function used to store the FOP value under
+        # a key literally named "o" (and some downstream code re-exposed it
+        # as "oa"), genuinely mislabeling FOP data as OA. Fixed by keeping
+        # FOP under its own "fop" key and adding this real "oa" alongside it.
+        store_oa = latest.get("OPX_OA", "")
+        if pd.isna(store_oa):
+            store_oa = ""
         director = latest.get("DIRECTOR", "")
         if pd.isna(director):
             director = "Unknown"
@@ -2419,7 +2429,8 @@ def compute_single_zone(zone_df, workshops=None, zone_key=None, member_oas=None)
             "a": str(area),
             "f": str(fran),
             "d": str(dma),
-            "o": str(fop),
+            "fop": str(fop),
+            "oa": str(store_oa),
             "r": str(director),
             "g": str(region),
             "q1": q1_avg,
@@ -2480,7 +2491,8 @@ def compute_single_zone(zone_df, workshops=None, zone_key=None, member_oas=None)
             "s": s["s"],
             "a": s["a"],
             "f": s["f"],
-            "o": s["o"],
+            "fop": s["fop"],
+            "oa": s["oa"],
             "sc": s["y"] if s["y"] is not None else s.get(latest_month_key),
             "st": s["st"],
             "cu": s["cu"],
@@ -2929,7 +2941,7 @@ def _build_fop_store_list(stores, store_detail):
             "d": s.get("d", ""),
             "a": s.get("a", ""),
             "g": s.get("g", ""),
-            "oa": s.get("o", ""),
+            "oa": s.get("oa", ""),
             "taste_avg": s.get("taste_avg"),
             "taste_latest": s.get("taste_latest"),
             "accuracy_avg": s.get("accuracy_avg"),
@@ -2980,10 +2992,10 @@ def compute_fop_data(df, zones_data):
     fop_groups = {}
     fop_director = {}  # fop -> director
     for s in all_stores:
-        fop = s.get("o", "Unknown")
+        fop = s.get("fop", "Unknown")
         fran = s.get("f", "Unknown")
-        # ---- OA remap (2026-09): GARRETT MCGINN is Don Rizzie; regardless of the
-        # ---- legacy CSV/store-list label, his stores bind to OA Kelly Sharpe ----
+        # ---- FOP remap (2026-09): GARRETT MCGINN is Don Rizzie; regardless of the
+        # ---- legacy CSV/store-list label, his stores bind to FOP Kelly Sharpe ----
         if str(fran).strip().upper() in ("GARRETT MCGINN", "DONALD RIZZIE"):
             fop = "Kelly Sharpe"
             fran = "DON RIZZIE"
@@ -5403,7 +5415,7 @@ def main(no_cache=False, run_date=None):
                     "a": s["a"],
                     "d": s["d"],
                     "f": s["f"],
-                    "o": s.get("o", "Unknown"),
+                    "fop": s.get("fop", "Unknown"),
                     "st": s["st"],
                     "cu": s["cu"],
                     "sc": s["y"] if s["y"] is not None else s.get(f"m{PERIOD_MONTHS[-1]}" if PERIOD_MONTHS else "m5"),

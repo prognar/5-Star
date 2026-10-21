@@ -2907,12 +2907,13 @@ def load_alignment_data():
 # a franchisee, instead of being embedded in fz_dashboard.html up front.
 DETAIL_STORE_FIELDS = [
     "cw", "cs", "cb", "ch", "cf", "ct", "accuracy", "speed360", "osat",
-    "lv", "top", "lg", "ns", "p", "aw", "as", "ah",
+    "lv", "top", "lg", "ns", "p", "aw", "as", "ah", "sssg", "sstg",
 ]
 _DETAIL_FIELD_DEFAULT = {
     "cw": [], "cs": [], "cb": [], "ch": [], "cf": [], "ct": [],
     "accuracy": [], "speed360": [], "osat": [], "lv": [],
     "top": "", "lg": {}, "ns": {}, "p": {}, "aw": [], "as": [], "ah": [],
+    "sssg": [], "sstg": [],
 }
 
 
@@ -2921,10 +2922,19 @@ def _build_fop_store_list(stores, store_detail):
     only), collecting DETAIL_STORE_FIELDS into `store_detail` (mutated in
     place, keyed by store id) for the companion detail file instead.
 
-    Drops the per-store "sssg"/"sstg" fields entirely — dead weight,
-    confirmed unused in fz_dashboard.html (the store-list table and
-    quintile findings read growth through the separate `store_growth` /
-    quintile-bucket structures, never `store.sssg` directly).
+    "sssg"/"sstg" (per-month growth arrays) belong in DETAIL_STORE_FIELDS,
+    not here: fz_dashboard.html's per-store Components card grid and
+    component-history table (showStoreDetail) read `s.sssg`/`s.sstg`
+    directly as per-month arrays, the same way they read `s.cw`/`s.ct`/etc.
+    for the 5-Star components -- i.e. they're drill-down-only data, exactly
+    the category DETAIL_STORE_FIELDS exists for. A prior version of this
+    function dropped them outright instead of routing them through the
+    companion file, which left every store's SSSG/SSTG cards and table rows
+    showing "—" with no error (confirmed 2026-10). The store-list table and
+    quintile findings separately read growth through `store_growth`/the
+    quintile-bucket structures, which is still correct and unaffected by
+    this fix -- these are two different, legitimate consumers of the same
+    underlying growth data.
     """
     out = []
     for s in stores:

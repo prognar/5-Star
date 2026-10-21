@@ -28,6 +28,12 @@
   .tab-btn.active{color:var(--pine);border-bottom-color:var(--pine);font-weight:600;}
   .tab-content{display:none;}
   .tab-content.active{display:block;}
+  .view-toggle{display:flex;gap:0;}
+  .view-toggle button{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--muted);transition:all .15s;}
+  .view-toggle button:first-child{border-radius:3px 0 0 3px;}
+  .view-toggle button:last-child{border-radius:0 3px 3px 0;}
+  .view-toggle button.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .view-toggle button:not(.active):hover{background:var(--paper);}
   #wsTypeFilters span.active{opacity:1 !important;color:var(--ink) !important;font-weight:600;}
   .badge-dl{display:inline-block;padding:1px 7px;border-radius:10px;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#a3122a;color:#fff;}
   .badge-ar{display:inline-block;padding:1px 7px;border-radius:10px;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:#c07f1f;color:#fff;}
@@ -219,12 +225,19 @@
 <div class="tab-content active" id="tabOverview">
 
 <section>
-  <h2>Tier Movement — Jan → Sep 2026</h2>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+    <h2 style="margin:0;" id="sankeyTitle">Tier Movement — Jan → Sep 2026</h2>
+    <div class="view-toggle" id="sankeyModeToggle">
+      <button class="active" data-mode="overall" onclick="setSankeyMode('overall')">Start → Now</button>
+      <button data-mode="monthly" onclick="setSankeyMode('monthly')">Monthly</button>
+    </div>
+  </div>
   <p class="h2-sub">While we push stores up, some are also falling back — both directions matter.</p>
   <div class="move-strip" id="moveStrip"></div>
   <div class="sankey-wrap">
     <svg id="sankey" width="100%" height="230" viewBox="0 0 760 230" preserveAspectRatio="xMidYMid meet"></svg>
-    <p class="sankey-caption">Left = starting tier (Jan '26), right = ending tier (Sep '26). Band thickness = store count.</p>
+    <div id="tierAreaChartWrap" style="display:none;"><canvas id="tierAreaChart" height="90"></canvas></div>
+    <p class="sankey-caption" id="sankeyCaption">Left = starting tier (Jan '26), right = ending tier (Sep '26). Band thickness = store count.</p>
   </div>
   <div class="tier-cards" id="tierCards" style="margin-top:16px;"></div>
 </section>
@@ -514,6 +527,53 @@ document.getElementById('moveStrip').innerHTML = `
   <div class="m"><span class="n" style="color:#a3122a">${NAT.moved_down}</span><span>moved down</span></div>
   <div class="m"><span class="n">${net>=0?'+':''}${net}</span><span>net</span></div>
 `;
+
+let _sankeyMode = 'overall';   // 'overall' | 'monthly'
+let tierAreaChartInstance = null;
+// monthLbl is declared later in this same script block (used by the trend
+// chart) -- reused here rather than redeclared, since these functions only
+// run on user interaction, well after the whole script has parsed.
+
+function setSankeyMode(mode){
+  _sankeyMode = mode;
+  document.querySelectorAll('#sankeyModeToggle button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  document.getElementById('sankey').style.display = mode === 'overall' ? '' : 'none';
+  document.getElementById('tierAreaChartWrap').style.display = mode === 'monthly' ? '' : 'none';
+  const months = NAT.monthly.map(m => monthLbl[m.period]);
+  if(mode === 'monthly'){
+    document.getElementById('sankeyTitle').textContent = 'Tier Movement — ' + months[0] + ' – ' + months[months.length-1] + ' 2026, Monthly';
+    document.getElementById('sankeyCaption').textContent = 'Store count by tier at the end of each month. Watch Tier 1 shrink and Tier 3 grow chronologically.';
+    drawTierAreaChart();
+  } else {
+    document.getElementById('sankeyTitle').textContent = 'Tier Movement — ' + months[0] + ' → ' + months[months.length-1] + ' 2026';
+    document.getElementById('sankeyCaption').textContent = 'Left = starting tier (' + months[0] + ' \'26), right = ending tier (' + months[months.length-1] + ' \'26). Band thickness = store count.';
+    drawSankey();
+  }
+}
+
+function drawTierAreaChart(){
+  const monthly = NAT.monthly || [];
+  const months = monthly.map(m => monthLbl[m.period]);
+  const t1 = monthly.map(m => m.t1);
+  const t2 = monthly.map(m => m.t2);
+  const t3 = monthly.map(m => m.t3);
+  if(tierAreaChartInstance) tierAreaChartInstance.destroy();
+  tierAreaChartInstance = new Chart(document.getElementById('tierAreaChart'), {
+    type: 'line',
+    data: { labels: months, datasets: [
+      {label:'Tier 1 · Bootcamp', data:t1, borderColor:tierColors[1], backgroundColor:tierColors[1]+'55', fill:'origin', borderWidth:2, pointRadius:2, tension:0.25, stack:'tier'},
+      {label:'Tier 2 · Rising Star', data:t2, borderColor:tierColors[2], backgroundColor:tierColors[2]+'55', fill:'-1', borderWidth:2, pointRadius:2, tension:0.25, stack:'tier'},
+      {label:'Tier 3 · Top Tier', data:t3, borderColor:tierColors[3], backgroundColor:tierColors[3]+'55', fill:'-1', borderWidth:2, pointRadius:2, tension:0.25, stack:'tier'},
+    ]},
+    options: { responsive:true, interaction:{mode:'index', intersect:false},
+      plugins:{legend:{position:'bottom', labels:{boxWidth:12, font:{family:"'IBM Plex Mono'", size:11}}}},
+      scales:{
+        y:{stacked:true, beginAtZero:true, ticks:{font:{family:"'IBM Plex Mono'",size:11}}, grid:{color:'#e4dfd6'}},
+        x:{stacked:true, ticks:{font:{family:"'IBM Plex Mono'",size:11}, autoSkip:false, maxRotation:0}, grid:{display:false}},
+      }
+    }
+  });
+}
 
 function drawSankey(){
   const svg = document.getElementById('sankey');

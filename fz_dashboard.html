@@ -21,12 +21,13 @@
   .report-period{font-family:'Segoe UI',sans-serif; font-size:13px; color:rgba(255,255,255,.7); margin:2px 0 0; letter-spacing:.03em;}
   .controls{text-align:center; min-width:0; flex:1 1 0%;}
   .controls-row{display:flex;justify-content:center;gap:16px;align-items:center;flex-wrap:wrap;}
-  select#fopSelect, select#directorSelect{
+  select#fopSelect, select#directorSelect, select#franchiseeSelect{
     font-family:'Oswald',sans-serif; font-weight:600; font-size:18px; background:transparent; color:#fff;
     border:none; border-bottom:2px solid rgba(255,255,255,.35); padding:2px 0 4px; appearance:none; cursor:pointer;
   }
   select#directorSelect{border-bottom-color:rgba(255,255,255,.25); font-size:15px;}
-  select#fopSelect option, select#directorSelect option{color:#1c1a1f;}
+  select#franchiseeSelect{border-bottom-color:rgba(255,255,255,.25); font-size:15px; max-width:180px; text-overflow:ellipsis;}
+  select#fopSelect option, select#directorSelect option, select#franchiseeSelect option{color:#1c1a1f;}
   .sub{color:rgba(255,255,255,.7); font-size:12.5px; margin-top:4px; font-family:'Segoe UI',sans-serif;}
   .headline-score{text-align:right;max-width:260px;min-width:0;}
   #avgDeltaLine{white-space:normal;line-height:1.5;}
@@ -239,6 +240,9 @@
 <option value="Jake Stubblefield">Jake Stubblefield</option>
 <option value="Kelly Sharpe">Kelly Sharpe</option>
 <option value="Noel Pelayo">Noel Pelayo</option>
+        </select>
+          <select id="franchiseeSelect" onchange="goToFranchisee(this.value)">
+<option value="">Go to Franchisee…</option>
         </select>
           <p class="sub" id="subLine"></p>
         </div>
@@ -1431,6 +1435,25 @@ function overviewClickFranchisee(franName){
   }
 }
 
+// Jump straight to a franchisee's store list from the header dropdown, without
+// requiring the user to pick its Director/FOP first.
+function goToFranchisee(franName){
+  if(!franName) return;
+  if(!FOP_DATA.overviewData) ensureOverviewData();
+  const fran = (FOP_DATA.overviewData.franchisees || []).find(f => f.fran === franName);
+  document.getElementById('franchiseeSelect').value = '';
+  if(!fran) return;
+  if(fran.director){
+    document.getElementById('directorSelect').value = fran.director;
+    renderDirector(fran.director);
+  } else {
+    document.getElementById('directorSelect').value = '';
+  }
+  document.getElementById('fopSelect').value = fran.fop;
+  renderFOP(fran.fop);
+  showFranchisee(franName);
+}
+
 // ─── Director View ────────────────────────────────────────────────────────
 function renderDirector(dirName){
   if(!dirName){
@@ -2085,13 +2108,28 @@ function showStoreDetail(storeId){
 
   Object.entries(COMP_LABELS).forEach(([k,label]) => {
     const vals = s[k]||[];
-    const y = avg(vals);
     const slope = calcSlope(vals.filter(v => v!=null));
     const tCell = (v) => v==null ? '\u2014' : '<span style="color:' + (v>=0.40?'#276b4d':v>=0.20?'#e65100':'#a3122a') + ';font-weight:600">' + (v*100).toFixed(0) + '%</span>';
     html += '<tr><td style="color:' + COMP_COLORS[k] + ';font-weight:500">' + label + '</td>';
-    vals.forEach(v => { html += '<td>' + (k==='ct' ? tCell(v) : '<span class="sc ' + scoreClass(v) + '">' + fm(v) + '</span>') + '</td>'; });
-    for(let i=vals.length;i<MONTHS.length;i++) html += '<td>\u2014</td>';
-    html += '<td>' + (k==='ct' ? tCell(y) : '<span class="sc ' + scoreClass(y) + '">' + fm(y) + '</span>') + '</td>';
+    const pctKey = CK_TO_PCT[k];
+    const showPct = _compMode === 'pct' && pctKey;
+    if(showPct){
+      // Win/Speed/Hutbot in %Actual mode -- same 0-100 actual + star-threshold
+      // coloring as the Components card grid above, instead of the star score.
+      const pctVals = s[pctKey]||[];
+      const pctCell = (cv) => {
+        if(cv==null) return '<span class="sc sc-na">\u2014</span>';
+        return '<span class="sc ' + scoreClass(starFromPct(pctKey, cv)) + '">' + (+cv).toFixed(1) + '%</span>';
+      };
+      pctVals.forEach(v => { html += '<td>' + pctCell(v) + '</td>'; });
+      for(let i=pctVals.length;i<MONTHS.length;i++) html += '<td>\u2014</td>';
+      html += '<td>' + pctCell(avg(pctVals)) + '</td>';
+    } else {
+      const y = avg(vals);
+      vals.forEach(v => { html += '<td>' + (k==='ct' ? tCell(v) : '<span class="sc ' + scoreClass(v) + '">' + fm(v) + '</span>') + '</td>'; });
+      for(let i=vals.length;i<MONTHS.length;i++) html += '<td>\u2014</td>';
+      html += '<td>' + (k==='ct' ? tCell(y) : '<span class="sc ' + scoreClass(y) + '">' + fm(y) + '</span>') + '</td>';
+    }
     html += '<td style="text-align:center">' + trendArrow(slope) + '</td></tr>';
   });
   [['SSSG','sssg','Sales $'],['SSTG','sstg','Trans #']].forEach(([label, key, full]) => {
@@ -2638,6 +2676,11 @@ function switchTab(tab){
   fopSel.innerHTML = '<option value="">All FOPs</option>\n' + fopKeys.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
 
   ensureOverviewData();
+
+  const franSel = document.getElementById('franchiseeSelect');
+  const franNames = (FOP_DATA.overviewData.franchisees || []).map(f => f.fran).sort((a, b) => a.localeCompare(b));
+  franSel.innerHTML = '<option value="">Go to Franchisee…</option>\n' + franNames.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+
   renderOverview();
 })();
 </script>

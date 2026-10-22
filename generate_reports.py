@@ -6,20 +6,25 @@ import os
 import sys
 import csv
 import hashlib
+import math
 import subprocess
 import time
 import uuid
 import requests
+from collections import Counter
 from pathlib import Path
 from scipy.stats import pearsonr
 
 # Optional Snowflake connector (externalbrowser/SSO fallback path only -- the
 # primary path below uses a stored Programmatic Access Token over the REST
-# API instead, which never needs a browser).
+# API instead, which never needs a browser). Caught broadly, not just
+# ImportError: a pyOpenSSL/cryptography version mismatch in this environment
+# (2026-10) surfaced as an AttributeError deep in OpenSSL.crypto instead, which
+# would otherwise crash every run over what's genuinely an optional import.
 try:
     import snowflake.connector
     HAS_SNOWFLAKE = True
-except ImportError:
+except Exception:
     HAS_SNOWFLAKE = False
 
 # ─── Config ────────────────────────────────────────────────────────────────
@@ -709,6 +714,19 @@ def load_data():
     if "DIRECTOR" not in df.columns:
         df["DIRECTOR"] = "Unknown"
 
+    # OA_DISPLAY_ALIAS (e.g. Cellesha Steel -> OPEN) was previously applied
+    # only inside load_store_zone_assignments()'s 15-zone CSV read -- it never
+    # touched this live OPX_OA column, which is the one that actually drives
+    # the OA-level grouping/zone pipeline (compute_single_zone, the FOP
+    # dashboard rollup, workshop-by-OA matching, every per-store "oa" field).
+    # Confirmed 2026-10: Snowflake's OPX_ALIGNMENT still lists her as the OA
+    # of record on ~349 store-rows despite her having resigned, so she kept
+    # showing up as a real, active OA everywhere that reads OPX_OA directly.
+    # Normalize once, here, right after OPX_OA lands in df, so every
+    # downstream consumer sees "OPEN" without needing its own patch.
+    if "OPX_OA" in df.columns:
+        df["OPX_OA"] = df["OPX_OA"].replace(OA_DISPLAY_ALIAS)
+
     # Overwrite CURR_FRAN_OWNER_NM from DSC.ALIGN_DIM_V1 -- the source of
     # truth for current ownership -- for every row of a store, not just its
     # latest month. FIVESTAR_SQL's own CURR_FRAN_OWNER_NM is a per-store-month
@@ -742,8 +760,10 @@ def load_data():
     return df
 
 
-# OA name normalization (fixes typos in source CSVs)
-_OA_NAME_FIXES = {"Hellen Lobacarro": "Hellen Lobaccaro"}
+# OA name normalization (fixes typos in source CSVs, plus OA_DISPLAY_ALIAS --
+# Workshops.csv's own OA_NAME column is a separate source from the main df's
+# OPX_OA, so it needs the same "resigned OA -> OPEN" treatment independently).
+_OA_NAME_FIXES = {"Hellen Lobacarro": "Hellen Lobaccaro", **OA_DISPLAY_ALIAS}
 
 
 def load_workshops(df):
@@ -2821,6 +2841,71 @@ def _num(v):
         return None
 
 
+def _haversine_miles(lat1, lon1, lat2, lon2):
+    """Great-circle distance in miles -- used only to rank zone centroids by
+    proximity for auto-assigning an unmapped store's zone, not for precise
+    routing, so the spherical-earth approximation is plenty."""
+    r = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _auto_assign_zones(assigned, unmapped):
+    """Resolve each unmapped store's zone, cheapest signal first:
+      1. Area match -- if this store's Area Coach (FAREADESC/"area") already
+         has other assigned stores, use the majority zone among them.
+      2. Geographic fallback -- nearest zone centroid by haversine distance
+         to the average lat/long of each zone's already-assigned stores.
+    Returns (auto_assigned, still_unmapped) -- `assigned`/`unmapped` rows are
+    the per-store dicts load_alignment_data() builds (keys: s, f, oa, zone,
+    area, lat, lon, ...). Pulled out of load_alignment_data() as its own
+    function so this decision logic can be unit-tested without Snowflake."""
+    auto_assigned, still_unmapped = [], []
+    if not unmapped:
+        return auto_assigned, still_unmapped
+
+    area_zone_counts = {}
+    zone_latlons = {}
+    for r in assigned:
+        if r["area"] and r["area"] != "Unassigned":
+            area_zone_counts.setdefault(r["area"], Counter())[r["zone"]] += 1
+        if r["lat"] is not None and r["lon"] is not None:
+            zone_latlons.setdefault(r["zone"], []).append((r["lat"], r["lon"]))
+    zone_centroids = {
+        z: (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+        for z, pts in zone_latlons.items() if pts
+    }
+
+    for r in unmapped:
+        area = r.get("area")
+        if area and area != "Unassigned" and area in area_zone_counts:
+            counts = area_zone_counts[area]
+            zone, n = counts.most_common(1)[0]
+            total = sum(counts.values())
+            auto_assigned.append({
+                **r, "proposed_zone": zone, "method": "area_match",
+                "detail": f"{n}/{total} assigned stores under Area Coach '{area}' are in zone '{zone}'",
+            })
+            continue
+        if r["lat"] is not None and r["lon"] is not None and zone_centroids:
+            best_zone, best_dist = None, None
+            for z, (clat, clon) in zone_centroids.items():
+                d = _haversine_miles(r["lat"], r["lon"], clat, clon)
+                if best_dist is None or d < best_dist:
+                    best_zone, best_dist = z, d
+            auto_assigned.append({
+                **r, "proposed_zone": best_zone, "method": "geo_match",
+                "detail": f"nearest zone centroid is '{best_zone}' ({best_dist:.0f} mi away)",
+            })
+            continue
+        still_unmapped.append(r)
+
+    return auto_assigned, still_unmapped
+
+
 def load_alignment_data():
     """Load the store alignment/org-hierarchy table (Alignment.csv, optional).
 
@@ -2828,7 +2913,11 @@ def load_alignment_data():
     assignment, DMA/Region/Area, mailing address, lat/long, and the rolling
     3-month 5-Star average + tier. Powers the Alignment tab in
     fz_dashboard.html. Missing org-hierarchy fields (stores not yet mapped in
-    OPX_ALIGNMENT) are surfaced as "Unassigned" rather than blank.
+    OPX_ALIGNMENT) are surfaced as "Unassigned" rather than blank -- and this
+    function tries to auto-resolve them (Area Coach majority vote, then
+    nearest-zone geography) before falling back to a manual-review list; see
+    the "Every open store should have a Zone/OA" comment below for the full
+    auto-assignment writeup (2026-10).
     """
     df = load_alignment_from_snowflake()
     if df is not None:
@@ -2884,18 +2973,65 @@ def load_alignment_data():
 
     # Every open store should have a Zone/OA (the SQL already resolves Zone
     # from AXC1195.MANUAL_ZONE_OVERRIDES ∪ STORE_ZONE_MAP and derives OA from
-    # Zone via ZONE_OA_MAP, so this should normally be empty). Surface any
-    # gap so it doesn't go unnoticed — add missing stores to
-    # AXC1195.MANUAL_ZONE_OVERRIDES in Snowflake directly, not here.
-    unmapped = [r for r in rows if r["oa"] == "Unassigned"]
-    if unmapped:
-        unmapped_path = BASE_DIR / "Unmapped_Zone_Stores.csv"
+    # Zone via ZONE_OA_MAP, so this should normally be empty). Rather than
+    # just dumping the gap, auto-resolve what we reasonably can (2026-10):
+    #   1. Area match -- if this store's Area Coach (FAREADESC/"area") already
+    #      has other assigned stores, use the majority zone among them.
+    #   2. Geographic fallback -- nearest zone centroid by haversine distance
+    #      to the average lat/long of each zone's already-assigned stores.
+    # Only what neither signal can resolve (no area signal, no lat/long) is
+    # left in Unmapped_Zone_Stores.csv for manual assignment.
+    unmapped = [r for r in rows if r["oa"] == "Unassigned" or r["zone"] == "Unassigned"]
+    assigned = [r for r in rows if r["oa"] != "Unassigned" and r["zone"] != "Unassigned"]
+    auto_assigned, still_unmapped = _auto_assign_zones(assigned, unmapped)
+
+    auto_path = BASE_DIR / "Zone_Auto_Assignments.csv"
+    sql_path = BASE_DIR / "MANUAL_ZONE_OVERRIDES_insert.sql"
+    unmapped_path = BASE_DIR / "Unmapped_Zone_Stores.csv"
+
+    if auto_assigned:
+        with open(auto_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["CHAINED_STORE_ID", "FRANCHISEE", "DMA", "CITY", "STATE", "PROPOSED_ZONE", "METHOD", "DETAIL"])
+            for r in sorted(auto_assigned, key=lambda r: (r["f"], r["s"])):
+                w.writerow([r["s"], r["f"], r["dma"], r["city"], r["state"], r["proposed_zone"], r["method"], r["detail"]])
+
+        with open(sql_path, "w", encoding="utf-8") as f:
+            f.write(f"-- Auto-generated by generate_reports.py -- review before running.\n")
+            f.write(f"-- Resolves {len(auto_assigned)} previously-unmapped stores via Area Coach\n")
+            f.write(f"-- majority vote or nearest-zone-centroid geography; see {auto_path.name}\n")
+            f.write(f"-- for how each one was decided.\n")
+            f.write("INSERT INTO AXC1195.MANUAL_ZONE_OVERRIDES (CHAINED_STORE_ID, ZONE, UPDATED_TS)\nVALUES\n")
+            vals = []
+            for r in sorted(auto_assigned, key=lambda r: (r["f"], r["s"])):
+                sid = r["s"].replace("'", "''")
+                zone = r["proposed_zone"].replace("'", "''")
+                vals.append(f"    ('{sid}', '{zone}', CURRENT_TIMESTAMP())")
+            f.write(",\n".join(vals))
+            f.write(";\n")
+
+        n_area = sum(1 for r in auto_assigned if r["method"] == "area_match")
+        n_geo = sum(1 for r in auto_assigned if r["method"] == "geo_match")
+        print(f"  {len(auto_assigned)} previously-unmapped stores auto-resolved "
+              f"({n_area} by Area Coach match, {n_geo} by nearest-zone geography) "
+              f"-- review {auto_path.name} / {sql_path.name}")
+    elif sql_path.exists():
+        sql_path.unlink()
+    if not auto_assigned and auto_path.exists():
+        auto_path.unlink()
+
+    if still_unmapped:
         with open(unmapped_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["CHAINED_STORE_ID", "FRANCHISEE", "DMA", "CITY", "STATE", "LATITUDE", "LONGITUDE"])
-            for r in sorted(unmapped, key=lambda r: (r["f"], r["s"])):
+            for r in sorted(still_unmapped, key=lambda r: (r["f"], r["s"])):
                 w.writerow([r["s"], r["f"], r["dma"], r["city"], r["state"], r["lat"], r["lon"]])
-        print(f"  {len(unmapped)} stores still unmapped (OA/Zone) — see {unmapped_path.name}")
+        print(f"  {len(still_unmapped)} stores still need manual zone assignment "
+              f"(no Area Coach or geographic signal) — see {unmapped_path.name}")
+    elif unmapped_path.exists():
+        # Clean up a stale file from a prior run so it doesn't look like
+        # there's still a manual backlog when everything auto-resolved.
+        unmapped_path.unlink()
 
     return rows
 

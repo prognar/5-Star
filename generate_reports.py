@@ -2854,11 +2854,21 @@ def _haversine_miles(lat1, lon1, lat2, lon2):
 
 
 def _auto_assign_zones(assigned, unmapped):
-    """Resolve each unmapped store's zone, cheapest signal first:
+    """Resolve each unmapped store's zone AND oa, cheapest signal first:
       1. Area match -- if this store's Area Coach (FAREADESC/"area") already
-         has other assigned stores, use the majority zone among them.
+         has other assigned stores, use their majority (zone, oa) pair.
       2. Geographic fallback -- nearest zone centroid by haversine distance
-         to the average lat/long of each zone's already-assigned stores.
+         to the average lat/long of each zone's already-assigned stores,
+         paired with that zone's own majority oa.
+    Mutates each resolved row's "zone"/"oa" in place (not just a returned
+    copy) -- `unmapped` entries are the SAME dict objects as in the caller's
+    `rows` list, so every downstream consumer (the Alignment tab, Tier 1 Boot
+    Camp coverage's alignOaFor() lookup, etc.) sees the resolved value
+    immediately instead of "Unassigned" sitting there until someone runs the
+    generated MANUAL_ZONE_OVERRIDES_insert.sql against Snowflake (2026-10:
+    auto-resolving only into side files left the dashboard itself still
+    showing "Unassigned" for every store this already answered).
+
     Returns (auto_assigned, still_unmapped) -- `assigned`/`unmapped` rows are
     the per-store dicts load_alignment_data() builds (keys: s, f, oa, zone,
     area, lat, lon, ...). Pulled out of load_alignment_data() as its own
@@ -2867,27 +2877,31 @@ def _auto_assign_zones(assigned, unmapped):
     if not unmapped:
         return auto_assigned, still_unmapped
 
-    area_zone_counts = {}
+    area_pair_counts = {}
     zone_latlons = {}
+    zone_oa_counts = {}
     for r in assigned:
         if r["area"] and r["area"] != "Unassigned":
-            area_zone_counts.setdefault(r["area"], Counter())[r["zone"]] += 1
+            area_pair_counts.setdefault(r["area"], Counter())[(r["zone"], r["oa"])] += 1
         if r["lat"] is not None and r["lon"] is not None:
             zone_latlons.setdefault(r["zone"], []).append((r["lat"], r["lon"]))
+        zone_oa_counts.setdefault(r["zone"], Counter())[r["oa"]] += 1
     zone_centroids = {
         z: (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
         for z, pts in zone_latlons.items() if pts
     }
+    zone_majority_oa = {z: c.most_common(1)[0][0] for z, c in zone_oa_counts.items()}
 
     for r in unmapped:
         area = r.get("area")
-        if area and area != "Unassigned" and area in area_zone_counts:
-            counts = area_zone_counts[area]
-            zone, n = counts.most_common(1)[0]
+        if area and area != "Unassigned" and area in area_pair_counts:
+            counts = area_pair_counts[area]
+            (zone, oa), n = counts.most_common(1)[0]
             total = sum(counts.values())
+            r["zone"], r["oa"] = zone, oa
             auto_assigned.append({
-                **r, "proposed_zone": zone, "method": "area_match",
-                "detail": f"{n}/{total} assigned stores under Area Coach '{area}' are in zone '{zone}'",
+                **r, "proposed_zone": zone, "proposed_oa": oa, "method": "area_match",
+                "detail": f"{n}/{total} assigned stores under Area Coach '{area}' are in zone '{zone}' (OA {oa})",
             })
             continue
         if r["lat"] is not None and r["lon"] is not None and zone_centroids:
@@ -2896,9 +2910,11 @@ def _auto_assign_zones(assigned, unmapped):
                 d = _haversine_miles(r["lat"], r["lon"], clat, clon)
                 if best_dist is None or d < best_dist:
                     best_zone, best_dist = z, d
+            oa = zone_majority_oa.get(best_zone, "")
+            r["zone"], r["oa"] = best_zone, oa
             auto_assigned.append({
-                **r, "proposed_zone": best_zone, "method": "geo_match",
-                "detail": f"nearest zone centroid is '{best_zone}' ({best_dist:.0f} mi away)",
+                **r, "proposed_zone": best_zone, "proposed_oa": oa, "method": "geo_match",
+                "detail": f"nearest zone centroid is '{best_zone}' ({best_dist:.0f} mi away, OA {oa})",
             })
             continue
         still_unmapped.append(r)
@@ -2976,11 +2992,15 @@ def load_alignment_data():
     # Zone via ZONE_OA_MAP, so this should normally be empty). Rather than
     # just dumping the gap, auto-resolve what we reasonably can (2026-10):
     #   1. Area match -- if this store's Area Coach (FAREADESC/"area") already
-    #      has other assigned stores, use the majority zone among them.
+    #      has other assigned stores, use their majority zone/OA.
     #   2. Geographic fallback -- nearest zone centroid by haversine distance
     #      to the average lat/long of each zone's already-assigned stores.
-    # Only what neither signal can resolve (no area signal, no lat/long) is
-    # left in Unmapped_Zone_Stores.csv for manual assignment.
+    # _auto_assign_zones mutates each resolved row's zone/oa in place, so this
+    # run's reports already reflect the resolved value -- Snowflake itself
+    # isn't touched, so the fix doesn't carry forward to the next run until
+    # MANUAL_ZONE_OVERRIDES_insert.sql is reviewed and run there. Only what
+    # neither signal can resolve (no area signal, no lat/long) is left in
+    # Unmapped_Zone_Stores.csv for manual assignment.
     unmapped = [r for r in rows if r["oa"] == "Unassigned" or r["zone"] == "Unassigned"]
     assigned = [r for r in rows if r["oa"] != "Unassigned" and r["zone"] != "Unassigned"]
     auto_assigned, still_unmapped = _auto_assign_zones(assigned, unmapped)
@@ -2992,9 +3012,9 @@ def load_alignment_data():
     if auto_assigned:
         with open(auto_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["CHAINED_STORE_ID", "FRANCHISEE", "DMA", "CITY", "STATE", "PROPOSED_ZONE", "METHOD", "DETAIL"])
+            w.writerow(["CHAINED_STORE_ID", "FRANCHISEE", "DMA", "CITY", "STATE", "PROPOSED_ZONE", "PROPOSED_OA", "METHOD", "DETAIL"])
             for r in sorted(auto_assigned, key=lambda r: (r["f"], r["s"])):
-                w.writerow([r["s"], r["f"], r["dma"], r["city"], r["state"], r["proposed_zone"], r["method"], r["detail"]])
+                w.writerow([r["s"], r["f"], r["dma"], r["city"], r["state"], r["proposed_zone"], r["proposed_oa"], r["method"], r["detail"]])
 
         with open(sql_path, "w", encoding="utf-8") as f:
             f.write(f"-- Auto-generated by generate_reports.py -- review before running.\n")
@@ -3014,7 +3034,9 @@ def load_alignment_data():
         n_geo = sum(1 for r in auto_assigned if r["method"] == "geo_match")
         print(f"  {len(auto_assigned)} previously-unmapped stores auto-resolved "
               f"({n_area} by Area Coach match, {n_geo} by nearest-zone geography) "
-              f"-- review {auto_path.name} / {sql_path.name}")
+              f"and already showing their resolved OA/Zone in this run's reports "
+              f"-- review {auto_path.name} / {sql_path.name} to sync Snowflake's "
+              f"MANUAL_ZONE_OVERRIDES so future runs don't need to re-resolve them")
     elif sql_path.exists():
         sql_path.unlink()
     if not auto_assigned and auto_path.exists():

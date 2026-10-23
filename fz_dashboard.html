@@ -1527,12 +1527,31 @@ function renderDirector(dirName){
     {label:'Franchisees', value:dd.n_fran},
   ]);
 
-  // FOP-level breakdown for this director
+  // FOP-level breakdown for this director. Computed per-store here (same
+  // weighting + _scoreMode handling as renderFOP's own headline and dirAvg
+  // just above) rather than read off fop.headline_avg -- that field is an
+  // unweighted mean of each franchisee's own average, a different (and
+  // always-YTD, non-reactive) statistic that silently diverged from what
+  // each FOP's own portfolio page shows (fixed 2026-10: e.g. Fernando Reyes
+  // showed 3.04 here, frozen across the LM/LQ/YTD toggle, while his own page
+  // correctly showed 3.45/3.50/3.54 for YTD/LQ/LM).
   let fopHtml = '<table style="margin-bottom:16px;"><thead><tr><th>FOP</th><th style="text-align:center">Stores</th><th style="text-align:center">Avg</th><th style="text-align:center">Dl <span class="badge-dl" style="font-size:8px">DL</span></th><th style="text-align:center">AR <span class="badge-ar" style="font-size:8px">AR</span></th><th style="text-align:center">TW <span class="badge-tw" style="font-size:8px">TW</span></th></tr></thead><tbody>';
   dd.fops.forEach(fopName => {
     const fop = allFops[fopName];
     if(!fop) return;
-    const fa = _scoreMode === 'lm' ? fop.headline_avg : (_scoreMode === 'lq' ? fop.headline_avg : fop.headline_avg);
+    let faN = 0, faSum = 0;
+    (fop.franchisees || []).forEach(fran => {
+      (fran.stores || []).forEach(s => {
+        let v;
+        if(_scoreMode === 'lm') { v = sLatest(s); }
+        else if(_scoreMode === 'lq') {
+          const mv = LQ_KEYS.map(k => s[k]).filter(x => x != null);
+          v = mv.length ? mv.reduce((a,b)=>a+b,0)/mv.length : s.y;
+        } else { v = s.y; }
+        if(v != null) { faSum += v; faN++; }
+      });
+    });
+    const fa = faN > 0 ? faSum / faN : null;
     fopHtml += '<tr class="fran-row" onclick="selectFOP(\'' + esc(fopName) + '\')">' +
       '<td class="fran-name">' + esc(fopName) + '</td>' +
       '<td class="fran-n">' + fop.n_stores + '</td>' +
@@ -2465,8 +2484,14 @@ function renderQuintiles(){
     const weak = comps[0];
     if(weak) findings.push('The bottom quintile is weakest on ' + weak[0] + ' (' + qnum(weak[2]) + '), a ' + (weak[1]-weak[2]).toFixed(2) + ' pts gap to the top quintile (' + qnum(weak[1]) + ') \u2014 priority coaching area.');
     if(top.sssg!=null && bot.sssg!=null){
-      const d = top.sssg - bot.sssg;
-      findings.push('Sales growth follows performance: top-quintile SSSG is ' + (d>=0?'+':'') + Math.round(d*100)/100 + ' pts above the bottom quintile (' + qnum(top.sssg,true) + ' vs ' + qnum(bot.sssg,true) + ').');
+      // top.sssg/bot.sssg are raw fractions (e.g. 0.09 = +9.0%, matching
+      // qnum(v,true)'s own *100 for display) -- the diff needs the same
+      // conversion to read as percentage points, not a rounded fraction
+      // (fixed 2026-10: was showing "+0.06 pts" for a 9.0% vs 2.9% gap,
+      // i.e. literally the fraction diff rounded to 2 decimals instead of
+      // the 6.1-point gap those two percentages actually show).
+      const d = (top.sssg - bot.sssg) * 100;
+      findings.push('Sales growth follows performance: top-quintile SSSG is ' + (d>=0?'+':'') + d.toFixed(1) + ' pts above the bottom quintile (' + qnum(top.sssg,true) + ' vs ' + qnum(bot.sssg,true) + ').');
     }
   }
   if(findings.length){

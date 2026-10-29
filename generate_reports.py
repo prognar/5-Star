@@ -766,9 +766,17 @@ def load_data():
 _OA_NAME_FIXES = {"Hellen Lobacarro": "Hellen Lobaccaro", **OA_DISPLAY_ALIAS}
 
 
-def load_workshops(df):
+def load_workshops(df, run_date=None):
     """Load Workshops.csv, parse dates, compute baseline month, and join to main df for scores.
-    Returns a dict of workshop data grouped by OA_NAME."""
+    Returns a dict of workshop data grouped by OA_NAME.
+
+    run_date: the simulated/actual run date (default: today) -- used as "now"
+    for each workshop's past/current/future classification below, so a
+    --run-date-backdated regen classifies workshops the same way a real run
+    on that date would have, instead of always using the real wall-clock
+    date the script happens to execute on (fixed 2026-10: a historical
+    --run-date rerun could mark a workshop "past" using today's real date
+    even though, as of the date being simulated, it hadn't happened yet)."""
     if not WORKSHOPS_CSV.exists():
         print("  Workshops.csv not found, skipping workshop data")
         return {}
@@ -791,6 +799,7 @@ def load_workshops(df):
     w["workshop_day"] = w["WORKSHOP_DATE"].dt.day.astype(int)
 
     last_data_month = PERIOD_MONTHS[-1] if PERIOD_MONTHS else 6
+    today = pd.Timestamp(run_date).normalize() if run_date is not None else pd.Timestamp.now().normalize()
 
     # Build store->franchisee, store->area, and store->dma lookups from main df.
     # Sort by month and take .last(), not .first() -- a store that changed
@@ -882,13 +891,21 @@ def load_workshops(df):
         ws_type = str(row["WORKSHOP_TYPE"]).strip()
         ws_id = str(row.get("WORKSHOP_ID", "")).strip() if "WORKSHOP_ID" in row.index else ""
         host_raw = row.get("HOST_STORE", "")
-        host_store = (str(host_raw).strip() if pd.notna(host_raw) and str(host_raw).strip().upper() not in ("NA", "NAN", "NONE", "") else "")
+        if pd.notna(host_raw) and str(host_raw).strip().upper() not in ("NA", "NAN", "NONE", ""):
+            # Zero-pad to the standard 6-digit store number -- HOST_STORE can
+            # come back as a bare int (missing the leading zero) or a float
+            # (trailing ".0") depending on whether the column had any blanks,
+            # same normalization _sid() uses in load_alignment_data().
+            _hv = str(int(host_raw)) if isinstance(host_raw, float) else str(host_raw).strip()
+            host_store = _hv.zfill(6) if _hv.isdigit() and len(_hv) < 6 else _hv
+        else:
+            host_store = ""
         date_str = str(row["WORKSHOP_DATE"].strftime("%Y-%m-%d")) if pd.notna(row["WORKSHOP_DATE"]) else ""
         is_bootcamp = "rising" not in ws_type.lower()
 
-        # Classify: past if workshop date is behind us, even if data hasn't landed yet
+        # Classify: past if workshop date is behind us (relative to `today`,
+        # computed once above from run_date), even if data hasn't landed yet
         ws_date = row["WORKSHOP_DATE"]
-        today = pd.Timestamp.now().normalize()
         if pd.notna(ws_date) and ws_date.date() < today.date():
             status = "past"
         elif ws_month > last_data_month:
@@ -2790,6 +2807,9 @@ def compute_quintiles_for(rows, with_assign=False):
             "brand": _avg_round([r.get("brand") for r in group]),
             "hutbot": _avg_round([r.get("hutbot") for r in group]),
             "fscc": _avg_round([r.get("fscc") for r in group]),
+            "aw": _avg_round([r.get("aw") for r in group]),
+            "as": _avg_round([r.get("as") for r in group]),
+            "ah": _avg_round([r.get("ah") for r in group]),
             "sssg": _avg_prec([r.get("sssg") for r in group]),
             "sstg": _avg_prec([r.get("sstg") for r in group]),
         })
@@ -2823,6 +2843,13 @@ def compute_store_metrics(df, months):
             "brand": _avg_round(store_g["BRAND_STAR"].tolist()),
             "hutbot": _avg_round(store_g["HB_ONTIME_STAR"].tolist()),
             "fscc": _avg_round(store_g["FSCC_STAR"].tolist()),
+            # %Actual counterparts for Win/Speed/Hutbot (0-100 scale, same
+            # columns the per-store Components card/table toggle reads via
+            # CK_TO_PCT) -- Brand/FSCC are audit-based with no actual %, so
+            # they stay star-only everywhere, same as that existing toggle.
+            "aw": _avg_round(store_g["WIN_SCORE_ACTUAL"].tolist()) if "WIN_SCORE_ACTUAL" in store_g.columns else None,
+            "as": _avg_round(store_g["SPEED_ACTUAL"].tolist()) if "SPEED_ACTUAL" in store_g.columns else None,
+            "ah": _avg_round(store_g["HB_ONTIME_ACTUAL"].tolist()) if "HB_ONTIME_ACTUAL" in store_g.columns else None,
             "sssg": sssg,
             "sstg": sstg,
             "director": str(latest.get("DIRECTOR", "Unknown")) if pd.notna(latest.get("DIRECTOR")) else "Unknown",
@@ -5521,7 +5548,7 @@ def main(no_cache=False, run_date=None):
         print(f"    {TIER_NAMES[t]}: {cnt}")
 
     # Load and process workshop data
-    workshops_by_oa = load_workshops(df)
+    workshops_by_oa = load_workshops(df, run_date=run_date)
 
     # Compute data products
     nat_data = compute_leadership(df)

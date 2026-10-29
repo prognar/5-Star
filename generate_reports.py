@@ -5526,6 +5526,11 @@ def main(no_cache=False, run_date=None):
         print(f"  (--run-date {run_date}: simulating Leadership Brief run)")
     print("=" * 60)
 
+    if run_date is None:
+        run_date = pd.Timestamp.now().normalize()
+    else:
+        run_date = pd.Timestamp(run_date).normalize()
+
     # Load data
     raw_df = load_data()
 

@@ -815,6 +815,19 @@ function alignOaFor(sid){
   }
   return _alignOaByStore.get(_normStoreId(sid)) || '';
 }
+// Store->address/region lookup, same ALIGNMENT_DATA source as alignOaFor above
+// (RESTMAILADDR1/CITY/STATE/REGION -- not present on the per-store records
+// elsewhere in this file, which only carry Area Coach (a) and DMA (d)).
+let _alignInfoByStore = null;
+function alignInfoFor(sid){
+  if(!_alignInfoByStore){
+    _alignInfoByStore = new Map();
+    (typeof ALIGNMENT_DATA !== 'undefined' ? ALIGNMENT_DATA : []).forEach(r=>{
+      if(r && r.s) _alignInfoByStore.set(_normStoreId(r.s), {addr:r.addr||'', city:r.city||'', state:r.state||'', region:r.region||''});
+    });
+  }
+  return _alignInfoByStore.get(_normStoreId(sid)) || {addr:'', city:'', state:'', region:''};
+}
 let _newT1Expanded = false;
 function toggleNewT1Detail(){
   _newT1Expanded = !_newT1Expanded;
@@ -1977,7 +1990,10 @@ function showStoreDetail(storeId){
   const monthKeys = [];
   for(let i=1;i<=MONTHS.length;i++) if(s['m'+i]!=null) monthKeys.push('m'+i);
   html += '<div class="detail-overview">';
-  html += '<div><span class="store-title">#' + esc(s.s) + '</span> <span class="store-info">' + esc(s.a) + ' \u00b7 ' + esc(s.d) + '</span></div>';
+  const _ai = alignInfoFor(s.s);
+  const _addrLine = [_ai.addr, [_ai.city, _ai.state].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+  html += '<div><span class="store-title">#' + esc(s.s) + '</span> <span class="store-info">' + esc(s.a) + ' \u00b7 ' + esc(s.d) + (_ai.region ? ' \u00b7 ' + esc(_ai.region) + ' region' : '') + '</span></div>';
+  if(_addrLine) html += '<div class="store-info" style="margin-top:2px;">' + esc(_addrLine) + '</div>';
   html += '<div class="score-strip">';
   monthKeys.forEach((k,i) => {
     const v = s[k];
@@ -2913,9 +2929,13 @@ function switchTab(tab){
   }
   function fzCardHTML(s){
     var periodLbl = _periodLabel();
+    var ai = alignInfoFor(s.s);
+    var addrLine = [ai.addr, [ai.city, ai.state].filter(Boolean).join(', ')].filter(Boolean).join(', ');
     var h = '<div style="background:#fff;padding:20px 22px;font-family:Oswald,sans-serif;color:#1c1a1f;box-sizing:border-box;">';
     h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #276b4d;padding-bottom:10px;margin-bottom:14px;">';
-    h += '<div style="font-size:22px;font-weight:700;letter-spacing:.02em;">#' + s.s + ' <span style="color:#6b6560;font-weight:400;font-size:13px;">' + esc(s.a) + '  \u00b7  ' + esc(s.d) + (s.f || _state.fran ? '  \u00b7  ' + esc(s.f || _state.fran) + ' franchisee' : '') + '</span></div>';
+    h += '<div><div style="font-size:22px;font-weight:700;letter-spacing:.02em;">#' + s.s + ' <span style="color:#6b6560;font-weight:400;font-size:13px;">' + esc(s.a) + '  \u00b7  ' + esc(s.d) + (ai.region ? '  \u00b7  ' + esc(ai.region) + ' region' : '') + (s.f || _state.fran ? '  \u00b7  ' + esc(s.f || _state.fran) + ' franchisee' : '') + '</span></div>';
+    if(addrLine) h += '<div style="font-family:\'IBM Plex Mono\',sans-serif;font-size:9.5px;color:#6b6560;margin-top:3px;">' + esc(addrLine) + '</div>';
+    h += '</div>';
     h += '<div style="font-family:\'IBM Plex Mono\',sans-serif;font-size:9.5px;color:#6b6560;text-transform:uppercase;letter-spacing:.08em;">' + esc(periodLbl) + ' card</div>';
     h += '</div>';
     h += '<div style="display:flex;gap:22px;margin-bottom:16px;flex-wrap:wrap;">';

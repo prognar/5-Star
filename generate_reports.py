@@ -5669,6 +5669,11 @@ def main(no_cache=False, run_date=None):
 
     # Compute Rising Star targeting data
     rising_data = compute_rising_star_data(df, workshops_by_oa)
+    # Reuse the national Rising Star effectiveness already computed above for
+    # the Leadership Summary workshops tab -- same attended-vs-control +
+    # per-component breakdown, surfaced here too (Workshops tab, Rising Star
+    # page) since this page has no other home for that comparison.
+    rising_data["workshop_effectiveness"] = _nat_rising_eff
 
     # Compute FOP dashboard data (needed for summaries and rankings)
     fop_data = compute_fop_data(df, zones_data)

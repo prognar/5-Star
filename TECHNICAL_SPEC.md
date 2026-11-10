@@ -394,10 +394,11 @@ Regenerating locally and verifying output is always fine without asking; publish
 Every narrative paragraph (National Insight, per-FOP/per-zone summaries, Leadership Brief
 recognition copy) is generated via the Claude API (`anthropic` Python SDK, `call_claude()` in
 `generate_reports.py`), model `claude-sonnet-5-5` by default (`ANTHROPIC_MODEL` env var to
-override). Credentials: `ANTHROPIC_API_KEY` in `.env` (or an `ant auth login` profile); add
-`ANTHROPIC_WORKSPACE_ID` in `.env` too if the key is an org key not scoped to one workspace
-(read only from `.env` itself, never an ambient shell var, so it can't leak onto unrelated
-requests). If the API is unavailable or auth fails, `call_claude()` sets `_LLM_UNAVAILABLE` on
+override). Credentials: a shared (non-personal) `ant auth login` profile on the machine running
+the generator — not a personal `ANTHROPIC_API_KEY`. `.env` may still set `ANTHROPIC_WORKSPACE_ID`
+if the shared credential is an org credential not scoped to one workspace (read only from `.env`
+itself, never an ambient shell var, so it can't leak onto unrelated requests). If the API is
+unavailable or auth fails, `call_claude()` sets `_LLM_UNAVAILABLE` on
 the first failure (so ~20 subsequent summary calls in a run fail fast instead of each retrying
 a doomed request) and every report falls back to **deterministic, data-driven summaries** —
 reports always have content, with or without API access.

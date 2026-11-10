@@ -133,11 +133,11 @@ ZONE24_NAME_TO_OA = {
     "Mountain West/Denver": "Emily Curry",
     "Jacksonville/N Florida": "Victoria Viera",
     "Appalachia": "OPEN",
-    "Carolinas West": "Andera Fallin",
-    "Northern Plains": "Sydney Shore",
+    "Carolinas West": "Drea Fallin",
+    "Northern Plains": "Sidney Sohre",
     "Northern California": "OPEN",
     "San Antonio/W Texas": "Rick Torres",
-    "DFW East": "Michael Waiki",
+    "DFW East": "Michael Waki",
 }
 # zone_assignments_24_option2.csv's own ZONE_NAME strings for 2 zones were
 # renamed from what the business actually calls them (confirmed 2026-10) --
@@ -330,7 +330,8 @@ LLM_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 DISPATCH_PHRASING_RULE = (
     "House style rule: never recommend 'shortening dispatch' or reducing dispatch time as a "
     "speed-improvement suggestion -- phrase that recommendation instead as 'increase drive turn, "
-    "use Dragontail'."
+    "use Dragontail'. Also: never use an em dash (—) anywhere in the text; use a period, comma, "
+    "colon, or a rewritten sentence instead."
 )
 SUMMARIES_CACHE = BASE_DIR / "_summaries.json"
 
@@ -2616,11 +2617,19 @@ def compute_single_zone(zone_df, workshops=None, zone_key=None, member_oas=None)
 
 # ─── Rising Star Targeting ──────────────────────────────────────────────────
 
-def compute_rising_star_data(df, workshops_by_oa):
-    """Compute Rising Star targeting data: DMA×Franchisee groups, map points, workshops."""
+def compute_rising_star_data(df, workshops_by_oa, zone24_map=None, zone15_map=None):
+    """Compute Rising Star targeting data: DMA×Franchisee groups, map points, workshops.
+
+    dmaFranData is built twice -- once per the authoritative 24-zone and
+    15-zone per-store assignment files (same source zone_scorecards.html
+    uses, not the live OPX_OA column, which Snowflake hasn't caught up to
+    for the 24-zone split -- see load_store_zone_assignments()) -- so the
+    "filter by OA" dropdown can show a real 24-or-15-zone OA's actual
+    DMA×Franchisee targets, at whichever granularity the viewer picked.
+    """
     last_m = PERIOD_MONTHS[-1] if PERIOD_MONTHS else None
     if last_m is None:
-        return {"n_t2": 0, "dmaFranData": [], "points": [], "workshops": []}
+        return {"n_t2": 0, "dmaFranData": [], "dmaFranData24": [], "dmaFranData15": [], "points": [], "workshops": []}
 
     # Tier 2 stores in the latest month
     t2 = df[(df["MONTHNUM"] == last_m) & (df["_tier"] == 2)].copy()
@@ -2651,60 +2660,76 @@ def compute_rising_star_data(df, workshops_by_oa):
             "store": sid,
         })
 
-    # DMA × Franchisee group by
-    groups = t2.groupby(["NIELSENDMADESC", "CURR_FRAN_OWNER_NM"])
-    dma_fran_data = []
-    for (dma, fran), grp in groups:
-        if pd.isna(dma) or pd.isna(fran) or dma == "" or fran == "":
-            continue
-        n_t2_grp = len(grp)
-        oas = grp["OPX_OA"].dropna().unique()
-        n_oa = len(oas)
-        oa_str = ", ".join(sorted(oas))
+    # DMA × Franchisee group by -- built once per OA-naming source (legacy
+    # live OPX_OA, and the two authoritative zone-assignment files), since
+    # the "oa" field on each row differs by source and the Targets table
+    # filter needs the real 15-or-24-zone answer, not the stale live one.
+    t2["_sid"] = t2["CHAINED_STORE_ID"].map(_normalize_sid)
 
-        # Binding percentages among T2 stores in this group
-        win_pct = round((grp["_binding"] == "WIN_SCORE_STAR").sum() / n_t2_grp * 100)
-        speed_pct = round((grp["_binding"] == "SPEED_STAR").sum() / n_t2_grp * 100)
-        hb_pct = round((grp["_binding"] == "HB_ONTIME_STAR").sum() / n_t2_grp * 100)
-        brand_pct = round((grp["_binding"] == "BRAND_STAR").sum() / n_t2_grp * 100)
-        fscc_pct = round((grp["_binding"] == "FSCC_STAR").sum() / n_t2_grp * 100)
+    def _build_dma_fran_data(oa_col):
+        groups = t2.groupby(["NIELSENDMADESC", "CURR_FRAN_OWNER_NM"])
+        out = []
+        for (dma, fran), grp in groups:
+            if pd.isna(dma) or pd.isna(fran) or dma == "" or fran == "":
+                continue
+            n_t2_grp = len(grp)
+            oas = grp[oa_col].dropna().unique()
+            oas = [o for o in oas if o]
+            n_oa = len(oas)
+            oa_str = ", ".join(sorted(oas))
 
-        # Total stores for this franchisee in this DMA (all tiers)
-        total = len(df[(df["MONTHNUM"] == last_m) & (df["NIELSENDMADESC"] == dma) & (df["CURR_FRAN_OWNER_NM"] == fran)])
-        rate = round(n_t2_grp / total * 100) if total > 0 else 0
+            # Binding percentages among T2 stores in this group
+            win_pct = round((grp["_binding"] == "WIN_SCORE_STAR").sum() / n_t2_grp * 100)
+            speed_pct = round((grp["_binding"] == "SPEED_STAR").sum() / n_t2_grp * 100)
+            hb_pct = round((grp["_binding"] == "HB_ONTIME_STAR").sum() / n_t2_grp * 100)
+            brand_pct = round((grp["_binding"] == "BRAND_STAR").sum() / n_t2_grp * 100)
+            fscc_pct = round((grp["_binding"] == "FSCC_STAR").sum() / n_t2_grp * 100)
 
-        # Average customer-sentiment scores (fraction 0-1 -> shown as percent)
-        # for this group's T2 stores: Taste + XM360 (Accuracy / Speed / OSAT).
-        pct_avgs = {}
-        for _col, _key in (("TASTE_SCORE", "taste_avg"), ("ACCURACY_SCORE", "accuracy_avg"),
-                           ("SPEED_SCORE", "speed360_avg"), ("OSAT_SCORE", "osat_avg")):
-            if _col in df.columns:
-                _vals = pd.to_numeric(grp[_col], errors="coerce").dropna()
-                pct_avgs[_key] = round(float(_vals.mean()), 4) if len(_vals) > 0 else None
-            else:
-                pct_avgs[_key] = None
+            # Total stores for this franchisee in this DMA (all tiers)
+            total = len(df[(df["MONTHNUM"] == last_m) & (df["NIELSENDMADESC"] == dma) & (df["CURR_FRAN_OWNER_NM"] == fran)])
+            rate = round(n_t2_grp / total * 100) if total > 0 else 0
 
-        dma_fran_data.append({
-            "NIELSENDMADESC": str(dma),
-            "CURR_FRAN_OWNER_NM": str(fran),
-            "n_t2": n_t2_grp,
-            "oa": oa_str,
-            "n_oa": int(n_oa),
-            "win_pct": win_pct,
-            "speed_pct": speed_pct,
-            "hb_pct": hb_pct,
-            "brand_pct": brand_pct,
-            "fscc_pct": fscc_pct,
-            "total": int(total),
-            "rate": int(rate),
-            "taste_avg": pct_avgs["taste_avg"],
-            "accuracy_avg": pct_avgs["accuracy_avg"],
-            "speed360_avg": pct_avgs["speed360_avg"],
-            "osat_avg": pct_avgs["osat_avg"],
-        })
+            # Average customer-sentiment scores (fraction 0-1 -> shown as percent)
+            # for this group's T2 stores: Taste + XM360 (Accuracy / Speed / OSAT).
+            pct_avgs = {}
+            for _col, _key in (("TASTE_SCORE", "taste_avg"), ("ACCURACY_SCORE", "accuracy_avg"),
+                               ("SPEED_SCORE", "speed360_avg"), ("OSAT_SCORE", "osat_avg")):
+                if _col in df.columns:
+                    _vals = pd.to_numeric(grp[_col], errors="coerce").dropna()
+                    pct_avgs[_key] = round(float(_vals.mean()), 4) if len(_vals) > 0 else None
+                else:
+                    pct_avgs[_key] = None
 
-    # Sort: descending by n_t2
-    dma_fran_data.sort(key=lambda x: -x["n_t2"])
+            out.append({
+                "NIELSENDMADESC": str(dma),
+                "CURR_FRAN_OWNER_NM": str(fran),
+                "n_t2": n_t2_grp,
+                "oa": oa_str,
+                "oa_list": sorted(oas),
+                "n_oa": int(n_oa),
+                "win_pct": win_pct,
+                "speed_pct": speed_pct,
+                "hb_pct": hb_pct,
+                "brand_pct": brand_pct,
+                "fscc_pct": fscc_pct,
+                "total": int(total),
+                "rate": int(rate),
+                "taste_avg": pct_avgs["taste_avg"],
+                "accuracy_avg": pct_avgs["accuracy_avg"],
+                "speed360_avg": pct_avgs["speed360_avg"],
+                "osat_avg": pct_avgs["osat_avg"],
+            })
+        out.sort(key=lambda x: -x["n_t2"])
+        return out
+
+    dma_fran_data = _build_dma_fran_data("OPX_OA")
+
+    zone24_map = zone24_map or {}
+    zone15_map = zone15_map or {}
+    t2["_oa24"] = t2["_sid"].map(lambda s: zone24_map.get(s, (None, None))[1])
+    t2["_oa15"] = t2["_sid"].map(lambda s: zone15_map.get(s, (None, None))[1])
+    dma_fran_data_24 = _build_dma_fran_data("_oa24")
+    dma_fran_data_15 = _build_dma_fran_data("_oa15")
 
     # Rising Star workshops
     rs_entries = []
@@ -2718,6 +2743,8 @@ def compute_rising_star_data(df, workshops_by_oa):
     return {
         "n_t2": n_t2,
         "dmaFranData": dma_fran_data,
+        "dmaFranData24": dma_fran_data_24,
+        "dmaFranData15": dma_fran_data_15,
         "points": points,
         "workshops": rs_entries,
     }
@@ -4857,7 +4884,7 @@ def generate_leadership_html(nat_data, template_path, output_path):
     print(f"  Written to {output_path}")
 
 
-def generate_zones_html(zones_data, zones_data_15, template_path, output_path):
+def generate_zones_html(zones_data, zones_data_15, alignment_data, template_path, output_path):
     """Generate zone_scorecards.html from template. zones_data is the 24-zone
     view (compute_zone_display_views, grouped from the authoritative
     per-store assignment file -- not the OPX_OA-keyed dict of the same name
@@ -4870,6 +4897,7 @@ def generate_zones_html(zones_data, zones_data_15, template_path, output_path):
 
     html = replace_data_block(html, "ZONES", zones_data)
     html = replace_data_block(html, "ZONES_15", zones_data_15)
+    html = replace_data_block(html, "ALIGNMENT_DATA", alignment_data)
 
     # Inject dynamic month labels and period label
     html = replace_data_block(html, "MONTHS", MONTH_LABELS)
@@ -5335,7 +5363,7 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
         print("  Using cached leadership brief")
         # Only reuse the LLM narrative fields from cache; structural data (monthly,
         # oa_front, bootcamp metrics, rising, etc.) is always recomputed fresh.
-        for _k in ("summary", "summarySub", "recognition"):
+        for _k in ("summary", "summarySub", "recognition", "teams_message"):
             if _k in cached:
                 brief_data[_k] = cached[_k]
         if isinstance(brief_data.get("recognition"), list):
@@ -5485,9 +5513,39 @@ def summarize_brief(brief_data, nat_data, zones_data, fop_data, no_cache=False):
     bc_narr = call_claude([bc_prompt], system_prompt=sys_lead, max_tokens=2500, allow_plain_text=True)
     brief_data["bootcamp"]["narrative"] = _normalize_summary(bc_narr) if bc_narr else ((cached or {}).get("bootcamp") or {}).get("narrative", "")
 
+    # ── 4) Teams message: informal Boot Camp update addressed directly to the OA team ──
+    sys_teams = (
+        "You write a short, informal Microsoft Teams update addressed directly to the OA team "
+        "(Area Coaches). Tone: warm, direct, like a teammate giving a quick update to the group, not "
+        "a formal leadership memo. Speak to the OAs as the audience ('you', 'our team'), never refer "
+        "to them in the third person the way a leadership brief would. " + DISPATCH_PHRASING_RULE
+    )
+    teams_prompt = (
+        f"Write a Boot Camp update as a Teams message for the OA team, covering the {run_lbl} run "
+        f"(data through {last_label}).\n\n"
+        "Structure, in order, as flowing short paragraphs (no headers):\n"
+        f"1) What's working: who hustled in {prior_lbl} (workshops run, stores coached) -- name the top "
+        f"2-3 OAs with their numbers. Top: {who_str}. Then the YTD total "
+        f"({nat_bc.get('n_held_ytd',0)} workshops across {nat_bc.get('n_stores_ytd',0)} stores) and the "
+        "YTD leader by name.\n"
+        "2) Are the boot camps working: improvement rate and lift vs control; name 2-3 standout OAs on "
+        "lift.\n"
+        "3) Opportunities: anywhere average scores are flat or lift is uneven/negative despite heavy "
+        "volume; name who that applies to and frame it as coaching on follow-through, not volume, never "
+        "as a callout.\n"
+        f"4) Next up: what's scheduled ({nat_bc.get('n_future_stores',0)} stores across "
+        f"{nat_bc.get('n_future',0)} workshops), broken out by {nat_bc.get('future_breakdown')}.\n\n"
+        f"Data:\n{json.dumps({'bootcamp': nat_bc, 'oa_level': oa_compact}, indent=2)}\n\n"
+        "~150 words total. Plain text only, no markdown, no bullet characters, no bold, no 'Here is' "
+        "preamble, no section labels or numbering in the output itself -- just the four beats as natural "
+        "paragraphs, ready to paste into Teams."
+    )
+    teams_narr = call_claude([teams_prompt], system_prompt=sys_teams, max_tokens=2500, allow_plain_text=True)
+    brief_data["teams_message"] = _normalize_summary(teams_narr) if teams_narr else (cached or {}).get("teams_message", "")
+
     # Cache (only persist when we actually produced a narrative; otherwise the
     # refresh already fell back to prior cache and there's nothing new to save)
-    if brief_data.get("summary") or brief_data.get("bootcamp", {}).get("narrative"):
+    if brief_data.get("summary") or brief_data.get("bootcamp", {}).get("narrative") or brief_data.get("teams_message"):
         cache["_brief"] = brief_data
         cache[VER_KEY] = version
         try:
@@ -5668,7 +5726,7 @@ def main(no_cache=False, run_date=None):
         nat_data["workshop_effectiveness"]["rising_star"] = _nat_rising_eff
 
     # Compute Rising Star targeting data
-    rising_data = compute_rising_star_data(df, workshops_by_oa)
+    rising_data = compute_rising_star_data(df, workshops_by_oa, zone24_map, zone15_map)
     # Reuse the national Rising Star effectiveness already computed above for
     # the Leadership Summary workshops tab -- same attended-vs-control +
     # per-component breakdown, surfaced here too (Workshops tab, Rising Star
@@ -5681,6 +5739,17 @@ def main(no_cache=False, run_date=None):
 
     # Store alignment table (optional; powers the Alignment tab)
     alignment_data = load_alignment_data()
+
+    # Attach address to the national Default Watch list (leadership_summary.html)
+    # -- joined here in Python, by normalized store id, rather than shipping the
+    # whole ~4.6K-row ALIGNMENT_DATA to that page just for this handful of rows.
+    _addr_by_sid = {str(r["s"]).lstrip("0") or "0": r for r in alignment_data}
+    for _s in nat_data.get("watch_stores", []):
+        _ar = _addr_by_sid.get(str(_s["s"]).lstrip("0") or "0")
+        if _ar:
+            _s["addr"] = _ar.get("addr", "")
+            _s["city"] = _ar.get("city", "")
+            _s["state"] = _ar.get("state", "")
 
     # Attach per-FOP summaries to nat_data for leadership page
     fop_summaries = {}
@@ -5772,6 +5841,7 @@ def main(no_cache=False, run_date=None):
     generate_zones_html(
         zones_24_display,
         zones_15_display,
+        alignment_data,
         template_dir / "zone_scorecards.html",
         OUTPUT_DIR / "zone_scorecards.html"
     )

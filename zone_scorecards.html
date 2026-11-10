@@ -60,6 +60,19 @@
   .thermo-bulb{position:absolute; top:50%; right:0; transform:translate(50%,-50%); width:58px; height:58px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-family:'Oswald',sans-serif; font-weight:700; font-size:15px; border:4px solid var(--card); box-shadow:0 2px 8px rgba(0,0,0,.25), 0 0 0 1px var(--line); z-index:3;}
   .thermo-pct-labels{display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--muted); margin:2px 28px 2px 2px;}
   .thermo-remaining{font-size:10.5px; color:var(--muted); margin-top:auto; padding-top:6px;}
+  .effbar-legend{display:flex; gap:16px; font-size:10.5px; color:var(--muted); margin:2px 0 14px; font-family:'IBM Plex Mono',monospace;}
+  .effbar-legend .sw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:middle;}
+  .effbar-group{margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--line);}
+  .effbar-group:last-child{border-bottom:none; margin-bottom:0;}
+  .effbar-group-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+  .effbar-group-title{font-family:'Oswald',sans-serif; font-weight:600; font-size:13.5px; color:var(--ink);}
+  .effbar-vs{font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;}
+  .effbar-row{display:grid; grid-template-columns:62px 1fr 64px; align-items:center; gap:10px; margin-bottom:5px;}
+  .effbar-row .lbl{color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em;}
+  .effbar-track{position:relative; height:16px; background:var(--paper); border:1px solid var(--line); border-radius:2px;}
+  .effbar-zero{position:absolute; top:0; bottom:0; left:50%; width:1px; background:var(--line);}
+  .effbar-fill{position:absolute; top:2px; bottom:2px; border-radius:2px;}
+  .effbar-val{text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:11px;}
   .tier-cards{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
   .tier-card{background:var(--card); border:1px solid var(--line); overflow:hidden;}
   .tier-card .head{padding:12px 16px; color:#fff;}
@@ -442,7 +455,19 @@
   <h2>Boot Camp Effectiveness</h2>
   <p class="h2-sub" id="wsEffSubtitle"></p>
   <div id="wsEffMetrics" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+    <div class="view-toggle" id="wsEffViewToggle">
+      <button class="active" data-effview="table" onclick="setWsEffView('table')">Table</button>
+      <button data-effview="chart" onclick="setWsEffView('chart')">Chart</button>
+    </div>
+    <div class="group-toggle" id="wsEffMetricToggle" style="display:none;">
+      <button class="active" data-effmetric="avg" onclick="setWsEffMetric('avg')">Avg. Score</button>
+      <button data-effmetric="sssg" onclick="setWsEffMetric('sssg')">SSSG</button>
+      <button data-effmetric="sstg" onclick="setWsEffMetric('sstg')">SSTG</button>
+    </div>
+  </div>
   <div id="wsEffTable"></div>
+  <div id="wsEffChart" style="display:none;"></div>
   <div id="wsEffLift"></div>
 </section>
 
@@ -558,6 +583,166 @@ function trendArrow(slope, rev){
 
 // ─── Portfolio Drill-Down ──────────────────────────────────────────────────
 let _curStoreData = null;
+let _wsEffData = null;
+let _wsEffGroups = [];
+let _wsEffView = 'table';
+let _wsEffMetric = 'avg';
+let _wsEffChartKeys = null;
+let _wsEffBarState = {};
+const WS_EFF_ATTENDED_COLOR = '#a3122a';
+const WS_EFF_CONTROL_COLOR = '#5b7a9e';
+function wsEffMetricValue(row, metric){
+  if(!row) return null;
+  if(metric==='avg') return row.avg_delta;
+  const g = row[metric];
+  return g ? g.delta : null;
+}
+function wsEffMetricFmt(v, metric){
+  if(v==null) return '—';
+  if(metric==='avg') return (v>=0?'+':'')+v.toFixed(2);
+  return (v>=0?'+':'')+(v*100).toFixed(1)+'%';
+}
+function wsEffRowKey(groupLabel, kind){
+  return 'wsEffBar__'+groupLabel.replace(/[^a-zA-Z0-9]/g,'')+'__'+kind;
+}
+function wsEffBarRow(groupLabel, label, kind, v, maxAbs, color){
+  const key = wsEffRowKey(groupLabel, kind);
+  const pct = maxAbs>0 ? Math.min(50, Math.abs(v||0)/maxAbs*50) : 0;
+  const isNeg = (v||0) < 0;
+  const fillStyle = v==null ? 'display:none;' : (isNeg
+    ? `right:50%;left:auto;width:${pct}%;background:${color};`
+    : `left:50%;right:auto;width:${pct}%;background:${color};`);
+  const valHTML = v==null ? '<span style="color:var(--muted)">—</span>' : `<span style="color:${v>=0?'#276b4d':'#a3122a'}">${wsEffMetricFmt(v,_wsEffMetric)}</span>`;
+  return `<div class="effbar-row">
+    <div class="lbl">${esc(label)}</div>
+    <div class="effbar-track"><div class="effbar-zero"></div><div class="effbar-fill" id="${key}-fill" style="${fillStyle}"></div></div>
+    <div class="effbar-val" id="${key}-val">${valHTML}</div>
+  </div>`;
+}
+function renderWsEffChartHTML(){
+  const groups = _wsEffGroups;
+  const metric = _wsEffMetric;
+  let maxAbs = 0;
+  groups.forEach(g=>{
+    [wsEffMetricValue(g.varRow, metric), wsEffMetricValue(g.ctrlRow, metric)].forEach(v=>{
+      if(v!=null) maxAbs = Math.max(maxAbs, Math.abs(v));
+    });
+  });
+  if(maxAbs===0) maxAbs = 1;
+  let html = `<div class="effbar-legend">
+    <span><span class="sw" style="background:${WS_EFF_ATTENDED_COLOR}"></span>Boot Camp attended</span>
+    <span><span class="sw" style="background:${WS_EFF_CONTROL_COLOR}"></span>Control</span>
+  </div>`;
+  groups.forEach(g=>{
+    const vAvg = wsEffMetricValue(g.varRow, metric), cAvg = wsEffMetricValue(g.ctrlRow, metric);
+    const vsCtrl = (vAvg!=null && cAvg!=null) ? vAvg-cAvg : null;
+    const vsLabel = vsCtrl!=null ? wsEffMetricFmt(vsCtrl, metric)+' pts vs. control' : '';
+    const vsKey = wsEffRowKey(g.label, 'vs');
+    html += `<div class="effbar-group">
+      <div class="effbar-group-head">
+        <div class="effbar-group-title">${esc(g.label)}</div>
+        <div class="effbar-vs" id="${vsKey}" style="color:${vsCtrl==null?'var(--muted)':(vsCtrl>=0?'#276b4d':'#a3122a')}">${esc(vsLabel)}</div>
+      </div>
+      ${wsEffBarRow(g.label, 'Attended', 'var', vAvg, maxAbs, WS_EFF_ATTENDED_COLOR)}
+      ${wsEffBarRow(g.label, 'Control', 'ctrl', cAvg, maxAbs, WS_EFF_CONTROL_COLOR)}
+    </div>`;
+  });
+  return html;
+}
+// Rebuilds from scratch when the group structure changed (new OA/zone with a
+// different tier mix) or on first paint; otherwise animates each bar/value
+// from its previous value to the new one (metric switch, or same-structure
+// OA switch) instead of snapping, matching the Goal Tracker thermometers.
+// Bar geometry is tweened as a normalized signed percent (-50..50, position
+// within the track) rather than the raw metric value -- the raw value's
+// units change between Avg Score (star points) and SSSG/SSTG (percent), so
+// animating the raw number against the wrong metric's scale mid-transition
+// made bars briefly overshoot past the track edge. Percent-of-track is
+// always apples-to-apples regardless of which metric is active, so a switch
+// between metrics (different units) and a switch between OAs (same units,
+// new data) both animate the same correct way. The number label itself
+// can't be meaningfully tweened across a unit change, so it snaps straight
+// to its final formatted value; only the bar shape eases in.
+function wsEffSignedPct(v, maxAbs){
+  if(v==null || maxAbs<=0) return 0;
+  const sign = v<0 ? -1 : 1;
+  return sign * Math.min(50, Math.abs(v)/maxAbs*50);
+}
+function renderWsEffChart(animate){
+  const groups = _wsEffGroups;
+  const container = document.getElementById('wsEffChart');
+  if(!container) return;
+  if(!groups.length){ container.innerHTML = ''; _wsEffChartKeys = null; return; }
+  const keys = groups.map(g=>g.label).join('|');
+  const sameStructure = animate && (keys === _wsEffChartKeys) && container.children.length>0;
+  let maxAbs = 0;
+  groups.forEach(g=>{
+    [wsEffMetricValue(g.varRow, _wsEffMetric), wsEffMetricValue(g.ctrlRow, _wsEffMetric)].forEach(v=>{
+      if(v!=null) maxAbs = Math.max(maxAbs, Math.abs(v));
+    });
+  });
+  if(maxAbs===0) maxAbs = 1;
+  if(!sameStructure){
+    container.innerHTML = renderWsEffChartHTML();
+    _wsEffChartKeys = keys;
+    _wsEffBarState = {};
+    groups.forEach(g=>{
+      _wsEffBarState[g.label+'|var'] = wsEffSignedPct(wsEffMetricValue(g.varRow, _wsEffMetric), maxAbs);
+      _wsEffBarState[g.label+'|ctrl'] = wsEffSignedPct(wsEffMetricValue(g.ctrlRow, _wsEffMetric), maxAbs);
+    });
+    return;
+  }
+  groups.forEach(g=>{
+    ['var','ctrl'].forEach(kind=>{
+      const row = kind==='var' ? g.varRow : g.ctrlRow;
+      const newV = wsEffMetricValue(row, _wsEffMetric);
+      const newPct = wsEffSignedPct(newV, maxAbs);
+      const fromPct = _wsEffBarState[g.label+'|'+kind] || 0;
+      const key = wsEffRowKey(g.label, kind);
+      const fillEl = document.getElementById(key+'-fill');
+      const valEl = document.getElementById(key+'-val');
+      _wsEffBarState[g.label+'|'+kind] = newPct;
+      if(!fillEl || !valEl) return;
+      if(newV==null){
+        fillEl.style.display = 'none';
+        valEl.innerHTML = '<span style="color:var(--muted)">—</span>';
+        return;
+      }
+      fillEl.style.display = '';
+      valEl.innerHTML = `<span style="color:${newV>=0?'#276b4d':'#a3122a'}">${wsEffMetricFmt(newV,_wsEffMetric)}</span>`;
+      animateValue(fromPct, newPct, 500, (p)=>{
+        const isNeg = p<0;
+        if(isNeg){ fillEl.style.left='auto'; fillEl.style.right='50%'; } else { fillEl.style.right='auto'; fillEl.style.left='50%'; }
+        fillEl.style.width = Math.abs(p)+'%';
+      });
+    });
+    const vAvg = wsEffMetricValue(g.varRow, _wsEffMetric), cAvg = wsEffMetricValue(g.ctrlRow, _wsEffMetric);
+    const vsCtrl = (vAvg!=null && cAvg!=null) ? vAvg-cAvg : null;
+    const vsEl = document.getElementById(wsEffRowKey(g.label, 'vs'));
+    if(vsEl){
+      vsEl.textContent = vsCtrl!=null ? wsEffMetricFmt(vsCtrl, _wsEffMetric)+' pts vs. control' : '';
+      vsEl.style.color = vsCtrl==null ? 'var(--muted)' : (vsCtrl>=0?'#276b4d':'#a3122a');
+    }
+  });
+}
+function setWsEffView(view){
+  _wsEffView = view;
+  applyWsEffView();
+}
+function applyWsEffView(){
+  document.querySelectorAll('#wsEffViewToggle button').forEach(b=>b.classList.toggle('active', b.dataset.effview===_wsEffView));
+  const tableEl = document.getElementById('wsEffTable');
+  const chartEl = document.getElementById('wsEffChart');
+  const metricToggle = document.getElementById('wsEffMetricToggle');
+  if(tableEl) tableEl.style.display = _wsEffView==='table' ? '' : 'none';
+  if(chartEl) chartEl.style.display = _wsEffView==='chart' ? '' : 'none';
+  if(metricToggle) metricToggle.style.display = _wsEffView==='chart' ? '' : 'none';
+}
+function setWsEffMetric(metric){
+  _wsEffMetric = metric;
+  document.querySelectorAll('#wsEffMetricToggle button').forEach(b=>b.classList.toggle('active', b.dataset.effmetric===metric));
+  renderWsEffChart(true);
+}
 let _thermoState = {};
 let _thermoBuilt = false;
 const THERMO_TICKS = [25, 50, 75];
@@ -2462,6 +2647,7 @@ function renderBootCamps(){
 
   // ── Workshop Effectiveness ──
   const eff = d.workshop_effectiveness;
+  _wsEffData = eff;
   const effSection = document.getElementById('wsEffSection');
   if(eff && eff.trajectory && eff.trajectory.n){
     effSection.style.display = '';
@@ -2621,6 +2807,16 @@ function renderBootCamps(){
     th += '</tbody></table>';
     th += '<p style="font-size:10.5px;color:var(--muted);margin-top:4px;">Click a row for its 5-Star &amp; XM360 component breakdown.</p>';
     document.getElementById('wsEffTable').innerHTML = th;
+
+    // Same All-Tiers/Tier-1/2/3 groups as the table above, kept around so the
+    // Chart toggle can redraw without re-running the whole workshop pipeline.
+    _wsEffGroups = [{label:'All Tiers', varRow:t, ctrlRow:c}];
+    [1,2,3].forEach(tn=>{
+      const row = byTier[String(tn)];
+      if(row && (row.var || row.control)) _wsEffGroups.push({label:EFF_TIER_LABEL[tn], varRow:row.var, ctrlRow:row.control});
+    });
+    renderWsEffChart(true);
+    applyWsEffView();
 
     // Plain-language explanation per row pair -- reads the numbers so leadership
     // doesn't have to do the mental subtraction themselves. Regenerates for
